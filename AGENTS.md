@@ -41,6 +41,8 @@ These rules must not be violated by any change:
 
 **Sort stability.** Use `sort.Slice` not `sort.SliceStable`. Comparators always return a total order via ID/URL fallback, so stability guarantees are unused.
 
+**Non-ASCII characters in source.** Go string literals may contain non-ASCII (Unicode) characters, but punctuation should always be ASCII. Watch for em dashes (`—` U+2014), en dashes (`–` U+2013), smart quotes (`"" ''`), non-breaking spaces (`U+00A0`), zero-width spaces (`U+200B`), and similar copy-paste artifacts. These are invisible in diff review and break grep/search. Run `LC_ALL=C grep -Pn '[^\x00-\x7F]' --include='*.go' .` before committing to catch them.
+
 ## Code Review Checklist
 
 When reviewing changes to this repo, check:
@@ -66,3 +68,11 @@ When implementing these features, follow the patterns below:
 - Windows paths in tests use `go-gh/pkg/term` for terminal detection. CI runs on ubuntu-latest.
 - WSL users: smoke tests skip on WSL bash. Use Git Bash or native Windows shell.
 - Temp directory for smoke test fakes uses `t.TempDir()` — auto-cleaned by Go test runner.
+
+## Format
+For Go files:
+- Output UTF-8 plain text only.
+- Do not use smart quotes, non-breaking spaces, zero-width characters, or Markdown escapes.
+- Go permits tabs; use gofmt, do not manually align with exotic whitespace
+- For regexes and Windows paths, prefer raw string literals using backtick
+- After editing, run: gofmt -w . && go test ./...

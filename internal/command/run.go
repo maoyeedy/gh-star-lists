@@ -73,7 +73,7 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
 	default:
-		panic(fmt.Sprintf("unhandled action %q — this is a bug in Parse", parsed.Action))
+		panic(fmt.Sprintf("unhandled action %q - this is a bug in Parse", parsed.Action))
 	}
 
 	return ExitSuccess

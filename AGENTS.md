@@ -51,7 +51,7 @@ When reviewing changes to this repo, check:
 - [ ] New output mode? Must be handled in both `WriteStarListsWithOptions` and `WriteRepositoriesWithOptions` dispatch switches. Add to `SelectOutputMode` validation.
 - [ ] New GraphQL query? Must paginate with cursor, accept `$endCursor`, check `HasNextPage`. Use `first: 100`.
 - [ ] New test asserts on stdout? Must set `Now` in `Options` for deterministic timestamps. Use `testOutputOptions` helper in `run_test.go`.
-- [ ] Test uses `errWriter`? Duplicate type defined in both `command_test` and `format_test` packages — this is normal Go isolation.
+- [ ] Test uses `errWriter`? Duplicate type defined in both `command_test` and `format_test` packages - this is normal Go isolation.
 - [ ] Build passes? Run `go build && go test ./... && go vet ./...` before committing.
 
 ## Future Work (Agent Guidance)
@@ -67,7 +67,7 @@ When implementing these features, follow the patterns below:
 
 - Windows paths in tests use `go-gh/pkg/term` for terminal detection. CI runs on ubuntu-latest.
 - WSL users: smoke tests skip on WSL bash. Use Git Bash or native Windows shell.
-- Temp directory for smoke test fakes uses `t.TempDir()` — auto-cleaned by Go test runner.
+- Temp directory for smoke test fakes uses `t.TempDir()` - auto-cleaned by Go test runner.
 
 ## Format
 For Go files:

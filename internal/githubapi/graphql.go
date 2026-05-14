@@ -61,7 +61,7 @@ func newGraphQLService(executor graphQLExecutor) *graphQLService {
 }
 
 func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) {
-	var lists []StarList
+	lists := make([]StarList, 0, 100)
 	var endCursor any
 
 	for {
@@ -91,7 +91,7 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 }
 
 func (s *graphQLService) ListRepositories(ctx context.Context, listID string) ([]Repository, error) {
-	var repositories []Repository
+	repositories := make([]Repository, 0, 100)
 	var endCursor any
 
 	for {

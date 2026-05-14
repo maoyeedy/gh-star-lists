@@ -1,7 +1,6 @@
 package format
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
@@ -32,10 +31,7 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 }
 
 func writeStarListsJSON(w io.Writer, lists []githubapi.StarList) error {
-	if lists == nil {
-		lists = []githubapi.StarList{}
-	}
-	return json.NewEncoder(w).Encode(lists)
+	return writeJSONSlice(w, lists)
 }
 
 func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
@@ -52,12 +48,14 @@ func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarLis
 		_, err := fmt.Fprintln(w, "No Star Lists found.")
 		return err
 	}
+	boldFn := bold(options.Color)
+	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
-	table.AddHeader([]string{"NAME", "ADDED", "ID"}, tableprinter.WithColor(bold(options.Color)))
+	table.AddHeader([]string{"NAME", "ADDED", "ID"}, tableprinter.WithColor(boldFn))
 	for _, list := range lists {
-		table.AddField(list.Name, tableprinter.WithColor(bold(options.Color)))
+		table.AddField(list.Name, tableprinter.WithColor(boldFn))
 		table.AddField(shortAge(list.LastAddedAt, options.Now), tableprinter.WithTruncate(nil))
-		table.AddField(list.ID, tableprinter.WithColor(faint(options.Color)))
+		table.AddField(list.ID, tableprinter.WithColor(faintFn))
 		table.EndRow()
 	}
 	return table.Render()

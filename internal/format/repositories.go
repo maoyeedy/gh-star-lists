@@ -1,7 +1,6 @@
 package format
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -33,10 +32,7 @@ func WriteRepositoriesWithOptions(w io.Writer, options Options, repos []githubap
 }
 
 func writeRepositoriesJSON(w io.Writer, repos []githubapi.Repository) error {
-	if repos == nil {
-		repos = []githubapi.Repository{}
-	}
-	return json.NewEncoder(w).Encode(repos)
+	return writeJSONSlice(w, repos)
 }
 
 func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
@@ -53,14 +49,16 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 		_, err := fmt.Fprintln(w, "No repositories found.")
 		return err
 	}
+	boldFn := bold(options.Color)
+	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
-	table.AddHeader([]string{"REPOSITORY", "STARS", "FORK", "PUSHED", "URL"}, tableprinter.WithColor(bold(options.Color)))
+	table.AddHeader([]string{"REPOSITORY", "STARS", "FORK", "PUSHED", "URL"}, tableprinter.WithColor(boldFn))
 	for _, repo := range repos {
-		table.AddField(repo.NameWithOwner, tableprinter.WithColor(bold(options.Color)))
+		table.AddField(repo.NameWithOwner, tableprinter.WithColor(boldFn))
 		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))
 		table.AddField(yesNo(repo.IsFork), tableprinter.WithTruncate(nil))
 		table.AddField(shortAge(repo.PushedAt, options.Now), tableprinter.WithTruncate(nil))
-		table.AddField(repo.URL, tableprinter.WithColor(faint(options.Color)))
+		table.AddField(repo.URL, tableprinter.WithColor(faintFn))
 		table.EndRow()
 	}
 	return table.Render()

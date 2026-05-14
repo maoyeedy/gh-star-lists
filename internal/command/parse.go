@@ -16,6 +16,14 @@ const (
 	ActionHelp  Action = "help"
 )
 
+// Sort keys accepted by --sort for list and repos subcommands.
+const (
+	SortKeyAdded  = "added"
+	SortKeyName   = "name"
+	SortKeyStars  = "stars"
+	SortKeyPushed = "pushed"
+)
+
 // Parsed is the normalized command state consumed by the runner.
 type Parsed struct {
 	Action   Action
@@ -128,14 +136,14 @@ func validateSort(action Action, sortKey string, sortDesc bool) error {
 	switch action {
 	case ActionList:
 		switch sortKey {
-		case "added", "name":
+		case SortKeyAdded, SortKeyName:
 			return nil
 		default:
 			return usage("unsupported sort key %q for list; supported keys: added, name", sortKey)
 		}
 	case ActionRepos:
 		switch sortKey {
-		case "name", "stars", "pushed":
+		case SortKeyName, SortKeyStars, SortKeyPushed:
 			return nil
 		default:
 			return usage("unsupported sort key %q for repos; supported keys: name, stars, pushed", sortKey)

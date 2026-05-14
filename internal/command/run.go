@@ -84,7 +84,7 @@ func sortStarLists(lists []githubapi.StarList, sortKey string, desc bool) {
 		return
 	}
 
-	sort.SliceStable(lists, func(i, j int) bool {
+	sort.Slice(lists, func(i, j int) bool {
 		cmp := compareStarLists(lists[i], lists[j], sortKey)
 		if desc {
 			return cmp > 0
@@ -95,11 +95,11 @@ func sortStarLists(lists []githubapi.StarList, sortKey string, desc bool) {
 
 func compareStarLists(left, right githubapi.StarList, sortKey string) int {
 	switch sortKey {
-	case "added":
+	case SortKeyAdded:
 		if left.LastAddedAt != right.LastAddedAt {
 			return strings.Compare(left.LastAddedAt, right.LastAddedAt)
 		}
-	case "name":
+	case SortKeyName:
 		leftName := strings.ToLower(left.Name)
 		rightName := strings.ToLower(right.Name)
 		if leftName != rightName {
@@ -117,7 +117,7 @@ func sortRepositories(repos []githubapi.Repository, sortKey string, desc bool) {
 		return
 	}
 
-	sort.SliceStable(repos, func(i, j int) bool {
+	sort.Slice(repos, func(i, j int) bool {
 		cmp := compareRepositories(repos[i], repos[j], sortKey)
 		if desc {
 			return cmp > 0
@@ -128,15 +128,15 @@ func sortRepositories(repos []githubapi.Repository, sortKey string, desc bool) {
 
 func compareRepositories(left, right githubapi.Repository, sortKey string) int {
 	switch sortKey {
-	case "name":
+	case SortKeyName:
 		if cmp := strings.Compare(strings.ToLower(left.NameWithOwner), strings.ToLower(right.NameWithOwner)); cmp != 0 {
 			return cmp
 		}
-	case "stars":
+	case SortKeyStars:
 		if left.StargazerCount != right.StargazerCount {
 			return left.StargazerCount - right.StargazerCount
 		}
-	case "pushed":
+	case SortKeyPushed:
 		if left.PushedAt != right.PushedAt {
 			return strings.Compare(left.PushedAt, right.PushedAt)
 		}

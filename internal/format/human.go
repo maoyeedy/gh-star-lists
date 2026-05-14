@@ -1,26 +1,29 @@
 package format
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 )
 
-func bold(enabled bool) func(string) string {
+func ansiStyle(enabled bool, code string) func(string) string {
 	if !enabled {
 		return nil
 	}
 	return func(s string) string {
-		return "\x1b[1m" + s + "\x1b[0m"
+		return "\x1b[" + code + "m" + s + "\x1b[0m"
 	}
 }
 
-func faint(enabled bool) func(string) string {
-	if !enabled {
-		return nil
+func bold(enabled bool) func(string) string  { return ansiStyle(enabled, "1") }
+func faint(enabled bool) func(string) string { return ansiStyle(enabled, "2") }
+
+func writeJSONSlice[T any](w io.Writer, data []T) error {
+	if data == nil {
+		data = make([]T, 0)
 	}
-	return func(s string) string {
-		return "\x1b[2m" + s + "\x1b[0m"
-	}
+	return json.NewEncoder(w).Encode(data)
 }
 
 func shortAge(value string, now time.Time) string {

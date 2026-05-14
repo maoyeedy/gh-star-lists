@@ -1,0 +1,29 @@
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - goprintffuncname
+    - ineffassign
+    - misspell
+    - nolintlint
+    - staticcheck
+    - tparallel
+    - unused
+    - whitespace
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    golines:
+      chain-split-dots: true
+  exclusions:
+    generated: lax

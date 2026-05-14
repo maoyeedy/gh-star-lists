@@ -3,6 +3,7 @@ package format_test
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
@@ -57,6 +58,7 @@ func TestWriteRepositoriesEmptyOutputs(t *testing.T) {
 		{name: "json", mode: format.OutputJSON, want: "[]\n"},
 		{name: "tsv", mode: format.OutputTSV, want: ""},
 		{name: "human", mode: format.OutputHuman, want: "No repositories found.\n"},
+		{name: "plain", mode: format.OutputPlain, want: "No repositories found.\n"},
 	}
 
 	for _, tt := range tests {
@@ -83,7 +85,29 @@ func TestWriteRepositoriesHumanIsDeterministic(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := format.WriteRepositories(&out, format.OutputHuman, repos); err != nil {
+	options := format.Options{Mode: format.OutputHuman, Width: 120, Now: time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC)}
+	if err := format.WriteRepositoriesWithOptions(&out, options, repos); err != nil {
+		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
+	}
+
+	want := "REPOSITORY    STARS  FORK  PUSHED  URL\n" +
+		"cli/cli       41000  no    2y ago  https://github.com/cli/cli\n" +
+		"fork/project  0      yes   -       https://github.com/fork/project\n"
+	if got := out.String(); got != want {
+		t.Fatalf("WriteRepositories human output mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestWriteRepositoriesPlainPreservesDetailedOutput(t *testing.T) {
+	t.Parallel()
+
+	repos := []githubapi.Repository{
+		{NameWithOwner: "cli/cli", Description: "GitHub CLI", IsFork: false, StargazerCount: 41000, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/cli/cli"},
+		{NameWithOwner: "fork/project", IsFork: true, StargazerCount: 0, URL: "https://github.com/fork/project"},
+	}
+
+	var out bytes.Buffer
+	if err := format.WriteRepositories(&out, format.OutputPlain, repos); err != nil {
 		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
 	}
 
@@ -114,5 +138,8 @@ func TestWriteRepositoriesReturnsWriterErrors(t *testing.T) {
 	}
 	if err := format.WriteRepositories(errWriter{}, format.OutputJSON, repos); err == nil {
 		t.Fatal("WriteRepositories JSON returned nil error for failing writer")
+	}
+	if err := format.WriteRepositories(errWriter{}, format.OutputPlain, repos); err == nil {
+		t.Fatal("WriteRepositories plain returned nil error for failing writer")
 	}
 }

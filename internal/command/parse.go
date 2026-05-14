@@ -38,6 +38,7 @@ func Parse(argv []string) (Parsed, error) {
 		positionals []string
 		jsonFlag    bool
 		tsvFlag     bool
+		plainFlag   bool
 	)
 
 	for _, arg := range argv {
@@ -50,6 +51,8 @@ func Parse(argv []string) (Parsed, error) {
 			jsonFlag = true
 		case "--tsv":
 			tsvFlag = true
+		case "--plain":
+			plainFlag = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return Parsed{}, usage("unknown flag %q", arg)
@@ -58,7 +61,7 @@ func Parse(argv []string) (Parsed, error) {
 		}
 	}
 
-	mode, err := format.SelectOutputMode(jsonFlag, tsvFlag)
+	mode, err := format.SelectOutputMode(jsonFlag, tsvFlag, plainFlag)
 	if err != nil {
 		return Parsed{}, usage("%s", err.Error())
 	}

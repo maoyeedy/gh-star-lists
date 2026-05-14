@@ -20,6 +20,11 @@ const (
 // Run does not construct GitHub clients, so help and usage paths remain
 // auth-free and testable.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service) int {
+	return RunWithOptions(ctx, args, stdout, stderr, service, format.DefaultOptions)
+}
+
+// RunWithOptions is Run with injectable output settings for deterministic tests.
+func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service, outputOptionsForMode func(format.OutputMode) format.Options) int {
 	parsed, err := Parse(args)
 	if err != nil {
 		var usageErr *UsageError
@@ -43,13 +48,17 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, service g
 		return ExitFailure
 	}
 
+	if outputOptionsForMode == nil {
+		outputOptionsForMode = format.DefaultOptions
+	}
+	outputOptions := outputOptionsForMode(parsed.Mode)
 	switch parsed.Action {
 	case ActionList:
 		lists, err := service.ListStarLists(ctx)
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)
 		}
-		if err := format.WriteStarLists(stdout, parsed.Mode, lists); err != nil {
+		if err := format.WriteStarListsWithOptions(stdout, outputOptions, lists); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
 	case ActionRepos:
@@ -57,7 +66,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, service g
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err)
 		}
-		if err := format.WriteRepositories(stdout, parsed.Mode, repos); err != nil {
+		if err := format.WriteRepositoriesWithOptions(stdout, outputOptions, repos); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
 	default:

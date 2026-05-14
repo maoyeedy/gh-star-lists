@@ -3,10 +3,13 @@ package command_test
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/command"
+	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -48,13 +51,25 @@ func fixtureService() *fakeService {
 	}
 }
 
+func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service) int {
+	return command.RunWithOptions(ctx, args, stdout, stderr, service, testOutputOptions)
+}
+
+func testOutputOptions(mode format.OutputMode) format.Options {
+	return format.Options{
+		Mode:  mode,
+		Width: 120,
+		Now:   time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+	}
+}
+
 func TestRunHelpWritesStdoutAndDoesNotUseService(t *testing.T) {
 	t.Parallel()
 
 	svc := &fakeService{listErr: errors.New("not implemented"), reposErr: errors.New("not implemented")}
 	var stdout, stderr strings.Builder
 
-	code := command.Run(context.Background(), []string{"--help"}, &stdout, &stderr, svc)
+	code := runCommand(context.Background(), []string{"--help"}, &stdout, &stderr, svc)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run help exit = %d, want %d", code, command.ExitSuccess)
@@ -81,6 +96,12 @@ func TestRunWritesListOutput(t *testing.T) {
 		{
 			name: "empty args default human list",
 			argv: nil,
+			want: "NAME      ADDED   ID\n" +
+				"Go Tools  2y ago  UL_1\n",
+		},
+		{
+			name: "plain list",
+			argv: []string{"list", "--plain"},
 			want: "Go Tools\n" +
 				"  Description: CLI helpers\n" +
 				"  Last added: 2024-05-01T12:00:00Z\n" +
@@ -105,7 +126,7 @@ func TestRunWritesListOutput(t *testing.T) {
 			svc := fixtureService()
 			var stdout, stderr strings.Builder
 
-			code := command.Run(context.Background(), tt.argv, &stdout, &stderr, svc)
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
 				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
@@ -150,7 +171,7 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 			svc := fixtureService()
 			var stdout, stderr strings.Builder
 
-			code := command.Run(context.Background(), tt.argv, &stdout, &stderr, svc)
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
 				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
@@ -191,7 +212,7 @@ func TestRunEmptyResultsSucceed(t *testing.T) {
 			svc := &fakeService{}
 			var stdout, stderr strings.Builder
 
-			code := command.Run(context.Background(), tt.argv, &stdout, &stderr, svc)
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
 				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
@@ -218,7 +239,7 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 		{name: "unknown command", argv: []string{"stars"}, wantErr: "unknown command \"stars\""},
 		{name: "extra list args", argv: []string{"list", "extra"}, wantErr: "too many arguments for list"},
 		{name: "extra repos args", argv: []string{"repos", "UL_1", "extra"}, wantErr: "too many arguments for repos"},
-		{name: "conflicting output flags", argv: []string{"list", "--json", "--tsv"}, wantErr: "cannot combine --json and --tsv"},
+		{name: "conflicting output flags", argv: []string{"list", "--json", "--tsv"}, wantErr: "cannot combine --plain, --json, and --tsv"},
 	}
 
 	for _, tt := range tests {
@@ -228,7 +249,7 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 			svc := &fakeService{listErr: errors.New("not implemented"), reposErr: errors.New("not implemented")}
 			var stdout, stderr strings.Builder
 
-			code := command.Run(context.Background(), tt.argv, &stdout, &stderr, svc)
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitUsage {
 				t.Fatalf("Run(%q) exit = %d, want %d", tt.argv, code, command.ExitUsage)
@@ -294,7 +315,7 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 
 			var stdout, stderr strings.Builder
 
-			code := command.Run(context.Background(), tt.argv, &stdout, &stderr, tt.svc)
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, tt.svc)
 
 			if code != command.ExitFailure {
 				t.Fatalf("Run(%q) exit = %d, want %d", tt.argv, code, command.ExitFailure)
@@ -320,7 +341,7 @@ func TestRunNilServiceReturnsFailure(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 
-	code := command.Run(context.Background(), []string{"list"}, &stdout, &stderr, nil)
+	code := runCommand(context.Background(), []string{"list"}, &stdout, &stderr, nil)
 
 	if code != command.ExitFailure {
 		t.Fatalf("Run nil service exit = %d, want %d", code, command.ExitFailure)
@@ -352,7 +373,7 @@ func TestRunWriteFailuresReturnFailure(t *testing.T) {
 
 			var stderr strings.Builder
 
-			code := command.Run(context.Background(), tt.argv, errWriter{}, &stderr, tt.svc)
+			code := runCommand(context.Background(), tt.argv, errWriter{}, &stderr, tt.svc)
 
 			if code != command.ExitFailure {
 				t.Fatalf("Run %s write failure exit = %d, want %d", tt.name, code, command.ExitFailure)

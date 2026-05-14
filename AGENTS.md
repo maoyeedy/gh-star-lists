@@ -63,3 +63,7 @@ Use Conventional Commits such as `feat:`, `fix:`, `test:`, and `docs:`. Keep com
 ## Security
 
 Authentication is delegated to GitHub CLI. Do not store tokens. Keep the extension read-only unless README, tests, and release notes are updated for any future write behavior.
+
+## Ctx7
+   Context7-compatible library ID: /cli/go-gh
+   Description: go-gh is a Go library that simplifies authoring GitHub CLI extensions by providing modules for GitHub API requests, repository management, terminal capabilities, and output formatting.

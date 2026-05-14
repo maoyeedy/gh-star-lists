@@ -30,8 +30,8 @@ Query commands require a signed-in GitHub CLI account with access to the Star Li
 ## Commands
 
 ```text
-gh star-lists [list] [--json | --tsv]
-gh star-lists repos <LIST_ID> [--json | --tsv]
+gh star-lists [list] [--plain | --json | --tsv]
+gh star-lists repos <LIST_ID> [--plain | --json | --tsv]
 gh star-lists --help
 ```
 
@@ -39,6 +39,7 @@ gh star-lists --help
 
 ```sh
 gh star-lists
+gh star-lists --plain
 gh star-lists --json
 gh star-lists --tsv
 ```
@@ -47,8 +48,27 @@ List repositories in one Star List:
 
 ```sh
 gh star-lists repos UL_kwDOExample
+gh star-lists repos UL_kwDOExample --plain
 gh star-lists repos UL_kwDOExample --json
 gh star-lists repos UL_kwDOExample --tsv
+```
+
+Default human output is a compact table:
+
+```text
+NAME           ADDED   ID
+Game Dev       6d ago  UL_SAMPLE_GODOT
+CLI Tools      1mo ago UL_SAMPLE_CLI
+AI             1mo ago UL_SAMPLE_AI
+```
+
+Use `--plain` for the detailed multiline view:
+
+```text
+Game Dev
+  Description: Game engine resources
+  Last added: 2026-05-08T03:14:54Z
+  ID: UL_SAMPLE_GODOT
 ```
 
 ## Output Fields
@@ -69,7 +89,7 @@ Repository JSON and TSV fields:
 5. `pushedAt`
 6. `url`
 
-Human output is the default. JSON uses lowerCamelCase fields. TSV preserves the field order above.
+Human output is the default and is optimized for reading. `--plain` prints the detailed text view. JSON uses lowerCamelCase fields. TSV preserves the field order above.
 
 ## Recipes
 

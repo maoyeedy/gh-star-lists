@@ -4,21 +4,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 
+	"github.com/cli/go-gh/v2/pkg/tableprinter"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 // WriteRepositories writes repositories to w in the requested output mode.
 func WriteRepositories(w io.Writer, mode OutputMode, repos []githubapi.Repository) error {
-	switch mode {
+	return WriteRepositoriesWithOptions(w, Options{Mode: mode}, repos)
+}
+
+// WriteRepositoriesWithOptions writes repositories with terminal-aware human settings.
+func WriteRepositoriesWithOptions(w io.Writer, options Options, repos []githubapi.Repository) error {
+	options = normalizeOptions(options)
+	switch options.Mode {
 	case OutputJSON:
 		return writeRepositoriesJSON(w, repos)
 	case OutputTSV:
 		return writeRepositoriesTSV(w, repos)
+	case OutputPlain:
+		return writeRepositoriesPlain(w, repos)
 	case OutputHuman:
-		return writeRepositoriesHuman(w, repos)
+		return writeRepositoriesHuman(w, options, repos)
 	default:
-		return fmt.Errorf("unsupported output mode %q", mode)
+		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
 }
 
@@ -38,7 +48,25 @@ func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 	return nil
 }
 
-func writeRepositoriesHuman(w io.Writer, repos []githubapi.Repository) error {
+func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repository) error {
+	if len(repos) == 0 {
+		_, err := fmt.Fprintln(w, "No repositories found.")
+		return err
+	}
+	table := tableprinter.New(w, true, options.Width)
+	table.AddHeader([]string{"REPOSITORY", "STARS", "FORK", "PUSHED", "URL"}, tableprinter.WithColor(bold(options.Color)))
+	for _, repo := range repos {
+		table.AddField(repo.NameWithOwner, tableprinter.WithColor(bold(options.Color)))
+		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))
+		table.AddField(yesNo(repo.IsFork), tableprinter.WithTruncate(nil))
+		table.AddField(shortAge(repo.PushedAt, options.Now), tableprinter.WithTruncate(nil))
+		table.AddField(repo.URL, tableprinter.WithColor(faint(options.Color)))
+		table.EndRow()
+	}
+	return table.Render()
+}
+
+func writeRepositoriesPlain(w io.Writer, repos []githubapi.Repository) error {
 	if len(repos) == 0 {
 		_, err := fmt.Fprintln(w, "No repositories found.")
 		return err

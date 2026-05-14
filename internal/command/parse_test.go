@@ -57,6 +57,16 @@ func TestParse(t *testing.T) {
 			argv: []string{"repos", "list-id", "--json"},
 			want: command.Parsed{Action: command.ActionRepos, ListID: "list-id", Mode: format.OutputJSON},
 		},
+		{
+			name: "plain before subcommand",
+			argv: []string{"--plain", "list"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputPlain},
+		},
+		{
+			name: "plain after repos id",
+			argv: []string{"repos", "list-id", "--plain"},
+			want: command.Parsed{Action: command.ActionRepos, ListID: "list-id", Mode: format.OutputPlain},
+		},
 	}
 
 	for _, tt := range tests {
@@ -87,7 +97,8 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "repos missing id", argv: []string{"repos"}, wantMessage: "missing list id"},
 		{name: "list extra arg", argv: []string{"list", "extra"}, wantMessage: "too many arguments"},
 		{name: "repos extra arg", argv: []string{"repos", "id", "extra"}, wantMessage: "too many arguments"},
-		{name: "conflicting output flags", argv: []string{"--json", "--tsv"}, wantMessage: "cannot combine --json and --tsv"},
+		{name: "conflicting output flags", argv: []string{"--json", "--tsv"}, wantMessage: "cannot combine --plain, --json, and --tsv"},
+		{name: "conflicting plain output flag", argv: []string{"--plain", "--json"}, wantMessage: "cannot combine --plain, --json, and --tsv"},
 		{name: "unknown flag", argv: []string{"--xml"}, wantMessage: "unknown flag"},
 		{name: "cache flag is deferred", argv: []string{"--cache"}, wantMessage: "unknown flag"},
 		{name: "filter flag is deferred", argv: []string{"--filter", "fork:false"}, wantMessage: "unknown flag"},

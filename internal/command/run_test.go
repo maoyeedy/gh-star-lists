@@ -51,6 +51,21 @@ func fixtureService() *fakeService {
 	}
 }
 
+func sortableFixtureService() *fakeService {
+	return &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "zeta", Description: "Last by name", LastAddedAt: "2024-05-03T12:00:00Z", ID: "UL_3"},
+			{Name: "Alpha", Description: "First by name", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2"},
+			{Name: "beta", Description: "Middle by name", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+		},
+		repos: []githubapi.Repository{
+			{NameWithOwner: "owner/zeta", Description: "Last by name", IsFork: false, StargazerCount: 2, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/owner/zeta"},
+			{NameWithOwner: "owner/Alpha", Description: "First by name", IsFork: false, StargazerCount: 5, PushedAt: "2024-05-03T12:00:00Z", URL: "https://github.com/owner/Alpha"},
+			{NameWithOwner: "owner/beta", Description: "Middle by name", IsFork: false, StargazerCount: 3, PushedAt: "2024-05-02T12:00:00Z", URL: "https://github.com/owner/beta"},
+		},
+	}
+}
+
 func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service) int {
 	return command.RunWithOptions(ctx, args, stdout, stderr, service, testOutputOptions)
 }
@@ -187,6 +202,99 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 			}
 			if got := strings.Join(svc.reposListIDs, ","); got != "UL_1" {
 				t.Fatalf("repos list IDs = %q, want UL_1", got)
+			}
+		})
+	}
+}
+
+func TestRunSortsListOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{
+			name: "name ascending",
+			argv: []string{"list", "--sort", "name", "--tsv"},
+			want: "Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n" +
+				"beta\tMiddle by name\t2024-05-01T12:00:00Z\tUL_1\n" +
+				"zeta\tLast by name\t2024-05-03T12:00:00Z\tUL_3\n",
+		},
+		{
+			name: "added descending",
+			argv: []string{"list", "--sort", "added", "--desc", "--tsv"},
+			want: "zeta\tLast by name\t2024-05-03T12:00:00Z\tUL_3\n" +
+				"Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n" +
+				"beta\tMiddle by name\t2024-05-01T12:00:00Z\tUL_1\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := sortableFixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+			}
+			if got := stdout.String(); got != tt.want {
+				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunSortsReposOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{
+			name: "name ascending",
+			argv: []string{"repos", "UL_1", "--sort", "name", "--tsv"},
+			want: "owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\n" +
+				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\n" +
+				"owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\n",
+		},
+		{
+			name: "stars descending",
+			argv: []string{"repos", "UL_1", "--sort", "stars", "--desc", "--tsv"},
+			want: "owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\n" +
+				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\n" +
+				"owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\n",
+		},
+		{
+			name: "pushed ascending",
+			argv: []string{"repos", "UL_1", "--sort", "pushed", "--tsv"},
+			want: "owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\n" +
+				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\n" +
+				"owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := sortableFixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+			}
+			if got := stdout.String(); got != tt.want {
+				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
 			}
 		})
 	}

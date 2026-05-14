@@ -37,6 +37,12 @@ Use idiomatic Go and run `gofmt` on changed Go files. Keep packages small and na
 
 Do not change JSON field names or TSV field order casually; those are the CLI's scriptable output contracts. Human output can be polished, but machine output should stay stable.
 
+## Dependencies
+
+Prefer the existing `github.com/cli/go-gh/v2` stack before adding new packages. Use `pkg/api` for GitHub API access, `pkg/term` for terminal width/color/TTY decisions, and `pkg/tableprinter` for human-readable tables. Reserve `pkg/template` for future user-configurable output templates, not fixed built-in formats.
+
+Avoid bespoke terminal layout, color, or display-width code when `go-gh` already covers it. If a new import adds transitive modules, update `go.mod` and `go.sum` with normal Go tooling and keep the dependency reason obvious from the code.
+
 ## Tests
 
 Tests use Go's standard `testing` package and `*_test.go` files. Prefer table-driven tests for parsing, formatting, error messages, and GraphQL pagination. Add fixtures under `testdata` only when they make tests clearer than inline literals.
@@ -64,6 +70,6 @@ Use Conventional Commits such as `feat:`, `fix:`, `test:`, and `docs:`. Keep com
 
 Authentication is delegated to GitHub CLI. Do not store tokens. Keep the extension read-only unless README, tests, and release notes are updated for any future write behavior.
 
-## Ctx7
-   Context7-compatible library ID: /cli/go-gh
-   Description: go-gh is a Go library that simplifies authoring GitHub CLI extensions by providing modules for GitHub API requests, repository management, terminal capabilities, and output formatting.
+## Context7
+
+Use Context7 for library-backed changes. Primary docs ID for this repo: `/cli/go-gh`.

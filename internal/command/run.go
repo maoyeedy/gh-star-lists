@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
@@ -58,6 +59,7 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)
 		}
+		sortStarLists(lists, parsed.SortKey, parsed.SortDesc)
 		if err := format.WriteStarListsWithOptions(stdout, outputOptions, lists); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
@@ -66,6 +68,7 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err)
 		}
+		sortRepositories(repos, parsed.SortKey, parsed.SortDesc)
 		if err := format.WriteRepositoriesWithOptions(stdout, outputOptions, repos); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
@@ -74,6 +77,74 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 
 	return ExitSuccess
+}
+
+func sortStarLists(lists []githubapi.StarList, sortKey string, desc bool) {
+	if sortKey == "" {
+		return
+	}
+
+	sort.SliceStable(lists, func(i, j int) bool {
+		cmp := compareStarLists(lists[i], lists[j], sortKey)
+		if desc {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+}
+
+func compareStarLists(left, right githubapi.StarList, sortKey string) int {
+	switch sortKey {
+	case "added":
+		if left.LastAddedAt != right.LastAddedAt {
+			return strings.Compare(left.LastAddedAt, right.LastAddedAt)
+		}
+	case "name":
+		leftName := strings.ToLower(left.Name)
+		rightName := strings.ToLower(right.Name)
+		if leftName != rightName {
+			return strings.Compare(leftName, rightName)
+		}
+	}
+	if left.Name != right.Name {
+		return strings.Compare(left.Name, right.Name)
+	}
+	return strings.Compare(left.ID, right.ID)
+}
+
+func sortRepositories(repos []githubapi.Repository, sortKey string, desc bool) {
+	if sortKey == "" {
+		return
+	}
+
+	sort.SliceStable(repos, func(i, j int) bool {
+		cmp := compareRepositories(repos[i], repos[j], sortKey)
+		if desc {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+}
+
+func compareRepositories(left, right githubapi.Repository, sortKey string) int {
+	switch sortKey {
+	case "name":
+		if cmp := strings.Compare(strings.ToLower(left.NameWithOwner), strings.ToLower(right.NameWithOwner)); cmp != 0 {
+			return cmp
+		}
+	case "stars":
+		if left.StargazerCount != right.StargazerCount {
+			return left.StargazerCount - right.StargazerCount
+		}
+	case "pushed":
+		if left.PushedAt != right.PushedAt {
+			return strings.Compare(left.PushedAt, right.PushedAt)
+		}
+	}
+	if left.NameWithOwner != right.NameWithOwner {
+		return strings.Compare(left.NameWithOwner, right.NameWithOwner)
+	}
+	return strings.Compare(left.URL, right.URL)
 }
 
 func writeFailure(stderr io.Writer, err error) int {

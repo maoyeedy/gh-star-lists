@@ -67,6 +67,26 @@ func TestParse(t *testing.T) {
 			argv: []string{"repos", "list-id", "--plain"},
 			want: command.Parsed{Action: command.ActionRepos, ListID: "list-id", Mode: format.OutputPlain},
 		},
+		{
+			name: "sort list by name",
+			argv: []string{"list", "--sort", "name"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, SortKey: "name"},
+		},
+		{
+			name: "sort default list by added descending",
+			argv: []string{"--sort", "added", "--desc"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, SortKey: "added", SortDesc: true},
+		},
+		{
+			name: "sort repos by stars descending",
+			argv: []string{"--sort", "stars", "repos", "list-id", "--desc"},
+			want: command.Parsed{Action: command.ActionRepos, ListID: "list-id", Mode: format.OutputHuman, SortKey: "stars", SortDesc: true},
+		},
+		{
+			name: "sort repos by pushed after id",
+			argv: []string{"repos", "list-id", "--sort", "pushed"},
+			want: command.Parsed{Action: command.ActionRepos, ListID: "list-id", Mode: format.OutputHuman, SortKey: "pushed"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -102,8 +122,13 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "unknown flag", argv: []string{"--xml"}, wantMessage: "unknown flag"},
 		{name: "cache flag is deferred", argv: []string{"--cache"}, wantMessage: "unknown flag"},
 		{name: "filter flag is deferred", argv: []string{"--filter", "fork:false"}, wantMessage: "unknown flag"},
-		{name: "sort flag is deferred", argv: []string{"--sort", "stars"}, wantMessage: "unknown flag"},
 		{name: "limit flag is deferred", argv: []string{"--limit", "10"}, wantMessage: "unknown flag"},
+		{name: "sort missing value", argv: []string{"--sort"}, wantMessage: "missing value for --sort"},
+		{name: "sort empty value", argv: []string{"--sort", ""}, wantMessage: "empty value for --sort"},
+		{name: "sort flag as value", argv: []string{"--sort", "--desc"}, wantMessage: "missing value for --sort"},
+		{name: "desc without sort", argv: []string{"--desc"}, wantMessage: "--desc requires --sort"},
+		{name: "list unsupported sort key", argv: []string{"list", "--sort", "stars"}, wantMessage: "unsupported sort key \"stars\" for list"},
+		{name: "repos unsupported sort key", argv: []string{"repos", "id", "--sort", "added"}, wantMessage: "unsupported sort key \"added\" for repos"},
 		{name: "empty flag value", argv: []string{""}, wantMessage: "empty argument"},
 	}
 

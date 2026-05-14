@@ -30,8 +30,8 @@ Query commands require a signed-in GitHub CLI account with access to the Star Li
 ## Commands
 
 ```text
-gh star-lists [list] [--plain | --json | --tsv]
-gh star-lists repos <LIST_ID> [--plain | --json | --tsv]
+gh star-lists [list] [--sort <KEY>] [--desc] [--plain | --json | --tsv]
+gh star-lists repos <LIST_ID> [--sort <KEY>] [--desc] [--plain | --json | --tsv]
 gh star-lists --help
 ```
 
@@ -42,6 +42,8 @@ gh star-lists
 gh star-lists --plain
 gh star-lists --json
 gh star-lists --tsv
+gh star-lists --sort name
+gh star-lists --sort added --desc
 ```
 
 List repositories in one Star List:
@@ -51,6 +53,7 @@ gh star-lists repos UL_kwDOExample
 gh star-lists repos UL_kwDOExample --plain
 gh star-lists repos UL_kwDOExample --json
 gh star-lists repos UL_kwDOExample --tsv
+gh star-lists repos UL_kwDOExample --sort stars --desc
 ```
 
 Default human output is a compact table:
@@ -91,6 +94,23 @@ Repository JSON and TSV fields:
 
 Human output is the default and is optimized for reading. `--plain` prints the detailed text view. JSON uses lowerCamelCase fields. TSV preserves the field order above.
 
+## Sorting
+
+Results use GitHub's default order unless `--sort` is provided. Explicit sorts are applied locally after all pages are fetched, so every output mode uses the same order.
+
+Star List sort keys:
+
+- `added`
+- `name`
+
+Repository sort keys:
+
+- `name`
+- `stars`
+- `pushed`
+
+Explicit sorts are ascending by default. Add `--desc` to reverse the order.
+
 ## Recipes
 
 ```sh
@@ -107,7 +127,7 @@ LIST_ID="$(gh star-lists --tsv | awk -F '\t' 'NR == 1 { print $4 }')"
 gh star-lists repos "$LIST_ID" --json | jq -r '.[] | "\(.nameWithOwner)\t\(.url)"'
 
 # Repositories sorted by stars
-gh star-lists repos "$LIST_ID" --tsv | sort -k4,4nr
+gh star-lists repos "$LIST_ID" --sort stars --desc
 ```
 
 ## Development

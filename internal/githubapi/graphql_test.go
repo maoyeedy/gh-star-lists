@@ -1,0 +1,459 @@
+package githubapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"maps"
+	"strings"
+	"testing"
+)
+
+type graphQLCall struct {
+	query     string
+	variables map[string]any
+}
+
+type fakeGraphQLExecutor struct {
+	responses []string
+	errors    []error
+	calls     []graphQLCall
+}
+
+func (f *fakeGraphQLExecutor) Execute(_ context.Context, query string, variables map[string]any, response any) error {
+	f.calls = append(f.calls, graphQLCall{query: query, variables: maps.Clone(variables)})
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return err
+		}
+	}
+	if len(f.responses) == 0 {
+		return nil
+	}
+	body := f.responses[0]
+	f.responses = f.responses[1:]
+	return json.Unmarshal([]byte(body), response)
+}
+
+func TestGraphQLServiceListStarListsReturnsEmptyResults(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"lists": {
+				"nodes": [],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	lists, err := service.ListStarLists(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarLists returned error: %v", err)
+	}
+	if len(lists) != 0 {
+		t.Fatalf("ListStarLists() = %#v, want empty", lists)
+	}
+}
+
+func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"lists": {
+				"nodes": [
+					{"id": "UL_1", "name": "Tools", "description": null, "lastAddedAt": null}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	lists, err := service.ListStarLists(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarLists returned error: %v", err)
+	}
+	want := StarList{Name: "Tools", Description: "", LastAddedAt: "", ID: "UL_1"}
+	if len(lists) != 1 || lists[0] != want {
+		t.Fatalf("ListStarLists() = %#v, want %#v", lists, []StarList{want})
+	}
+}
+
+func TestGraphQLServiceListStarListsWrapsLaterPageErrorAndReturnsNoPartialResults(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("rate limited")
+	executor := &fakeGraphQLExecutor{
+		responses: []string{`{
+			"viewer": {
+				"lists": {
+					"nodes": [
+						{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z"}
+					],
+					"pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
+				}
+			}
+		}`},
+		errors: []error{nil, boom},
+	}
+	service := newGraphQLService(executor)
+
+	lists, err := service.ListStarLists(context.Background())
+	if err == nil {
+		t.Fatal("ListStarLists error = nil, want wrapped executor error")
+	}
+	if !strings.HasPrefix(err.Error(), "GitHub GraphQL request failed: ") {
+		t.Fatalf("error = %q, want stable GraphQL prefix", err.Error())
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("error = %v, want to wrap executor error %v", err, boom)
+	}
+	if lists != nil {
+		t.Fatalf("ListStarLists partial results = %#v, want nil", lists)
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(executor.calls))
+	}
+}
+
+func TestGraphQLServiceListStarListsStopsBeforeRequestWhenContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	executor := &fakeGraphQLExecutor{}
+	service := newGraphQLService(executor)
+
+	lists, err := service.ListStarLists(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListStarLists error = %v, want context.Canceled", err)
+	}
+	if lists != nil {
+		t.Fatalf("ListStarLists results = %#v, want nil", lists)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor calls = %d, want 0", len(executor.calls))
+	}
+}
+
+func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"lists": {
+				"nodes": [
+					{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z"}
+				],
+				"pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
+			}
+		}
+	}`, `{
+		"viewer": {
+			"lists": {
+				"nodes": [
+					{"id": "UL_2", "name": "Libraries", "description": "Packages", "lastAddedAt": "2025-02-03T04:05:06Z"}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	lists, err := service.ListStarLists(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarLists returned error: %v", err)
+	}
+
+	want := []StarList{
+		{Name: "Tools", Description: "Useful CLIs", LastAddedAt: "2025-01-02T03:04:05Z", ID: "UL_1"},
+		{Name: "Libraries", Description: "Packages", LastAddedAt: "2025-02-03T04:05:06Z", ID: "UL_2"},
+	}
+	if len(lists) != len(want) || lists[0] != want[0] || lists[1] != want[1] {
+		t.Fatalf("ListStarLists() = %#v, want %#v", lists, want)
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(executor.calls))
+	}
+	if got := executor.calls[0].variables["endCursor"]; got != nil {
+		t.Fatalf("first page endCursor = %#v, want nil", got)
+	}
+	if got := executor.calls[1].variables["endCursor"]; got != "cursor-1" {
+		t.Fatalf("second page endCursor = %#v, want cursor-1", got)
+	}
+}
+
+func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"lists": {
+				"nodes": [
+					{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z"}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	lists, err := service.ListStarLists(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarLists returned error: %v", err)
+	}
+
+	want := []StarList{{Name: "Tools", Description: "Useful CLIs", LastAddedAt: "2025-01-02T03:04:05Z", ID: "UL_1"}}
+	if len(lists) != len(want) || lists[0] != want[0] {
+		t.Fatalf("ListStarLists() = %#v, want %#v", lists, want)
+	}
+	if len(executor.calls) != 1 {
+		t.Fatalf("executor calls = %d, want 1", len(executor.calls))
+	}
+	if got := executor.calls[0].variables["endCursor"]; got != nil {
+		t.Fatalf("first page endCursor = %#v, want nil", got)
+	}
+	if !strings.Contains(executor.calls[0].query, "lists(first: 100, after: $endCursor)") {
+		t.Fatalf("query = %q, want paginated Star Lists query", executor.calls[0].query)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"node": {
+			"__typename": "UserList",
+			"name": "Tools",
+			"items": {
+				"nodes": [
+					{"__typename": "Repository", "nameWithOwner": "cli/cli", "description": "GitHub CLI", "url": "https://github.com/cli/cli", "isFork": false, "stargazerCount": 39000, "pushedAt": "2026-01-02T03:04:05Z"}
+				],
+				"pageInfo": {"hasNextPage": true, "endCursor": "repo-cursor-1"}
+			}
+		}
+	}`, `{
+		"node": {
+			"__typename": "UserList",
+			"name": "Tools",
+			"items": {
+				"nodes": [
+					{"__typename": "Repository", "nameWithOwner": "cli/go-gh", "description": "Go helpers", "url": "https://github.com/cli/go-gh", "isFork": false, "stargazerCount": 700, "pushedAt": "2026-02-03T04:05:06Z"}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_1")
+	if err != nil {
+		t.Fatalf("ListRepositories returned error: %v", err)
+	}
+
+	want := []Repository{
+		{NameWithOwner: "cli/cli", Description: "GitHub CLI", URL: "https://github.com/cli/cli", IsFork: false, StargazerCount: 39000, PushedAt: "2026-01-02T03:04:05Z"},
+		{NameWithOwner: "cli/go-gh", Description: "Go helpers", URL: "https://github.com/cli/go-gh", IsFork: false, StargazerCount: 700, PushedAt: "2026-02-03T04:05:06Z"},
+	}
+	if len(repositories) != len(want) || repositories[0] != want[0] || repositories[1] != want[1] {
+		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, want)
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(executor.calls))
+	}
+	if got := executor.calls[0].variables["id"]; got != "UL_1" {
+		t.Fatalf("first page id = %#v, want UL_1", got)
+	}
+	if got := executor.calls[0].variables["endCursor"]; got != nil {
+		t.Fatalf("first page endCursor = %#v, want nil", got)
+	}
+	if got := executor.calls[1].variables["endCursor"]; got != "repo-cursor-1" {
+		t.Fatalf("second page endCursor = %#v, want repo-cursor-1", got)
+	}
+	if !strings.Contains(executor.calls[0].query, "items(first: 100, after: $endCursor)") {
+		t.Fatalf("query = %q, want paginated UserList items query", executor.calls[0].query)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"node": {
+			"__typename": "UserList",
+			"items": {
+				"nodes": [
+					{"__typename": "Repository", "nameWithOwner": "owner/repo", "description": null, "url": "https://github.com/owner/repo", "isFork": true, "stargazerCount": 12, "pushedAt": null}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_1")
+	if err != nil {
+		t.Fatalf("ListRepositories returned error: %v", err)
+	}
+	want := Repository{NameWithOwner: "owner/repo", Description: "", URL: "https://github.com/owner/repo", IsFork: true, StargazerCount: 12, PushedAt: ""}
+	if len(repositories) != 1 || repositories[0] != want {
+		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
+	}
+}
+
+func TestGraphQLServiceListRepositoriesReturnsEmptyResults(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"node": {
+			"__typename": "UserList",
+			"items": {
+				"nodes": [],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_1")
+	if err != nil {
+		t.Fatalf("ListRepositories returned error: %v", err)
+	}
+	if len(repositories) != 0 {
+		t.Fatalf("ListRepositories() = %#v, want empty", repositories)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesReturnsErrInaccessibleListForWrongNodeType(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{"node": {"__typename": "Repository"}}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "R_1")
+	if !errors.Is(err, ErrInaccessibleList) {
+		t.Fatalf("ListRepositories error = %v, want ErrInaccessibleList", err)
+	}
+	if repositories != nil {
+		t.Fatalf("ListRepositories results = %#v, want nil", repositories)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesReturnsErrInaccessibleListForNilNode(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{"node": null}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_missing")
+	if !errors.Is(err, ErrInaccessibleList) {
+		t.Fatalf("ListRepositories error = %v, want ErrInaccessibleList", err)
+	}
+	if repositories != nil {
+		t.Fatalf("ListRepositories results = %#v, want nil", repositories)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesReturnsErrInaccessibleListForMissingItemsConnection(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{"node": {"__typename": "UserList", "items": null}}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_1")
+	if !errors.Is(err, ErrInaccessibleList) {
+		t.Fatalf("ListRepositories error = %v, want ErrInaccessibleList", err)
+	}
+	if repositories != nil {
+		t.Fatalf("ListRepositories results = %#v, want nil", repositories)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesSkipsNonRepositoryAndMissingNameItems(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"node": {
+			"__typename": "UserList",
+			"items": {
+				"nodes": [
+					null,
+					{"__typename": "Issue"},
+					{"__typename": "Repository", "nameWithOwner": "", "description": "missing name", "url": "https://github.com/missing/name", "isFork": false, "stargazerCount": 1, "pushedAt": "2026-01-01T00:00:00Z"},
+					{"__typename": "Repository", "nameWithOwner": "owner/repo", "description": "kept", "url": "https://github.com/owner/repo", "isFork": false, "stargazerCount": 2, "pushedAt": "2026-01-02T00:00:00Z"}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_1")
+	if err != nil {
+		t.Fatalf("ListRepositories returned error: %v", err)
+	}
+	want := Repository{NameWithOwner: "owner/repo", Description: "kept", URL: "https://github.com/owner/repo", IsFork: false, StargazerCount: 2, PushedAt: "2026-01-02T00:00:00Z"}
+	if len(repositories) != 1 || repositories[0] != want {
+		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
+	}
+}
+
+func TestGraphQLServiceListRepositoriesWrapsLaterPageErrorAndReturnsNoPartialResults(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("secondary rate limit")
+	executor := &fakeGraphQLExecutor{
+		responses: []string{`{
+			"node": {
+				"__typename": "UserList",
+				"items": {
+					"nodes": [
+						{"__typename": "Repository", "nameWithOwner": "owner/repo", "description": "first", "url": "https://github.com/owner/repo", "isFork": false, "stargazerCount": 1, "pushedAt": "2026-01-01T00:00:00Z"}
+					],
+					"pageInfo": {"hasNextPage": true, "endCursor": "repo-cursor-1"}
+				}
+			}
+		}`},
+		errors: []error{nil, boom},
+	}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(context.Background(), "UL_1")
+	if err == nil {
+		t.Fatal("ListRepositories error = nil, want wrapped executor error")
+	}
+	if !strings.HasPrefix(err.Error(), "GitHub GraphQL request failed: ") {
+		t.Fatalf("error = %q, want stable GraphQL prefix", err.Error())
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("error = %v, want to wrap executor error %v", err, boom)
+	}
+	if repositories != nil {
+		t.Fatalf("ListRepositories partial results = %#v, want nil", repositories)
+	}
+}
+
+func TestGraphQLServiceListRepositoriesStopsBeforeRequestWhenContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	executor := &fakeGraphQLExecutor{}
+	service := newGraphQLService(executor)
+
+	repositories, err := service.ListRepositories(ctx, "UL_1")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListRepositories error = %v, want context.Canceled", err)
+	}
+	if repositories != nil {
+		t.Fatalf("ListRepositories results = %#v, want nil", repositories)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor calls = %d, want 0", len(executor.calls))
+	}
+}

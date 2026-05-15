@@ -68,7 +68,7 @@ When reviewing changes to this repo, check:
 - [ ] New test asserts on stdout? Must set `Now` in `Options` for deterministic timestamps. Use `testOutputOptions` helper in `run_test.go`.
 - [ ] Test uses `errWriter`? Duplicate type defined in both `command_test` and `format_test` packages - this is normal Go isolation.
 - [ ] New service feature? Add to `Service` interface, update `cacheService` (both methods), update all `fakeService` implementations in tests.
-- [ ] Build passes? Run `go build && go test ./... && go vet ./...` before committing.
+- [ ] Build passes? Run `/go-check` (or `goimports -w . && go vet ./... && go test ./...`) before committing.
 
 ## Future Work (Agent Guidance)
 
@@ -83,15 +83,27 @@ When implementing these features, follow the patterns below:
 - WSL users: smoke tests skip on WSL bash. Use Git Bash or native Windows shell.
 - Temp directory for smoke test fakes uses `t.TempDir()` - auto-cleaned by Go test runner.
 
+## Context7 Library IDs
+
+Use `query-docs` with these IDs when working on the relevant package. Skip `resolve-library-id` — IDs are pre-resolved.
+
+| Library | Context7 ID | Query when… |
+|---------|-------------|-------------|
+| `go-gh/v2` | `/cli/go-gh` | GraphQL executor, pagination, terminal detection, auth, `go-gh` API surface |
+| `Masterminds/sprig` | `/masterminds/sprig` | `--template` mode, template function availability or behavior |
+| `charmbracelet/lipgloss` | `/charmbracelet/lipgloss` | ANSI color profiles, styling API, `ansiStyle` / `bold` / `faint` internals |
+| `gopkg.in/yaml.v3` | `/yaml/go-yaml` | YAML marshaling/unmarshaling, struct tags |
+
 ## Go Files
 
 - Use UTF-8 plain text only.
 - Do not introduce smart quotes, non-breaking spaces, zero-width characters, Markdown escapes, or other exotic whitespace.
-- Go permits tabs; do not manually align indentation. Let `gofmt` handle formatting.
+- Go permits tabs; do not manually align indentation. Let `goimports` handle formatting.
 - Prefer raw string literals with backticks for regexes and Windows paths when practical.
 - Prefer syntax-aware or anchor-based edits over exact whitespace patches.
 - Prefer `ast-grep` for structural Go edits such as switch cases, function signatures, methods, interfaces, and struct changes.
 - Prefer `sd` for focused token/keyword-based replacements, insertions, and bulk renames. Match semantic anchors, not tab depth.
 - Avoid multi-line edits that depend on counting tabs or exact indentation.
-- After editing Go files, run `gofmt -w` on touched files. If imports changed, run `goimports -w` on touched files.
-- Final validation: `gofmt -w . && go test ./...`
+- After editing Go files, run `goimports -w` on touched files. (`goimports` is a superset of `gofmt` — handles both formatting and imports in one pass.)
+- Final validation: `/go-check` skill (runs `goimports -w .`, `go vet ./...`, `go test ./...`). Or manually: `goimports -w . && go vet ./... && go test ./...`
+- Before committing: run `/ascii-check` skill to catch non-ASCII punctuation in Go source.

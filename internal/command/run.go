@@ -145,11 +145,8 @@ func filterStarLists(lists []githubapi.StarList, filters []Filter) []githubapi.S
 	for _, l := range lists {
 		keep := true
 		for _, f := range filters {
-			switch f.Key {
-			case FilterKeyName:
-				if !strings.Contains(strings.ToLower(l.Name), f.Value) {
-					keep = false
-				}
+			if f.Key == FilterKeyName && !strings.Contains(strings.ToLower(l.Name), f.Value) {
+				keep = false
 			}
 		}
 		if keep {

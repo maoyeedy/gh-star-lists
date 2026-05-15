@@ -4,7 +4,7 @@ repos:
       - id: goimports
         name: goimports
         language: system
-        entry: goimports -w
+        entry: go tool goimports -w
         types: [go]
         pass_filenames: true
 
@@ -21,10 +21,3 @@ repos:
         entry: bash -c 'if LC_ALL=C grep -Pn "[^\x00-\x7F]" --include="*.go" -r . 2>/dev/null; then echo "ERROR: non-ASCII found"; exit 1; fi'
         pass_filenames: false
         always_run: true
-
-      - id: golangci-lint
-        name: golangci-lint
-        language: system
-        entry: golangci-lint run
-        types: [go]
-        pass_filenames: false

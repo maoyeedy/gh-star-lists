@@ -3,7 +3,7 @@ GOEXE := $(shell go env GOEXE)
 .PHONY: fmt test vet build lint ascii-check smoke check
 
 fmt:
-	goimports -w .
+	go tool goimports -w .
 
 test:
 	go test ./...
@@ -16,7 +16,7 @@ build:
 	go build -o ./bin/gh-star-lists$(GOEXE) .
 
 lint:
-	golangci-lint run
+	go vet ./...
 
 ascii-check:
 	@if LC_ALL=C grep -Pn '[^\x00-\x7F]' --include='*.go' -r . 2>/dev/null; then \

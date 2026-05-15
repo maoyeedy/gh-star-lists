@@ -68,7 +68,7 @@ When reviewing changes to this repo, check:
 - [ ] New test asserts on stdout? Must set `Now` in `Options` for deterministic timestamps. Use `testOutputOptions` helper in `run_test.go`.
 - [ ] Test uses `errWriter`? Duplicate type defined in both `command_test` and `format_test` packages - this is normal Go isolation.
 - [ ] New service feature? Add to `Service` interface, update `cacheService` (both methods), update all `fakeService` implementations in tests.
-- [ ] Build passes? Run `/go-check` (or `goimports -w . && go vet ./... && go test ./...`) before committing.
+- [ ] Build passes? Run `make check` before committing.
 
 ## Future Work (Agent Guidance)
 
@@ -105,5 +105,5 @@ Use `query-docs` with these IDs when working on the relevant package. Skip `reso
 - Prefer `sd` for focused token/keyword-based replacements, insertions, and bulk renames. Match semantic anchors, not tab depth.
 - Avoid multi-line edits that depend on counting tabs or exact indentation.
 - After editing Go files, run `goimports -w` on touched files. (`goimports` is a superset of `gofmt` — handles both formatting and imports in one pass.)
-- Final validation: `/go-check` skill (runs `goimports -w .`, `go vet ./...`, `go test ./...`). Or manually: `goimports -w . && go vet ./... && go test ./...`
-- Before committing: run `/ascii-check` skill to catch non-ASCII punctuation in Go source.
+- Final validation: `make check` (runs `goimports -w .`, ascii-check, `go vet ./...`, `go test ./...`, `go build`). Skills `/go-check` and `/ascii-check` available as interactive aliases.
+- Before committing: `make ascii-check` or `/ascii-check` to catch non-ASCII punctuation in Go source.

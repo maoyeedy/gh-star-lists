@@ -32,3 +32,8 @@ go.work.sum
 # .vscode/
 
 .gocache/
+
+# Local build outputs
+/bin/
+/gh-star-lists
+/gh-star-lists.exe

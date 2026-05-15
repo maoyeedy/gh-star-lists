@@ -28,6 +28,7 @@ type StarList struct {
 	LastAddedAt string `json:"lastAddedAt"`
 	ID          string `json:"id"`
 	RepoCount   int    `json:"repoCount"`
+	URL         string `json:"url"`
 }
 
 type Repository struct {

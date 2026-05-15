@@ -14,6 +14,7 @@ func makeBenchStarLists(n int) []githubapi.StarList {
 			Description: "bench",
 			LastAddedAt: "2025-01-01T00:00:00Z",
 			ID:          "UL_" + string(rune('0'+i%10)),
+			URL:         "https://github.com/stars/maoyeedy/lists/list-" + string(rune('A'+i%26)),
 		}
 	}
 	return lists

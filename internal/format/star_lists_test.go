@@ -27,8 +27,9 @@ func TestWriteStarListsTSVIncludesRepoCount(t *testing.T) {
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
 			RepoCount:   5,
+			URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 		},
-		{Name: "No Description", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2", RepoCount: 0},
+		{Name: "No Description", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2", RepoCount: 0, URL: "https://github.com/stars/maoyeedy/lists/no-description"},
 	}
 
 	var out bytes.Buffer
@@ -36,8 +37,8 @@ func TestWriteStarListsTSVIncludesRepoCount(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "Go Tools\tCLI helpers\t5\t2024-05-01T12:00:00Z\tUL_1\n" +
-		"No Description\t\t0\t2024-05-02T12:00:00Z\tUL_2\n"
+	want := "Go Tools\tCLI helpers\t5\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/go-tools\n" +
+		"No Description\t\t0\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/no-description\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists TSV output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -53,6 +54,7 @@ func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
 			RepoCount:   5,
+			URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 		},
 	}
 
@@ -61,7 +63,7 @@ func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":5}]\n"
+	want := "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":5,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists JSON output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -106,6 +108,7 @@ func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
 			RepoCount:   5,
+			URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 		},
 		{Name: "No Optional Fields", ID: "UL_2", RepoCount: 0},
 	}
@@ -120,9 +123,9 @@ func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "NAME                REPOS  ADDED   ID\n" +
-		"Go Tools            5      2y ago  UL_1\n" +
-		"No Optional Fields  0      -       UL_2\n"
+	want := "NAME                REPOS  ADDED   ID    URL\n" +
+		"Go Tools            5      2y ago  UL_1  https://github.com/stars/maoyeedy/lists/go-tools\n" +
+		"No Optional Fields  0      -       UL_2  \n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists human output mismatch\ngot:  %q\nwant: %q", got, want)
 	}

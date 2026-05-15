@@ -53,6 +53,7 @@ func fixtureService() *fakeService {
 				LastAddedAt: "2024-05-01T12:00:00Z",
 				ID:          "UL_1",
 				RepoCount:   3,
+				URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 			},
 		},
 		repos: []githubapi.Repository{
@@ -77,6 +78,7 @@ func sortableFixtureService() *fakeService {
 				LastAddedAt: "2024-05-03T12:00:00Z",
 				ID:          "UL_3",
 				RepoCount:   1,
+				URL:         "https://github.com/stars/maoyeedy/lists/zeta",
 			},
 			{
 				Name:        "Alpha",
@@ -84,6 +86,7 @@ func sortableFixtureService() *fakeService {
 				LastAddedAt: "2024-05-02T12:00:00Z",
 				ID:          "UL_2",
 				RepoCount:   5,
+				URL:         "https://github.com/stars/maoyeedy/lists/alpha",
 			},
 			{
 				Name:        "beta",
@@ -91,6 +94,7 @@ func sortableFixtureService() *fakeService {
 				LastAddedAt: "2024-05-01T12:00:00Z",
 				ID:          "UL_1",
 				RepoCount:   3,
+				URL:         "https://github.com/stars/maoyeedy/lists/beta",
 			},
 		},
 		repos: []githubapi.Repository{
@@ -131,6 +135,7 @@ func filterableFixtureService() *fakeService {
 				LastAddedAt: "2024-05-01T12:00:00Z",
 				ID:          "UL_1",
 				RepoCount:   10,
+				URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 			},
 			{
 				Name:        "Go Web",
@@ -138,6 +143,7 @@ func filterableFixtureService() *fakeService {
 				LastAddedAt: "2024-05-02T12:00:00Z",
 				ID:          "UL_2",
 				RepoCount:   5,
+				URL:         "https://github.com/stars/maoyeedy/lists/go-web",
 			},
 			{
 				Name:        "Rust",
@@ -145,6 +151,7 @@ func filterableFixtureService() *fakeService {
 				LastAddedAt: "2024-05-03T12:00:00Z",
 				ID:          "UL_3",
 				RepoCount:   8,
+				URL:         "https://github.com/stars/maoyeedy/lists/rust",
 			},
 		},
 		repos: []githubapi.Repository{
@@ -230,8 +237,8 @@ func TestRunWritesListOutput(t *testing.T) {
 		{
 			name: "empty args default human list",
 			argv: nil,
-			want: "NAME      REPOS  ADDED   ID\n" +
-				"Go Tools  3      2y ago  UL_1\n",
+			want: "NAME      REPOS  ADDED   ID    URL\n" +
+				"Go Tools  3      2y ago  UL_1  https://github.com/stars/maoyeedy/lists/go-tools\n",
 		},
 		{
 			name: "plain list",
@@ -240,17 +247,18 @@ func TestRunWritesListOutput(t *testing.T) {
 				"  Description: CLI helpers\n" +
 				"  Repos: 3\n" +
 				"  Last added: 2024-05-01T12:00:00Z\n" +
-				"  ID: UL_1\n",
+				"  ID: UL_1\n" +
+				"  URL: https://github.com/stars/maoyeedy/lists/go-tools\n",
 		},
 		{
 			name: "json",
 			argv: []string{"list", "--json"},
-			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":3}]\n",
+			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":3,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n",
 		},
 		{
 			name: "tsv",
 			argv: []string{"list", "--tsv"},
-			want: "Go Tools\tCLI helpers\t3\t2024-05-01T12:00:00Z\tUL_1\n",
+			want: "Go Tools\tCLI helpers\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/go-tools\n",
 		},
 		{
 			name: "template",
@@ -363,16 +371,16 @@ func TestRunSortsListOutput(t *testing.T) {
 		{
 			name: "name ascending",
 			argv: []string{"list", "--sort", "name", "--tsv"},
-			want: "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n" +
-				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\n" +
-				"zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\n",
+			want: "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/alpha\n" +
+				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/beta\n" +
+				"zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\thttps://github.com/stars/maoyeedy/lists/zeta\n",
 		},
 		{
 			name: "added descending",
 			argv: []string{"list", "--sort", "added", "--desc", "--tsv"},
-			want: "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\n" +
-				"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n" +
-				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\n",
+			want: "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\thttps://github.com/stars/maoyeedy/lists/zeta\n" +
+				"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/alpha\n" +
+				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/beta\n",
 		},
 	}
 
@@ -521,8 +529,8 @@ func TestRunLimitsOutput(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	want := "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\n" +
-		"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n"
+	want := "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\thttps://github.com/stars/maoyeedy/lists/zeta\n" +
+		"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/alpha\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -546,8 +554,8 @@ func TestRunLimitsOutputAfterSort(t *testing.T) {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
 	// Sorted by name asc: Alpha, beta, zeta. Limit 2 should return first 2.
-	want := "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n" +
-		"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\n"
+	want := "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/alpha\n" +
+		"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/beta\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -598,8 +606,8 @@ func TestRunFiltersListOutput(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	want := "Go Tools\tCLI helpers\t10\t2024-05-01T12:00:00Z\tUL_1\n" +
-		"Go Web\tWeb frameworks\t5\t2024-05-02T12:00:00Z\tUL_2\n"
+	want := "Go Tools\tCLI helpers\t10\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/go-tools\n" +
+		"Go Web\tWeb frameworks\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/go-web\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
 	}

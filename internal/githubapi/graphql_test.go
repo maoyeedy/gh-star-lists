@@ -71,7 +71,7 @@ func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_1", "name": "Tools", "description": null, "lastAddedAt": null}
+					{"id": "UL_1", "name": "Tools", "slug": "tools", "description": null, "lastAddedAt": null, "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -83,7 +83,7 @@ func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
-	want := StarList{Name: "Tools", Description: "", LastAddedAt: "", ID: "UL_1"}
+	want := StarList{Name: "Tools", Description: "", LastAddedAt: "", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/tools"}
 	if len(lists) != 1 || lists[0] != want {
 		t.Fatalf("ListStarLists() = %#v, want %#v", lists, []StarList{want})
 	}
@@ -98,7 +98,7 @@ func TestGraphQLServiceListStarListsWrapsLaterPageErrorAndReturnsNoPartialResult
 			"viewer": {
 				"lists": {
 					"nodes": [
-						{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z"}
+						{"id": "UL_1", "name": "Tools", "slug": "tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z", "user": {"login": "testuser"}}
 					],
 					"pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
 				}
@@ -153,7 +153,7 @@ func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z"}
+					{"id": "UL_1", "name": "Tools", "slug": "tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z", "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
 			}
@@ -162,7 +162,7 @@ func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_2", "name": "Libraries", "description": "Packages", "lastAddedAt": "2025-02-03T04:05:06Z"}
+					{"id": "UL_2", "name": "Libraries", "slug": "libraries", "description": "Packages", "lastAddedAt": "2025-02-03T04:05:06Z", "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -181,12 +181,14 @@ func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
 			Description: "Useful CLIs",
 			LastAddedAt: "2025-01-02T03:04:05Z",
 			ID:          "UL_1",
+			URL:         "https://github.com/stars/testuser/lists/tools",
 		},
 		{
 			Name:        "Libraries",
 			Description: "Packages",
 			LastAddedAt: "2025-02-03T04:05:06Z",
 			ID:          "UL_2",
+			URL:         "https://github.com/stars/testuser/lists/libraries",
 		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] || lists[1] != want[1] {
@@ -210,7 +212,7 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z", "items": {"totalCount": 5}}
+					{"id": "UL_1", "name": "Tools", "slug": "tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z", "items": {"totalCount": 5}, "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -230,6 +232,7 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 			LastAddedAt: "2025-01-02T03:04:05Z",
 			ID:          "UL_1",
 			RepoCount:   5,
+			URL:         "https://github.com/stars/testuser/lists/tools",
 		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] {
@@ -520,8 +523,8 @@ func TestGraphQLServiceSmallPageSize(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_1", "name": "A", "description": "first", "lastAddedAt": "2025-01-01T00:00:00Z"},
-					{"id": "UL_2", "name": "B", "description": "second", "lastAddedAt": "2025-01-02T00:00:00Z"}
+					{"id": "UL_1", "name": "A", "slug": "a", "description": "first", "lastAddedAt": "2025-01-01T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_2", "name": "B", "slug": "b", "description": "second", "lastAddedAt": "2025-01-02T00:00:00Z", "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
 			}
@@ -530,7 +533,7 @@ func TestGraphQLServiceSmallPageSize(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_3", "name": "C", "description": "third", "lastAddedAt": "2025-01-03T00:00:00Z"}
+					{"id": "UL_3", "name": "C", "slug": "c", "description": "third", "lastAddedAt": "2025-01-03T00:00:00Z", "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -636,10 +639,10 @@ func TestGraphQLServicePaginationExactMultiple(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_1", "name": "A", "description": "", "lastAddedAt": "2025-01-01T00:00:00Z"},
-					{"id": "UL_2", "name": "B", "description": "", "lastAddedAt": "2025-01-02T00:00:00Z"},
-					{"id": "UL_3", "name": "C", "description": "", "lastAddedAt": "2025-01-03T00:00:00Z"},
-					{"id": "UL_4", "name": "D", "description": "", "lastAddedAt": "2025-01-04T00:00:00Z"}
+					{"id": "UL_1", "name": "A", "slug": "a", "description": "", "lastAddedAt": "2025-01-01T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_2", "name": "B", "slug": "b", "description": "", "lastAddedAt": "2025-01-02T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_3", "name": "C", "slug": "c", "description": "", "lastAddedAt": "2025-01-03T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_4", "name": "D", "slug": "d", "description": "", "lastAddedAt": "2025-01-04T00:00:00Z", "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
 			}
@@ -648,10 +651,10 @@ func TestGraphQLServicePaginationExactMultiple(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_5", "name": "E", "description": "", "lastAddedAt": "2025-01-05T00:00:00Z"},
-					{"id": "UL_6", "name": "F", "description": "", "lastAddedAt": "2025-01-06T00:00:00Z"},
-					{"id": "UL_7", "name": "G", "description": "", "lastAddedAt": "2025-01-07T00:00:00Z"},
-					{"id": "UL_8", "name": "H", "description": "", "lastAddedAt": "2025-01-08T00:00:00Z"}
+					{"id": "UL_5", "name": "E", "slug": "e", "description": "", "lastAddedAt": "2025-01-05T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_6", "name": "F", "slug": "f", "description": "", "lastAddedAt": "2025-01-06T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_7", "name": "G", "slug": "g", "description": "", "lastAddedAt": "2025-01-07T00:00:00Z", "user": {"login": "testuser"}},
+					{"id": "UL_8", "name": "H", "slug": "h", "description": "", "lastAddedAt": "2025-01-08T00:00:00Z", "user": {"login": "testuser"}}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}

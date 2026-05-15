@@ -3,6 +3,7 @@ package githubapi
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 const listStarListsQuery = `query($endCursor: String, $first: Int!) {
@@ -11,10 +12,14 @@ const listStarListsQuery = `query($endCursor: String, $first: Int!) {
       nodes {
         id
         name
+        slug
         description
         lastAddedAt
         items {
           totalCount
+        }
+        user {
+          login
         }
       }
       pageInfo {
@@ -90,6 +95,7 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 				LastAddedAt: stringValue(node.LastAddedAt),
 				ID:          node.ID,
 				RepoCount:   repoCount,
+				URL:         listURL(node.User.Login, node.Slug),
 			})
 		}
 		if !result.Viewer.Lists.PageInfo.HasNextPage {
@@ -156,9 +162,15 @@ type starListItemsConnection struct {
 type starListNode struct {
 	ID          string                   `json:"id"`
 	Name        string                   `json:"name"`
+	Slug        string                   `json:"slug"`
 	Description *string                  `json:"description"`
 	LastAddedAt *string                  `json:"lastAddedAt"`
 	Items       *starListItemsConnection `json:"items"`
+	User        userNode                 `json:"user"`
+}
+
+type userNode struct {
+	Login string `json:"login"`
 }
 
 type pageInfo struct {
@@ -195,4 +207,14 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func listURL(login, slug string) string {
+	var b strings.Builder
+	b.Grow(len("https://github.com/stars/") + len(login) + len("/lists/") + len(slug))
+	b.WriteString("https://github.com/stars/")
+	b.WriteString(login)
+	b.WriteString("/lists/")
+	b.WriteString(slug)
+	return b.String()
 }

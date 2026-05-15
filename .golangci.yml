@@ -2,7 +2,9 @@ version: "2"
 linters:
   enable:
     - errcheck
+    - errorlint
     - goprintffuncname
+    - gocritic
     - ineffassign
     - misspell
     - nolintlint

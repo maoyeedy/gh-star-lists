@@ -96,7 +96,7 @@ func newGoGHGraphQLService() (Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize GitHub GraphQL client: %w", err)
 	}
-	return newGraphQLService(goGHGraphQLExecutor{client: client}), nil
+	return newGraphQLService(goGHGraphQLExecutor{client: client}, 100), nil
 }
 
 type graphQLDoer interface {

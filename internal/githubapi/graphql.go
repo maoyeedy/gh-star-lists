@@ -5,9 +5,9 @@ import (
 	"fmt"
 )
 
-const listStarListsQuery = `query($endCursor: String) {
+const listStarListsQuery = `query($endCursor: String, $first: Int!) {
   viewer {
-    lists(first: 100, after: $endCursor) {
+    lists(first: $first, after: $endCursor) {
       nodes {
         id
         name
@@ -22,12 +22,12 @@ const listStarListsQuery = `query($endCursor: String) {
   }
 }`
 
-const listRepositoriesQuery = `query($id: ID!, $endCursor: String) {
+const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!) {
   node(id: $id) {
     __typename
     ... on UserList {
       name
-      items(first: 100, after: $endCursor) {
+      items(first: $first, after: $endCursor) {
         nodes {
           __typename
           ... on Repository {
@@ -54,14 +54,15 @@ type graphQLExecutor interface {
 
 type graphQLService struct {
 	executor graphQLExecutor
+	pageSize int
 }
 
-func newGraphQLService(executor graphQLExecutor) *graphQLService {
-	return &graphQLService{executor: executor}
+func newGraphQLService(executor graphQLExecutor, pageSize int) *graphQLService {
+	return &graphQLService{executor: executor, pageSize: pageSize}
 }
 
 func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) {
-	lists := make([]StarList, 0, 100)
+	lists := make([]StarList, 0, s.pageSize)
 	var endCursor any
 
 	for {
@@ -70,7 +71,7 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 		}
 
 		var result listStarListsResponse
-		variables := map[string]any{"endCursor": endCursor}
+		variables := map[string]any{"endCursor": endCursor, "first": s.pageSize}
 		if err := s.executor.Execute(ctx, listStarListsQuery, variables, &result); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}
@@ -91,7 +92,7 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 }
 
 func (s *graphQLService) ListRepositories(ctx context.Context, listID string) ([]Repository, error) {
-	repositories := make([]Repository, 0, 100)
+	repositories := make([]Repository, 0, s.pageSize)
 	var endCursor any
 
 	for {
@@ -100,7 +101,7 @@ func (s *graphQLService) ListRepositories(ctx context.Context, listID string) ([
 		}
 
 		var result listRepositoriesResponse
-		variables := map[string]any{"id": listID, "endCursor": endCursor}
+		variables := map[string]any{"id": listID, "endCursor": endCursor, "first": s.pageSize}
 		if err := s.executor.Execute(ctx, listRepositoriesQuery, variables, &result); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}

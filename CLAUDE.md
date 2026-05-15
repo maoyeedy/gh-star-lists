@@ -27,9 +27,9 @@ Rules must not violate:
 
 ## Common Pitfalls
 
-**Sort key literals.** Do not use raw strings `"added"`, `"name"`, `"stars"`, `"pushed"` in switch cases or comparisons. Use named constants: `command.SortKeyAdded`, `command.SortKeyName`, `command.SortKeyStars`, `command.SortKeyPushed`. Defined in `internal/command/parse.go`.
+**Sort key literals.** Do not use raw strings `"added"`, `"name"`, `"stars"`, `"pushed"`, `"language"`, `"repos"`, `"starred"` in switch cases or comparisons. Use named constants: `command.SortKeyAdded`, `command.SortKeyName`, `command.SortKeyStars`, `command.SortKeyPushed`, `command.SortKeyLanguage`, `command.SortKeyRepoCount`, `command.SortKeyStarred`. Defined in `internal/command/parse.go`.
 
-**Filter key literals.** Do not use raw strings `"name"`, `"fork"` in filter switch cases or validation. Use `command.FilterKeyName`, `command.FilterKeyFork`. Defined in `internal/command/parse.go`.
+**Filter key literals.** Do not use raw strings `"name"`, `"fork"`, `"language"` in filter switch cases or validation. Use `command.FilterKeyName`, `command.FilterKeyFork`, `command.FilterKeyLanguage`. Defined in `internal/command/parse.go`.
 
 **Filter value casing.** `Parse` lowers both filter key and value at parse time. Filter functions compare `f.Value` directly against lowered field values — no `strings.ToLower(f.Value)` needed in run.go.
 
@@ -49,7 +49,7 @@ Rules must not violate:
 
 **Sort stability.** Use `sort.Slice` not `sort.SliceStable`. Comparators always return total order via ID/URL fallback, so stability guarantees unused.
 
-**Name resolution.** `resolveListID` in run.go maps human-readable list names to IDs by fetching all lists. On API error propagates (no silent fallback). On name-not-found returns raw input unchanged — subsequent `ListRepositories` call surfaces real error.
+**Name resolution.** `resolveList()` in run.go returns `resolvedList{ID, URL}` by fetching all lists, matching by name or ID. `resolveListID` delegates to it (returns only ID). `--web` uses it for URL. On API error propagates (no silent fallback). On name-not-found returns raw input as ID — subsequent call surfaces real error.
 
 **Filter action scoping.** `validateFilters` accepts `Action` parameter. Filters valid only for `repos` (e.g., `fork`) must reject for `list` at parse time, not silently ignored at run time.
 
@@ -106,4 +106,3 @@ Use `query-docs` with these IDs when working on relevant package. Skip `resolve-
 - Avoid multi-line edits that depend on counting tabs or exact indentation.
 - After editing Go files, run `goimports -w` on touched files. (`goimports` superset of `gofmt` — handles both formatting and imports in one pass.)
 - Final validation: `make check` (runs `scripts/check.sh`: `go test ./...`, `go vet ./...`, `go build`). Skills `/go-check` and `/ascii-check` available as interactive aliases.
-- Before committing: `make ascii-check` or `/ascii-check` to catch non-ASCII punctuation in Go source.

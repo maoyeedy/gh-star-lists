@@ -6,13 +6,13 @@ Query GitHub Star Lists through the GitHub CLI authentication context.
 
 Usage:
   gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted]
   gh star-lists --help
 
 Commands:
   list              List your Star Lists. This is the default command.
   repos <LIST_ID_OR_NAME>   List repositories in a Star List. Accepts a list ID or
-	                    a case-insensitive name (fetches lists to resolve).
+                    a case-insensitive name (fetches lists to resolve).
 
 Output:
   human             Table output optimized for reading (default).
@@ -22,18 +22,21 @@ Output:
   --output <FILE>   Write output to a file instead of stdout.
   --template <STR>  Go template string applied to JSON data (implies --json data model).
   --no-color        Disable ANSI color in human output.
+  --web             Open the Star List in a browser (repos only; no output flags).
+  --unlisted        Show starred repos not in any Star List (repos only; N+1 API calls).
 
 Sorting:
   --sort <KEY1,KEY2>  Sort results locally after fetching all pages.
                     Comma-separate or repeat for secondary sort.
-                    List keys: added, name.
-                    Repository keys: name, stars, pushed.
+                    List keys: added, name, repos.
+                    Repository keys: name, stars, pushed, language, starred.
   --desc            Reverse an explicit --sort order.
   --limit <N>       Show only the first N results.
 
 Filtering:
   --filter <KEY:VALUE>  Filter results after fetching all pages (repeatable).
-                        Keys: name (case-insensitive contains), fork (true/false).
+                        Keys: name (case-insensitive contains), fork (true/false),
+                        language (case-insensitive, repos only).
 
 Caching:
   --cache           Cache API responses in memory (TTL: 5 min).
@@ -42,9 +45,12 @@ Examples:
   gh star-lists
   gh star-lists --sort name
   gh star-lists --plain
-  gh star-lists list --tsv
+  gh star-lists list --tsv --sort repos --desc
   gh star-lists repos UL_kwDOExample --sort stars --desc
   gh star-lists repos UL_kwDOExample --json
+  gh star-lists repos UL_kwDOExample --filter language:Go --sort language
+  gh star-lists repos UL_kwDOExample --web
+  gh star-lists repos --unlisted --sort starred
 
 Authentication:
   Uses the user's existing gh authentication. This command does not store tokens.
@@ -59,7 +65,7 @@ func HelpText() string {
 func UsageText() string {
 	return `Usage:
   gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted]
   gh star-lists --help
 `
 }

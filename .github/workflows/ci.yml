@@ -4,11 +4,13 @@ on:
   push:
     paths-ignore:
       - '**.md'
+      - '.pre-commit-config.yaml'
       - '.claude/**'
       - 'LICENSE'
   pull_request:
     paths-ignore:
       - '**.md'
+      - '.pre-commit-config.yaml'
       - '.claude/**'
       - 'LICENSE'
 

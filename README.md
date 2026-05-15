@@ -1,6 +1,6 @@
 # gh-star-lists
 
-Explore your GitHub Star Lists from terminal.
+Explore GitHub Star Lists from terminal.
 
 ## Install
 
@@ -10,12 +10,10 @@ gh extension install maoyeedy/gh-star-lists
 
 ## Commands
 
-```text
+```
 gh star-lists [list] [FLAGS]
 gh star-lists repos <LIST_ID_OR_NAME> [FLAGS]
 ```
-
-**Flags:** `--sort <KEY>` `--desc` `--limit <N>` `--filter <KEY:VALUE>` `--cache` `--output <FILE>` `--template <STR>` `--no-color` `--web` `--unlisted` `--plain` `--json` `--tsv`
 
 ```sh
 gh star-lists                                      # human table (default)
@@ -29,19 +27,63 @@ gh star-lists repos UL_kwDOExample --web           # open in browser
 gh star-lists repos --unlisted --sort starred      # starred not in any list
 ```
 
-Default human output:
+## Default Output
 
-```text
-NAME           ADDED    ID
-Game Dev       6d ago   UL_SAMPLE_GODOT
-CLI Tools      1mo ago  UL_SAMPLE_CLI
+**Lists** (`gh star-lists`)
+
+```
+NAME      REPOS  ADDED    ID                   URL
+Game Dev  12     6d ago   UL_kwDOExample_AA    https://github.com/stars/username/lists/game-dev
+CLI Tools 5      1mo ago  UL_kwDOExample_BB    https://github.com/stars/username/lists/cli-tools
 ```
 
-**Sort keys — lists:** `added`, `name`, `repos` | **repos:** `name`, `stars`, `pushed`, `language`, `starred`
+**Repos** (`gh star-lists repos <ID>`)
 
-**Filter keys:** `name` (case-insensitive contains) | `fork` (repos only; `true`/`false`) | `language` (repos only; case-insensitive)
+```
+REPOSITORY                          STARS  LANG    FORK  PUSHED   URL
+RichysHub/MagicaVoxel-VOX-importer  233    Python  no    4y ago   https://github.com/RichysHub/MagicaVoxel-VOX-importer
+Naxela/The_Lightmapper              797    Python  no    23d ago  https://github.com/Naxela/The_Lightmapper
+```
 
-## Output
+## Flags
+
+**Sort**
+
+- `--sort <KEY>` — comma-separated for multi-key; repeatable
+- `--desc` — descending order
+
+| Context | Keys |
+|---------|------|
+| lists | `added` `name` `repos` |
+| repos | `name` `stars` `pushed` `language` `starred` |
+
+**Filter**
+
+- `--filter <KEY:VALUE>` — repeatable; `fork` and `language` are repos-only
+
+| Key | Accepts |
+|-----|---------|
+| `name` | case-insensitive substring |
+| `fork` | `true` / `false` |
+| `language` | case-insensitive |
+
+**Output**
+
+- `--json` — JSON
+- `--tsv` — TSV
+- `--plain` — multiline detail view
+- `--template <STR>` — Go template
+- `--output <FILE>` — write to file
+- `--no-color` — disable color
+
+**Other**
+
+- `--limit <N>` — max results
+- `--cache` — cache API responses 5 min; recommended with `--unlisted`
+- `--web` — open in browser
+- `--unlisted` — starred repos not in any list
+
+## Output Formats
 
 ```sh
 gh star-lists --json
@@ -51,11 +93,14 @@ gh star-lists --output stars.json
 gh star-lists --template '{{range .}}{{.name}} {{.id}}\n{{end}}'
 ```
 
-**JSON/TSV fields — lists:** `name`, `description`, `lastAddedAt`, `id`
+**JSON/TSV fields**
 
-**JSON/TSV fields — repos:** `nameWithOwner`, `description`, `isFork`, `stargazerCount`, `pushedAt`, `url`, `language`, `starredAt`
+| Context | Fields |
+|---------|--------|
+| lists | `name` `description` `lastAddedAt` `id` |
+| repos | `nameWithOwner` `description` `isFork` `stargazerCount` `pushedAt` `url` `language` `starredAt` |
 
-`--cache` cache API responses in memory 5 min. Useful for chaining multiple calls. Recommended with `--unlisted`.
+`--cache` caches API responses in memory for 5 min. Useful when chaining multiple calls. Recommended with `--unlisted`.
 
 ## Recipes
 
@@ -82,7 +127,7 @@ gh star-lists repos "$LIST_ID" --filter language:Go --sort language
 gh star-lists repos "$LIST_ID" --sort stars --desc --limit 10 \
   --template '{{range .}}{{.stargazerCount}} {{.nameWithOwner}}\n{{end}}'
 
-# Unlisted starred repos (not in any list)
+# Unlisted starred repos
 gh star-lists repos --unlisted --sort starred --desc
 
 # Open in browser

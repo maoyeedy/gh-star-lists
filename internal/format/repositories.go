@@ -24,6 +24,8 @@ func WriteRepositoriesWithOptions(w io.Writer, options Options, repos []githubap
 		return writeRepositoriesTSV(w, repos)
 	case OutputPlain:
 		return writeRepositoriesPlain(w, repos)
+	case OutputTemplate:
+		return writeTemplate(w, options, repos)
 	case OutputHuman:
 		return writeRepositoriesHuman(w, options, repos)
 	default:

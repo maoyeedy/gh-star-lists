@@ -1,10 +1,13 @@
 package format
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/cli/go-gh/v2/pkg/template"
 )
 
 func ansiStyle(enabled bool, code string) func(string) string {
@@ -24,6 +27,24 @@ func writeJSONSlice[T any](w io.Writer, data []T) error {
 		data = make([]T, 0)
 	}
 	return json.NewEncoder(w).Encode(data)
+}
+
+func writeTemplate[T any](w io.Writer, options Options, data []T) error {
+	if data == nil {
+		data = make([]T, 0)
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("template marshal error: %w", err)
+	}
+	t := template.New(w, options.Width, options.Color)
+	if err := t.Parse(options.Template); err != nil {
+		return fmt.Errorf("template parse error: %w", err)
+	}
+	if err := t.Execute(bytes.NewReader(jsonData)); err != nil {
+		return fmt.Errorf("template execute error: %w", err)
+	}
+	return t.Flush()
 }
 
 func shortAge(value string, now time.Time) string {

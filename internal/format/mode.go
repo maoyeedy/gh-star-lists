@@ -6,10 +6,11 @@ import "fmt"
 type OutputMode string
 
 const (
-	OutputHuman OutputMode = "human"
-	OutputPlain OutputMode = "plain"
-	OutputTSV   OutputMode = "tsv"
-	OutputJSON  OutputMode = "json"
+	OutputHuman    OutputMode = "human"
+	OutputPlain    OutputMode = "plain"
+	OutputTSV      OutputMode = "tsv"
+	OutputJSON     OutputMode = "json"
+	OutputTemplate OutputMode = "template"
 )
 
 // SelectOutputMode validates mutually exclusive output flags and returns the

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,21 @@ func sortableFixtureService() *fakeService {
 	}
 }
 
+func filterableFixtureService() *fakeService {
+	return &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+			{Name: "Go Web", Description: "Web frameworks", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2"},
+			{Name: "Rust", Description: "Rust ecosystem", LastAddedAt: "2024-05-03T12:00:00Z", ID: "UL_3"},
+		},
+		repos: []githubapi.Repository{
+			{NameWithOwner: "owner/go-lib", Description: "Go library", IsFork: false, StargazerCount: 100, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/owner/go-lib"},
+			{NameWithOwner: "owner/rust-tool", Description: "Rust tool", IsFork: true, StargazerCount: 200, PushedAt: "2024-05-02T12:00:00Z", URL: "https://github.com/owner/rust-tool"},
+			{NameWithOwner: "owner/go-app", Description: "Go app", IsFork: false, StargazerCount: 300, PushedAt: "2024-05-03T12:00:00Z", URL: "https://github.com/owner/go-app"},
+		},
+	}
+}
+
 func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service) int {
 	return command.RunWithOptions(ctx, args, stdout, stderr, service, testOutputOptions)
 }
@@ -89,7 +105,7 @@ func TestRunHelpWritesStdoutAndDoesNotUseService(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run help exit = %d, want %d", code, command.ExitSuccess)
 	}
-	if got := stdout.String(); !strings.Contains(got, "gh star-lists") || !strings.Contains(got, "repos <LIST_ID>") {
+	if got := stdout.String(); !strings.Contains(got, "gh star-lists") || !strings.Contains(got, "repos <LIST_ID_OR_NAME>") {
 		t.Fatalf("help stdout missing command details:\n%s", got)
 	}
 	if stderr.Len() != 0 {
@@ -131,6 +147,11 @@ func TestRunWritesListOutput(t *testing.T) {
 			name: "tsv",
 			argv: []string{"list", "--tsv"},
 			want: "Go Tools\tCLI helpers\t2024-05-01T12:00:00Z\tUL_1\n",
+		},
+		{
+			name: "template",
+			argv: []string{"list", "--template", "{{range .}}{{.name}}\n{{end}}"},
+			want: "Go Tools\n",
 		},
 	}
 
@@ -197,8 +218,8 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 			if stderr.Len() != 0 {
 				t.Fatalf("Run(%q) stderr = %q, want empty", tt.argv, stderr.String())
 			}
-			if svc.listCalls != 0 || svc.reposCalls != 1 {
-				t.Fatalf("service calls list=%d repos=%d, want list=0 repos=1", svc.listCalls, svc.reposCalls)
+			if svc.listCalls != 1 || svc.reposCalls != 1 {
+				t.Fatalf("service calls list=%d repos=%d, want list=1 repos=1", svc.listCalls, svc.reposCalls)
 			}
 			if got := strings.Join(svc.reposListIDs, ","); got != "UL_1" {
 				t.Fatalf("repos list IDs = %q, want UL_1", got)
@@ -297,6 +318,200 @@ func TestRunSortsReposOutput(t *testing.T) {
 				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunReposResolvesNameToID(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"repos", "Go Tools", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if svc.listCalls != 1 {
+		t.Fatalf("list calls = %d, want 1 (resolveListID)", svc.listCalls)
+	}
+	if len(svc.reposListIDs) != 1 || svc.reposListIDs[0] != "UL_1" {
+		t.Fatalf("repos called with listID = %q, want UL_1", svc.reposListIDs)
+	}
+}
+
+func TestRunReposFallsBackToID(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"repos", "nonexistent-name", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if len(svc.reposListIDs) != 1 || svc.reposListIDs[0] != "nonexistent-name" {
+		t.Fatalf("repos called with listID = %q, want nonexistent-name", svc.reposListIDs)
+	}
+}
+
+func TestRunLimitsOutput(t *testing.T) {
+	t.Parallel()
+
+	svc := sortableFixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--limit", "2", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	want := "zeta\tLast by name\t2024-05-03T12:00:00Z\tUL_3\n" +
+		"Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestRunLimitsOutputAfterSort(t *testing.T) {
+	t.Parallel()
+
+	svc := sortableFixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--sort", "name", "--limit", "2", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	// Sorted by name asc: Alpha, beta, zeta. Limit 2 should return first 2.
+	want := "Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n" +
+		"beta\tMiddle by name\t2024-05-01T12:00:00Z\tUL_1\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestRunWritesOutputFile(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	dir := t.TempDir()
+	outPath := dir + "/output.txt"
+	var stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--output", outPath}, io.Discard, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "Go Tools") {
+		t.Fatalf("output file content = %q, want Go Tools", string(data))
+	}
+}
+
+func TestRunFiltersListOutput(t *testing.T) {
+	t.Parallel()
+
+	svc := filterableFixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--filter", "name:go", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	want := "Go Tools\tCLI helpers\t2024-05-01T12:00:00Z\tUL_1\n" +
+		"Go Web\tWeb frameworks\t2024-05-02T12:00:00Z\tUL_2\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+	if svc.listCalls != 1 {
+		t.Fatalf("list calls = %d, want 1", svc.listCalls)
+	}
+}
+
+func TestRunFiltersReposOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{
+			name: "filter name contains go",
+			argv: []string{"repos", "UL_1", "--filter", "name:go", "--tsv"},
+			want: "owner/go-lib\tGo library\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-lib\n" +
+				"owner/go-app\tGo app\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-app\n",
+		},
+		{
+			name: "filter non-fork",
+			argv: []string{"repos", "UL_1", "--filter", "fork:false", "--tsv"},
+			want: "owner/go-lib\tGo library\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-lib\n" +
+				"owner/go-app\tGo app\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-app\n",
+		},
+		{
+			name: "filter fork true",
+			argv: []string{"repos", "UL_1", "--filter", "fork:true", "--tsv"},
+			want: "owner/rust-tool\tRust tool\tyes\t200\t2024-05-02T12:00:00Z\thttps://github.com/owner/rust-tool\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := filterableFixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+			}
+			if got := stdout.String(); got != tt.want {
+				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunFiltersCombined(t *testing.T) {
+	t.Parallel()
+
+	svc := filterableFixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"repos", "UL_1", "--filter", "name:go", "--filter", "fork:true", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	// AND logic: name contains "go" AND fork=true — no match in fixture
+	if stdout.String() != "" {
+		t.Fatalf("expected empty output for AND filter, got %q", stdout.String())
+	}
+}
+
+func TestRunFiltersEmptyResult(t *testing.T) {
+	t.Parallel()
+
+	svc := filterableFixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--filter", "name:nonexistent", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("expected empty output, got %q", stdout.String())
 	}
 }
 
@@ -407,6 +622,7 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			svc:       &fakeService{reposErr: errors.New("GitHub GraphQL request failed: secondary rate limit")},
 			wantErr:   []string{"error: failed to list repositories for Star List \"UL_kwDOExample\": GitHub GraphQL request failed: secondary rate limit"},
 			wantRepos: 1,
+			wantList:  1,
 		},
 		{
 			name:      "repos inaccessible list",
@@ -414,6 +630,7 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			svc:       &fakeService{reposErr: githubapi.ErrInaccessibleList},
 			wantErr:   []string{"error: failed to list repositories for Star List \"UL_missing\": GitHub Star List is inaccessible or is not a UserList", "deleted, private, inaccessible to this account, or from another GitHub account"},
 			wantRepos: 1,
+			wantList:  1,
 		},
 	}
 
@@ -473,6 +690,8 @@ func TestRunWriteFailuresReturnFailure(t *testing.T) {
 	}{
 		{name: "help", argv: []string{"--help"}, svc: &fakeService{}, wantErr: "failed to write help"},
 		{name: "data output", argv: []string{"list"}, svc: fixtureService(), wantErr: "failed to write output"},
+		{name: "list json output", argv: []string{"list", "--json"}, svc: fixtureService(), wantErr: "failed to write output"},
+		{name: "repos json output", argv: []string{"repos", "UL_1", "--json"}, svc: fixtureService(), wantErr: "failed to write output"},
 	}
 
 	for _, tt := range tests {

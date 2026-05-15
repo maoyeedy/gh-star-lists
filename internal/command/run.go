@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -53,22 +54,50 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		outputOptionsForMode = format.DefaultOptions
 	}
 	outputOptions := outputOptionsForMode(parsed.Mode)
+	outputOptions.Template = parsed.Template
+	if parsed.NoColor {
+		outputOptions.Color = false
+	}
+	if parsed.Cache {
+		service = githubapi.NewCacheService(service)
+	}
+	if parsed.OutputPath != "" {
+		f, err := os.OpenFile(parsed.OutputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		if err != nil {
+			_ = writeDiagnostic(stderr, "error: failed to open output file: %v\n", err)
+			return ExitFailure
+		}
+		defer f.Close()
+		stdout = f
+	}
 	switch parsed.Action {
 	case ActionList:
 		lists, err := service.ListStarLists(ctx)
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)
 		}
-		sortStarLists(lists, parsed.SortKey, parsed.SortDesc)
+		lists = filterStarLists(lists, parsed.Filters)
+		sortStarLists(lists, parsed.SortKeys, parsed.SortDesc)
+		if parsed.Limit > 0 && len(lists) > parsed.Limit {
+			lists = lists[:parsed.Limit]
+		}
 		if err := format.WriteStarListsWithOptions(stdout, outputOptions, lists); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
 	case ActionRepos:
-		repos, err := service.ListRepositories(ctx, parsed.ListID)
+		resolvedID, err := resolveListID(ctx, service, parsed.ListID)
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err)
 		}
-		sortRepositories(repos, parsed.SortKey, parsed.SortDesc)
+		repos, err := service.ListRepositories(ctx, resolvedID)
+		if err != nil {
+			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err)
+		}
+		repos = filterRepositories(repos, parsed.Filters)
+		sortRepositories(repos, parsed.SortKeys, parsed.SortDesc)
+		if parsed.Limit > 0 && len(repos) > parsed.Limit {
+			repos = repos[:parsed.Limit]
+		}
 		if err := format.WriteRepositoriesWithOptions(stdout, outputOptions, repos); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
@@ -79,13 +108,78 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	return ExitSuccess
 }
 
-func sortStarLists(lists []githubapi.StarList, sortKey string, desc bool) {
-	if sortKey == "" {
+func resolveListID(ctx context.Context, service githubapi.Service, raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	lists, err := service.ListStarLists(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, l := range lists {
+		if strings.EqualFold(l.Name, raw) {
+			return l.ID, nil
+		}
+	}
+	return raw, nil
+}
+
+func filterStarLists(lists []githubapi.StarList, filters []Filter) []githubapi.StarList {
+	if len(filters) == 0 {
+		return lists
+	}
+	out := make([]githubapi.StarList, 0, len(lists))
+	for _, l := range lists {
+		keep := true
+		for _, f := range filters {
+			switch f.Key {
+			case FilterKeyName:
+				if !strings.Contains(strings.ToLower(l.Name), f.Value) {
+					keep = false
+				}
+			}
+		}
+		if keep {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+func filterRepositories(repos []githubapi.Repository, filters []Filter) []githubapi.Repository {
+	if len(filters) == 0 {
+		return repos
+	}
+	out := make([]githubapi.Repository, 0, len(repos))
+	for _, r := range repos {
+		keep := true
+		for _, f := range filters {
+			switch f.Key {
+			case FilterKeyName:
+				if !strings.Contains(strings.ToLower(r.NameWithOwner), f.Value) {
+					keep = false
+				}
+			case FilterKeyFork:
+				wantFork := f.Value == "true"
+				if r.IsFork != wantFork {
+					keep = false
+				}
+			}
+		}
+		if keep {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func sortStarLists(lists []githubapi.StarList, sortKeys []string, desc bool) {
+	if len(sortKeys) == 0 {
 		return
 	}
 
 	sort.Slice(lists, func(i, j int) bool {
-		cmp := compareStarLists(lists[i], lists[j], sortKey)
+		cmp := compareStarLists(lists[i], lists[j], sortKeys)
 		if desc {
 			return cmp > 0
 		}
@@ -93,17 +187,23 @@ func sortStarLists(lists []githubapi.StarList, sortKey string, desc bool) {
 	})
 }
 
-func compareStarLists(left, right githubapi.StarList, sortKey string) int {
-	switch sortKey {
-	case SortKeyAdded:
-		if left.LastAddedAt != right.LastAddedAt {
-			return strings.Compare(left.LastAddedAt, right.LastAddedAt)
+func compareStarLists(left, right githubapi.StarList, sortKeys []string) int {
+	for _, key := range sortKeys {
+		var cmp int
+		switch key {
+		case SortKeyAdded:
+			if left.LastAddedAt != right.LastAddedAt {
+				cmp = strings.Compare(left.LastAddedAt, right.LastAddedAt)
+			}
+		case SortKeyName:
+			leftName := strings.ToLower(left.Name)
+			rightName := strings.ToLower(right.Name)
+			if leftName != rightName {
+				cmp = strings.Compare(leftName, rightName)
+			}
 		}
-	case SortKeyName:
-		leftName := strings.ToLower(left.Name)
-		rightName := strings.ToLower(right.Name)
-		if leftName != rightName {
-			return strings.Compare(leftName, rightName)
+		if cmp != 0 {
+			return cmp
 		}
 	}
 	if left.Name != right.Name {
@@ -112,13 +212,13 @@ func compareStarLists(left, right githubapi.StarList, sortKey string) int {
 	return strings.Compare(left.ID, right.ID)
 }
 
-func sortRepositories(repos []githubapi.Repository, sortKey string, desc bool) {
-	if sortKey == "" {
+func sortRepositories(repos []githubapi.Repository, sortKeys []string, desc bool) {
+	if len(sortKeys) == 0 {
 		return
 	}
 
 	sort.Slice(repos, func(i, j int) bool {
-		cmp := compareRepositories(repos[i], repos[j], sortKey)
+		cmp := compareRepositories(repos[i], repos[j], sortKeys)
 		if desc {
 			return cmp > 0
 		}
@@ -126,19 +226,23 @@ func sortRepositories(repos []githubapi.Repository, sortKey string, desc bool) {
 	})
 }
 
-func compareRepositories(left, right githubapi.Repository, sortKey string) int {
-	switch sortKey {
-	case SortKeyName:
-		if cmp := strings.Compare(strings.ToLower(left.NameWithOwner), strings.ToLower(right.NameWithOwner)); cmp != 0 {
+func compareRepositories(left, right githubapi.Repository, sortKeys []string) int {
+	for _, key := range sortKeys {
+		var cmp int
+		switch key {
+		case SortKeyName:
+			cmp = strings.Compare(strings.ToLower(left.NameWithOwner), strings.ToLower(right.NameWithOwner))
+		case SortKeyStars:
+			if left.StargazerCount != right.StargazerCount {
+				cmp = left.StargazerCount - right.StargazerCount
+			}
+		case SortKeyPushed:
+			if left.PushedAt != right.PushedAt {
+				cmp = strings.Compare(left.PushedAt, right.PushedAt)
+			}
+		}
+		if cmp != 0 {
 			return cmp
-		}
-	case SortKeyStars:
-		if left.StargazerCount != right.StargazerCount {
-			return left.StargazerCount - right.StargazerCount
-		}
-	case SortKeyPushed:
-		if left.PushedAt != right.PushedAt {
-			return strings.Compare(left.PushedAt, right.PushedAt)
 		}
 	}
 	if left.NameWithOwner != right.NameWithOwner {

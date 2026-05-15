@@ -23,6 +23,8 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 		return writeStarListsTSV(w, lists)
 	case OutputPlain:
 		return writeStarListsPlain(w, lists)
+	case OutputTemplate:
+		return writeTemplate(w, options, lists)
 	case OutputHuman:
 		return writeStarListsHuman(w, options, lists)
 	default:

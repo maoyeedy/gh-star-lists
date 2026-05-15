@@ -10,10 +10,11 @@ const defaultHumanWidth = 120
 
 // Options controls terminal-aware human output without changing JSON or TSV.
 type Options struct {
-	Mode  OutputMode
-	Width int
-	Color bool
-	Now   time.Time
+	Mode     OutputMode
+	Width    int
+	Color    bool
+	Now      time.Time
+	Template string
 }
 
 // DefaultOptions returns terminal-aware output settings for normal CLI use.

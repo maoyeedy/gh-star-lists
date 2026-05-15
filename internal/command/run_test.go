@@ -493,7 +493,7 @@ func TestRunFiltersCombined(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	// AND logic: name contains "go" AND fork=true — no match in fixture
+	// AND logic: name contains "go" AND fork=true - no match in fixture
 	if stdout.String() != "" {
 		t.Fatalf("expected empty output for AND filter, got %q", stdout.String())
 	}

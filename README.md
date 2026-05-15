@@ -1,14 +1,12 @@
 # gh-star-lists
 
-GitHub CLI extension for reading GitHub Star Lists from the terminal. Read-only; uses existing `gh` auth.
+Explore your GitHub Star Lists from terminal.
 
 ## Install
 
 ```sh
 gh extension install maoyeedy/gh-star-lists
 ```
-
-Requires a signed-in `gh` account with access to the Star Lists being read (`gh auth login`).
 
 ## Commands
 
@@ -53,7 +51,7 @@ gh star-lists --template '{{range .}}{{.name}} {{.id}}\n{{end}}'
 
 **JSON/TSV fields — repos:** `nameWithOwner`, `description`, `isFork`, `stargazerCount`, `pushedAt`, `url`
 
-`--cache` caches API responses in memory for 5 minutes — useful when chaining multiple calls.
+`--cache` cache API responses in memory 5 min. Useful chain multiple calls.
 
 ## Recipes
 

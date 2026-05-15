@@ -17,11 +17,14 @@ import (
 type fakeService struct {
 	listCalls    int
 	reposCalls   int
+	starredCalls int
 	reposListIDs []string
 	lists        []githubapi.StarList
 	repos        []githubapi.Repository
+	starred      []githubapi.Repository
 	listErr      error
 	reposErr     error
+	starredErr   error
 }
 
 func (f *fakeService) ListStarLists(context.Context) ([]githubapi.StarList, error) {
@@ -36,6 +39,11 @@ func (f *fakeService) ListRepositories(
 	f.reposCalls++
 	f.reposListIDs = append(f.reposListIDs, listID)
 	return f.repos, f.reposErr
+}
+
+func (f *fakeService) ListStarredRepositories(context.Context) ([]githubapi.Repository, error) {
+	f.starredCalls++
+	return f.starred, f.starredErr
 }
 
 type errWriter struct{}
@@ -183,6 +191,40 @@ func filterableFixtureService() *fakeService {
 	}
 }
 
+func languageFixtureService() *fakeService {
+	return &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Mixed", ID: "UL_1", URL: "https://github.com/stars/user/lists/mixed"},
+		},
+		repos: []githubapi.Repository{
+			{
+				NameWithOwner:  "owner/go-tool",
+				Description:    "A Go tool",
+				StargazerCount: 300,
+				PushedAt:       "2024-05-03T12:00:00Z",
+				URL:            "https://github.com/owner/go-tool",
+				Language:       "Go",
+			},
+			{
+				NameWithOwner:  "owner/rust-lib",
+				Description:    "A Rust lib",
+				StargazerCount: 200,
+				PushedAt:       "2024-05-02T12:00:00Z",
+				URL:            "https://github.com/owner/rust-lib",
+				Language:       "Rust",
+			},
+			{
+				NameWithOwner:  "owner/go-web",
+				Description:    "A Go web",
+				StargazerCount: 100,
+				PushedAt:       "2024-05-01T12:00:00Z",
+				URL:            "https://github.com/owner/go-web",
+				Language:       "Go",
+			},
+		},
+	}
+}
+
 func runCommand(
 	ctx context.Context,
 	args []string,
@@ -313,12 +355,12 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 		{
 			name: "json",
 			argv: []string{"repos", "UL_1", "--json"},
-			want: "[{\"nameWithOwner\":\"cli/cli\",\"description\":\"GitHub CLI\",\"isFork\":false,\"stargazerCount\":41000,\"pushedAt\":\"2024-05-01T12:00:00Z\",\"url\":\"https://github.com/cli/cli\"}]\n",
+			want: "[{\"nameWithOwner\":\"cli/cli\",\"description\":\"GitHub CLI\",\"isFork\":false,\"stargazerCount\":41000,\"pushedAt\":\"2024-05-01T12:00:00Z\",\"url\":\"https://github.com/cli/cli\",\"language\":\"\"}]\n",
 		},
 		{
 			name: "tsv",
 			argv: []string{"repos", "UL_1", "--tsv"},
-			want: "cli/cli\tGitHub CLI\tno\t41000\t2024-05-01T12:00:00Z\thttps://github.com/cli/cli\n",
+			want: "cli/cli\tGitHub CLI\tno\t41000\t2024-05-01T12:00:00Z\thttps://github.com/cli/cli\t\n",
 		},
 	}
 
@@ -420,23 +462,23 @@ func TestRunSortsReposOutput(t *testing.T) {
 		{
 			name: "name ascending",
 			argv: []string{"repos", "UL_1", "--sort", "name", "--tsv"},
-			want: "owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\n" +
-				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\n" +
-				"owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\n",
+			want: "owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\t\n" +
+				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\t\n" +
+				"owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\t\n",
 		},
 		{
 			name: "stars descending",
 			argv: []string{"repos", "UL_1", "--sort", "stars", "--desc", "--tsv"},
-			want: "owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\n" +
-				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\n" +
-				"owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\n",
+			want: "owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\t\n" +
+				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\t\n" +
+				"owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\t\n",
 		},
 		{
 			name: "pushed ascending",
 			argv: []string{"repos", "UL_1", "--sort", "pushed", "--tsv"},
-			want: "owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\n" +
-				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\n" +
-				"owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\n",
+			want: "owner/zeta\tLast by name\tno\t2\t2024-05-01T12:00:00Z\thttps://github.com/owner/zeta\t\n" +
+				"owner/beta\tMiddle by name\tno\t3\t2024-05-02T12:00:00Z\thttps://github.com/owner/beta\t\n" +
+				"owner/Alpha\tFirst by name\tno\t5\t2024-05-03T12:00:00Z\thttps://github.com/owner/Alpha\t\n",
 		},
 	}
 
@@ -627,19 +669,19 @@ func TestRunFiltersReposOutput(t *testing.T) {
 		{
 			name: "filter name contains go",
 			argv: []string{"repos", "UL_1", "--filter", "name:go", "--tsv"},
-			want: "owner/go-lib\tGo library\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-lib\n" +
-				"owner/go-app\tGo app\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-app\n",
+			want: "owner/go-lib\tGo library\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-lib\t\n" +
+				"owner/go-app\tGo app\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-app\t\n",
 		},
 		{
 			name: "filter non-fork",
 			argv: []string{"repos", "UL_1", "--filter", "fork:false", "--tsv"},
-			want: "owner/go-lib\tGo library\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-lib\n" +
-				"owner/go-app\tGo app\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-app\n",
+			want: "owner/go-lib\tGo library\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-lib\t\n" +
+				"owner/go-app\tGo app\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-app\t\n",
 		},
 		{
 			name: "filter fork true",
 			argv: []string{"repos", "UL_1", "--filter", "fork:true", "--tsv"},
-			want: "owner/rust-tool\tRust tool\tyes\t200\t2024-05-02T12:00:00Z\thttps://github.com/owner/rust-tool\n",
+			want: "owner/rust-tool\tRust tool\tyes\t200\t2024-05-02T12:00:00Z\thttps://github.com/owner/rust-tool\t\n",
 		},
 	}
 
@@ -921,6 +963,289 @@ func TestRunNilServiceReturnsFailure(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "GitHub service is not configured") {
 		t.Fatalf("stderr = %q, want service diagnostic", stderr.String())
+	}
+}
+
+func TestRunUnlistedRepos(t *testing.T) {
+	t.Parallel()
+
+	// Two lists with three repos total; starred set has five repos.
+	// Two starred repos (owner/d and owner/e) are not in any list.
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "List A", ID: "UL_1", URL: "https://github.com/stars/user/lists/a"},
+			{Name: "List B", ID: "UL_2", URL: "https://github.com/stars/user/lists/b"},
+		},
+		repos: []githubapi.Repository{
+			{NameWithOwner: "owner/a", URL: "https://github.com/owner/a"},
+			{NameWithOwner: "owner/b", URL: "https://github.com/owner/b"},
+			{NameWithOwner: "owner/c", URL: "https://github.com/owner/c"},
+		},
+		starred: []githubapi.Repository{
+			{
+				NameWithOwner: "owner/a",
+				StarredAt:     "2026-05-01T00:00:00Z",
+				URL:           "https://github.com/owner/a",
+			},
+			{
+				NameWithOwner: "owner/b",
+				StarredAt:     "2026-04-01T00:00:00Z",
+				URL:           "https://github.com/owner/b",
+			},
+			{
+				NameWithOwner: "owner/c",
+				StarredAt:     "2026-03-01T00:00:00Z",
+				URL:           "https://github.com/owner/c",
+			},
+			{
+				NameWithOwner: "owner/d",
+				StarredAt:     "2026-02-01T00:00:00Z",
+				URL:           "https://github.com/owner/d",
+			},
+			{
+				NameWithOwner: "owner/e",
+				StarredAt:     "2026-01-01T00:00:00Z",
+				URL:           "https://github.com/owner/e",
+			},
+		},
+	}
+
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--unlisted", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	want := "owner/d\t\tno\t0\t\thttps://github.com/owner/d\t\n" +
+		"owner/e\t\tno\t0\t\thttps://github.com/owner/e\t\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("Run --unlisted stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+	// Both lists fetched for their repos.
+	if svc.reposCalls != 2 {
+		t.Fatalf("repos calls = %d, want 2 (one per list)", svc.reposCalls)
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starred calls = %d, want 1", svc.starredCalls)
+	}
+}
+
+func TestRunUnlistedSortedByStarred(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "List A", ID: "UL_1", URL: "https://github.com/stars/user/lists/a"},
+		},
+		repos: []githubapi.Repository{
+			{NameWithOwner: "owner/a", URL: "https://github.com/owner/a"},
+		},
+		starred: []githubapi.Repository{
+			{
+				NameWithOwner: "owner/a",
+				StarredAt:     "2026-05-01T00:00:00Z",
+				URL:           "https://github.com/owner/a",
+			},
+			{
+				NameWithOwner: "owner/b",
+				StarredAt:     "2026-02-01T00:00:00Z",
+				URL:           "https://github.com/owner/b",
+			},
+			{
+				NameWithOwner: "owner/c",
+				StarredAt:     "2026-04-01T00:00:00Z",
+				URL:           "https://github.com/owner/c",
+			},
+		},
+	}
+
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--unlisted", "--sort", "starred", "--desc", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	// owner/c starred 2026-04, owner/b starred 2026-02; desc order = c first
+	want := "owner/c\t\tno\t0\t\thttps://github.com/owner/c\t\n" +
+		"owner/b\t\tno\t0\t\thttps://github.com/owner/b\t\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("Run --unlisted --sort starred stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestRunWebOpensListURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		argv    []string
+		wantURL string
+	}{
+		{
+			name:    "by name resolves URL",
+			argv:    []string{"repos", "Go Tools", "--web"},
+			wantURL: "https://github.com/stars/maoyeedy/lists/go-tools",
+		},
+		{
+			name:    "by ID falls back to raw ID",
+			argv:    []string{"repos", "UL_UNKNOWN", "--web"},
+			wantURL: "UL_UNKNOWN",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := fixtureService()
+			var browsed string
+			orig := command.OpenBrowserForTest(func(url string) error {
+				browsed = url
+				return nil
+			})
+			defer command.OpenBrowserForTest(orig)
+
+			var stdout, stderr strings.Builder
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf(
+					"Run exit = %d, want %d; stderr=%q",
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
+			}
+			if browsed != tt.wantURL {
+				t.Fatalf("openBrowser URL = %q, want %q", browsed, tt.wantURL)
+			}
+			if svc.reposCalls != 0 {
+				t.Fatalf(
+					"repos API calls = %d, want 0 (web should not fetch repos)",
+					svc.reposCalls,
+				)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+		})
+	}
+}
+
+func TestRunSortListByRepoCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{
+			name: "repos count ascending",
+			argv: []string{"list", "--sort", "repos", "--tsv"},
+			// zeta=1, beta=3, Alpha=5
+			want: "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\thttps://github.com/stars/maoyeedy/lists/zeta\n" +
+				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/beta\n" +
+				"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/alpha\n",
+		},
+		{
+			name: "repos count descending",
+			argv: []string{"list", "--sort", "repos", "--desc", "--tsv"},
+			// Alpha=5, beta=3, zeta=1
+			want: "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\thttps://github.com/stars/maoyeedy/lists/alpha\n" +
+				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/beta\n" +
+				"zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\thttps://github.com/stars/maoyeedy/lists/zeta\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := sortableFixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
+			}
+			if got := stdout.String(); got != tt.want {
+				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunFilterAndSortByLanguage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{
+			name: "filter language Go",
+			argv: []string{"repos", "UL_1", "--filter", "language:Go", "--tsv"},
+			want: "owner/go-tool\tA Go tool\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-tool\tGo\n" +
+				"owner/go-web\tA Go web\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-web\tGo\n",
+		},
+		{
+			name: "filter language case insensitive",
+			argv: []string{"repos", "UL_1", "--filter", "language:go", "--tsv"},
+			want: "owner/go-tool\tA Go tool\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-tool\tGo\n" +
+				"owner/go-web\tA Go web\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-web\tGo\n",
+		},
+		{
+			name: "sort by language ascending",
+			argv: []string{"repos", "UL_1", "--sort", "language", "--tsv"},
+			want: "owner/go-tool\tA Go tool\tno\t300\t2024-05-03T12:00:00Z\thttps://github.com/owner/go-tool\tGo\n" +
+				"owner/go-web\tA Go web\tno\t100\t2024-05-01T12:00:00Z\thttps://github.com/owner/go-web\tGo\n" +
+				"owner/rust-lib\tA Rust lib\tno\t200\t2024-05-02T12:00:00Z\thttps://github.com/owner/rust-lib\tRust\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := languageFixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
+			}
+			if got := stdout.String(); got != tt.want {
+				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
+			}
+		})
 	}
 }
 

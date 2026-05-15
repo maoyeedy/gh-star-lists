@@ -264,7 +264,7 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 			"name": "Tools",
 			"items": {
 				"nodes": [
-					{"__typename": "Repository", "nameWithOwner": "cli/cli", "description": "GitHub CLI", "url": "https://github.com/cli/cli", "isFork": false, "stargazerCount": 39000, "pushedAt": "2026-01-02T03:04:05Z"}
+					{"__typename": "Repository", "nameWithOwner": "cli/cli", "description": "GitHub CLI", "url": "https://github.com/cli/cli", "isFork": false, "stargazerCount": 39000, "pushedAt": "2026-01-02T03:04:05Z", "primaryLanguage": {"name": "Go"}}
 				],
 				"pageInfo": {"hasNextPage": true, "endCursor": "repo-cursor-1"}
 			}
@@ -275,7 +275,7 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 			"name": "Tools",
 			"items": {
 				"nodes": [
-					{"__typename": "Repository", "nameWithOwner": "cli/go-gh", "description": "Go helpers", "url": "https://github.com/cli/go-gh", "isFork": false, "stargazerCount": 700, "pushedAt": "2026-02-03T04:05:06Z"}
+					{"__typename": "Repository", "nameWithOwner": "cli/go-gh", "description": "Go helpers", "url": "https://github.com/cli/go-gh", "isFork": false, "stargazerCount": 700, "pushedAt": "2026-02-03T04:05:06Z", "primaryLanguage": null}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -296,6 +296,7 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 			IsFork:         false,
 			StargazerCount: 39000,
 			PushedAt:       "2026-01-02T03:04:05Z",
+			Language:       "Go",
 		},
 		{
 			NameWithOwner:  "cli/go-gh",
@@ -304,6 +305,7 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 			IsFork:         false,
 			StargazerCount: 700,
 			PushedAt:       "2026-02-03T04:05:06Z",
+			Language:       "",
 		},
 	}
 	if len(repositories) != len(want) || repositories[0] != want[0] || repositories[1] != want[1] {
@@ -334,7 +336,7 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 			"__typename": "UserList",
 			"items": {
 				"nodes": [
-					{"__typename": "Repository", "nameWithOwner": "owner/repo", "description": null, "url": "https://github.com/owner/repo", "isFork": true, "stargazerCount": 12, "pushedAt": null}
+					{"__typename": "Repository", "nameWithOwner": "owner/repo", "description": null, "url": "https://github.com/owner/repo", "isFork": true, "stargazerCount": 12, "pushedAt": null, "primaryLanguage": null}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -353,6 +355,7 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 		IsFork:         true,
 		StargazerCount: 12,
 		PushedAt:       "",
+		Language:       "",
 	}
 	if len(repositories) != 1 || repositories[0] != want {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
@@ -634,6 +637,121 @@ func TestGraphQLServicePaginationWithSkippedItems(t *testing.T) {
 	}
 	if repos[0].NameWithOwner != "owner/repo1" || repos[1].NameWithOwner != "owner/repo2" {
 		t.Fatalf("ListRepositories = %#v, want [owner/repo1 owner/repo2]", repos)
+	}
+}
+
+func TestGraphQLServiceListStarredRepositoriesMapsFields(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"starredRepositories": {
+				"edges": [
+					{
+						"starredAt": "2026-03-01T00:00:00Z",
+						"node": {
+							"nameWithOwner": "owner/go-tool",
+							"description": "A Go tool",
+							"url": "https://github.com/owner/go-tool",
+							"isFork": false,
+							"stargazerCount": 500,
+							"pushedAt": "2026-02-01T00:00:00Z",
+							"primaryLanguage": {"name": "Go"}
+						}
+					},
+					{
+						"starredAt": "2026-02-01T00:00:00Z",
+						"node": {
+							"nameWithOwner": "owner/rust-lib",
+							"description": null,
+							"url": "https://github.com/owner/rust-lib",
+							"isFork": true,
+							"stargazerCount": 100,
+							"pushedAt": null,
+							"primaryLanguage": null
+						}
+					}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor, 100)
+
+	repos, err := service.ListStarredRepositories(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarredRepositories returned error: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("ListStarredRepositories returned %d repos, want 2", len(repos))
+	}
+	want0 := Repository{
+		NameWithOwner:  "owner/go-tool",
+		Description:    "A Go tool",
+		URL:            "https://github.com/owner/go-tool",
+		IsFork:         false,
+		StargazerCount: 500,
+		PushedAt:       "2026-02-01T00:00:00Z",
+		Language:       "Go",
+		StarredAt:      "2026-03-01T00:00:00Z",
+	}
+	want1 := Repository{
+		NameWithOwner:  "owner/rust-lib",
+		Description:    "",
+		URL:            "https://github.com/owner/rust-lib",
+		IsFork:         true,
+		StargazerCount: 100,
+		PushedAt:       "",
+		Language:       "",
+		StarredAt:      "2026-02-01T00:00:00Z",
+	}
+	if repos[0] != want0 {
+		t.Fatalf("repos[0] = %#v, want %#v", repos[0], want0)
+	}
+	if repos[1] != want1 {
+		t.Fatalf("repos[1] = %#v, want %#v", repos[1], want1)
+	}
+	if !strings.Contains(executor.calls[0].query, "starredRepositories") {
+		t.Fatalf("query = %q, want starredRepositories query", executor.calls[0].query)
+	}
+}
+
+func TestGraphQLServiceListStarredRepositoriesPaginates(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"starredRepositories": {
+				"edges": [
+					{"starredAt": "2026-03-01T00:00:00Z", "node": {"nameWithOwner": "owner/a", "url": "https://github.com/owner/a"}}
+				],
+				"pageInfo": {"hasNextPage": true, "endCursor": "star-cursor-1"}
+			}
+		}
+	}`, `{
+		"viewer": {
+			"starredRepositories": {
+				"edges": [
+					{"starredAt": "2026-02-01T00:00:00Z", "node": {"nameWithOwner": "owner/b", "url": "https://github.com/owner/b"}}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor, 100)
+
+	repos, err := service.ListStarredRepositories(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarredRepositories returned error: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("ListStarredRepositories returned %d repos, want 2", len(repos))
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("executor calls = %d, want 2", len(executor.calls))
+	}
+	if got := executor.calls[1].variables["endCursor"]; got != "star-cursor-1" {
+		t.Fatalf("second page endCursor = %#v, want star-cursor-1", got)
 	}
 }
 

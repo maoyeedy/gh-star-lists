@@ -20,6 +20,7 @@ func TestWriteRepositoriesTSVUsesLegacyFieldOrder(t *testing.T) {
 			StargazerCount: 41000,
 			PushedAt:       "2024-05-01T12:00:00Z",
 			URL:            "https://github.com/cli/cli",
+			Language:       "Go",
 		},
 		{
 			NameWithOwner:  "fork/project",
@@ -27,6 +28,7 @@ func TestWriteRepositoriesTSVUsesLegacyFieldOrder(t *testing.T) {
 			StargazerCount: 0,
 			PushedAt:       "",
 			URL:            "https://github.com/fork/project",
+			Language:       "",
 		},
 	}
 
@@ -35,8 +37,8 @@ func TestWriteRepositoriesTSVUsesLegacyFieldOrder(t *testing.T) {
 		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
 	}
 
-	want := "cli/cli\tGitHub CLI\tno\t41000\t2024-05-01T12:00:00Z\thttps://github.com/cli/cli\n" +
-		"fork/project\t\tyes\t0\t\thttps://github.com/fork/project\n"
+	want := "cli/cli\tGitHub CLI\tno\t41000\t2024-05-01T12:00:00Z\thttps://github.com/cli/cli\tGo\n" +
+		"fork/project\t\tyes\t0\t\thttps://github.com/fork/project\t\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteRepositories TSV output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -53,6 +55,7 @@ func TestWriteRepositoriesJSONUsesLowerCamelCaseArray(t *testing.T) {
 			StargazerCount: 41000,
 			PushedAt:       "2024-05-01T12:00:00Z",
 			URL:            "https://github.com/cli/cli",
+			Language:       "Go",
 		},
 	}
 
@@ -61,7 +64,7 @@ func TestWriteRepositoriesJSONUsesLowerCamelCaseArray(t *testing.T) {
 		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
 	}
 
-	want := "[{\"nameWithOwner\":\"cli/cli\",\"description\":\"GitHub CLI\",\"isFork\":false,\"stargazerCount\":41000,\"pushedAt\":\"2024-05-01T12:00:00Z\",\"url\":\"https://github.com/cli/cli\"}]\n"
+	want := "[{\"nameWithOwner\":\"cli/cli\",\"description\":\"GitHub CLI\",\"isFork\":false,\"stargazerCount\":41000,\"pushedAt\":\"2024-05-01T12:00:00Z\",\"url\":\"https://github.com/cli/cli\",\"language\":\"Go\"}]\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteRepositories JSON output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -107,12 +110,14 @@ func TestWriteRepositoriesHumanIsDeterministic(t *testing.T) {
 			StargazerCount: 41000,
 			PushedAt:       "2024-05-01T12:00:00Z",
 			URL:            "https://github.com/cli/cli",
+			Language:       "Go",
 		},
 		{
 			NameWithOwner:  "fork/project",
 			IsFork:         true,
 			StargazerCount: 0,
 			URL:            "https://github.com/fork/project",
+			Language:       "",
 		},
 	}
 
@@ -126,9 +131,9 @@ func TestWriteRepositoriesHumanIsDeterministic(t *testing.T) {
 		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
 	}
 
-	want := "REPOSITORY    STARS  FORK  PUSHED  URL\n" +
-		"cli/cli       41000  no    2y ago  https://github.com/cli/cli\n" +
-		"fork/project  0      yes   -       https://github.com/fork/project\n"
+	want := "REPOSITORY    STARS  LANG  FORK  PUSHED  URL\n" +
+		"cli/cli       41000  Go    no    2y ago  https://github.com/cli/cli\n" +
+		"fork/project  0            yes   -       https://github.com/fork/project\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteRepositories human output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -145,12 +150,14 @@ func TestWriteRepositoriesPlainPreservesDetailedOutput(t *testing.T) {
 			StargazerCount: 41000,
 			PushedAt:       "2024-05-01T12:00:00Z",
 			URL:            "https://github.com/cli/cli",
+			Language:       "Go",
 		},
 		{
 			NameWithOwner:  "fork/project",
 			IsFork:         true,
 			StargazerCount: 0,
 			URL:            "https://github.com/fork/project",
+			Language:       "",
 		},
 	}
 
@@ -165,6 +172,7 @@ func TestWriteRepositoriesPlainPreservesDetailedOutput(t *testing.T) {
 		"  Stars: 41000\n" +
 		"  Pushed: 2024-05-01T12:00:00Z\n" +
 		"  URL: https://github.com/cli/cli\n" +
+		"  Language: Go\n" +
 		"fork/project\n" +
 		"  Fork: yes\n" +
 		"  Stars: 0\n" +

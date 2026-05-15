@@ -30,6 +30,31 @@ const listStarListsQuery = `query($endCursor: String, $first: Int!) {
   }
 }`
 
+const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!) {
+  viewer {
+    starredRepositories(first: $first, after: $endCursor, orderBy: {field: STARRED_AT, direction: DESC}) {
+      edges {
+        starredAt
+        node {
+          nameWithOwner
+          description
+          url
+          isFork
+          stargazerCount
+          pushedAt
+          primaryLanguage {
+            name
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}`
+
 const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!) {
   node(id: $id) {
     __typename
@@ -45,6 +70,9 @@ const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!)
             isFork
             stargazerCount
             pushedAt
+            primaryLanguage {
+              name
+            }
           }
         }
         pageInfo {
@@ -137,6 +165,7 @@ func (s *graphQLService) ListRepositories(
 				StargazerCount: node.StargazerCount,
 				PushedAt:       stringValue(node.PushedAt),
 				URL:            node.URL,
+				Language:       node.PrimaryLanguage.OrEmpty(),
 			})
 		}
 		if !result.Node.Items.PageInfo.HasNextPage {
@@ -192,14 +221,89 @@ type repositoryItemsConnection struct {
 	PageInfo pageInfo              `json:"pageInfo"`
 }
 
+type languageNode struct {
+	Name string `json:"name"`
+}
+
+func (l *languageNode) OrEmpty() string {
+	if l == nil {
+		return ""
+	}
+	return l.Name
+}
+
 type repositoryItemNode struct {
-	Typename       string  `json:"__typename"`
-	NameWithOwner  string  `json:"nameWithOwner"`
-	Description    *string `json:"description"`
-	URL            string  `json:"url"`
-	IsFork         bool    `json:"isFork"`
-	StargazerCount int     `json:"stargazerCount"`
-	PushedAt       *string `json:"pushedAt"`
+	Typename        string        `json:"__typename"`
+	NameWithOwner   string        `json:"nameWithOwner"`
+	Description     *string       `json:"description"`
+	URL             string        `json:"url"`
+	IsFork          bool          `json:"isFork"`
+	StargazerCount  int           `json:"stargazerCount"`
+	PushedAt        *string       `json:"pushedAt"`
+	PrimaryLanguage *languageNode `json:"primaryLanguage"`
+}
+
+type listStarredRepositoriesResponse struct {
+	Viewer struct {
+		StarredRepositories struct {
+			Edges    []starredRepositoryEdge `json:"edges"`
+			PageInfo pageInfo                `json:"pageInfo"`
+		} `json:"starredRepositories"`
+	} `json:"viewer"`
+}
+
+type starredRepositoryEdge struct {
+	StarredAt string              `json:"starredAt"`
+	Node      starredRepoItemNode `json:"node"`
+}
+
+type starredRepoItemNode struct {
+	NameWithOwner   string        `json:"nameWithOwner"`
+	Description     *string       `json:"description"`
+	URL             string        `json:"url"`
+	IsFork          bool          `json:"isFork"`
+	StargazerCount  int           `json:"stargazerCount"`
+	PushedAt        *string       `json:"pushedAt"`
+	PrimaryLanguage *languageNode `json:"primaryLanguage"`
+}
+
+func (s *graphQLService) ListStarredRepositories(ctx context.Context) ([]Repository, error) {
+	repositories := make([]Repository, 0, s.pageSize)
+	var endCursor any
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		var result listStarredRepositoriesResponse
+		variables := map[string]any{"endCursor": endCursor, "first": s.pageSize}
+		if err := s.executor.Execute(
+			ctx,
+			listStarredRepositoriesQuery,
+			variables,
+			&result,
+		); err != nil {
+			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+		}
+
+		for _, edge := range result.Viewer.StarredRepositories.Edges {
+			repositories = append(repositories, Repository{
+				NameWithOwner:  edge.Node.NameWithOwner,
+				Description:    stringValue(edge.Node.Description),
+				IsFork:         edge.Node.IsFork,
+				StargazerCount: edge.Node.StargazerCount,
+				PushedAt:       stringValue(edge.Node.PushedAt),
+				URL:            edge.Node.URL,
+				Language:       edge.Node.PrimaryLanguage.OrEmpty(),
+				StarredAt:      edge.StarredAt,
+			})
+		}
+		if !result.Viewer.StarredRepositories.PageInfo.HasNextPage {
+			return repositories, nil
+		}
+		endCursor = stringValue(result.Viewer.StarredRepositories.PageInfo.EndCursor)
+	}
 }
 
 func stringValue(value *string) string {

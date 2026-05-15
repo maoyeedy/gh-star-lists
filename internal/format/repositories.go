@@ -45,13 +45,14 @@ func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 	for _, repo := range repos {
 		if _, err := fmt.Fprintf(
 			w,
-			"%s\t%s\t%s\t%d\t%s\t%s\n",
+			"%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
 			repo.NameWithOwner,
 			repo.Description,
 			yesNo(repo.IsFork),
 			repo.StargazerCount,
 			repo.PushedAt,
 			repo.URL,
+			repo.Language,
 		); err != nil {
 			return err
 		}
@@ -68,12 +69,13 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader(
-		[]string{"REPOSITORY", "STARS", "FORK", "PUSHED", "URL"},
+		[]string{"REPOSITORY", "STARS", "LANG", "FORK", "PUSHED", "URL"},
 		tableprinter.WithColor(boldFn),
 	)
 	for _, repo := range repos {
 		table.AddField(repo.NameWithOwner, tableprinter.WithColor(boldFn))
 		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))
+		table.AddField(repo.Language, tableprinter.WithTruncate(nil))
 		table.AddField(yesNo(repo.IsFork), tableprinter.WithTruncate(nil))
 		table.AddField(shortAge(repo.PushedAt, options.Now), tableprinter.WithTruncate(nil))
 		table.AddField(repo.URL, tableprinter.WithColor(faintFn))
@@ -109,6 +111,11 @@ func writeRepositoriesPlain(w io.Writer, repos []githubapi.Repository) error {
 		}
 		if _, err := fmt.Fprintf(w, "  URL: %s\n", repo.URL); err != nil {
 			return err
+		}
+		if repo.Language != "" {
+			if _, err := fmt.Fprintf(w, "  Language: %s\n", repo.Language); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

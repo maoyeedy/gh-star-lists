@@ -21,6 +21,10 @@ func (f *lazyFakeService) ListRepositories(context.Context, string) ([]Repositor
 	return nil, nil
 }
 
+func (f *lazyFakeService) ListStarredRepositories(context.Context) ([]Repository, error) {
+	return nil, nil
+}
+
 func TestLazyServiceDefersConstructionUntilRuntimeCall(t *testing.T) {
 	var constructorCalls int
 	fake := &lazyFakeService{}

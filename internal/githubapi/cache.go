@@ -16,10 +16,11 @@ type cacheEntry[T any] struct {
 type cacheService struct {
 	inner Service
 
-	mu         sync.RWMutex
-	listsEntry *cacheEntry[StarList]
-	reposEntry map[string]*cacheEntry[Repository]
-	ttl        time.Duration
+	mu           sync.RWMutex
+	listsEntry   *cacheEntry[StarList]
+	reposEntry   map[string]*cacheEntry[Repository]
+	starredEntry *cacheEntry[Repository]
+	ttl          time.Duration
 }
 
 func newCacheService(inner Service) *cacheService {
@@ -74,6 +75,29 @@ func (s *cacheService) ListRepositories(ctx context.Context, listID string) ([]R
 
 	s.mu.Lock()
 	s.reposEntry[listID] = &cacheEntry[Repository]{
+		data:   repos,
+		expiry: time.Now().Add(s.ttl),
+	}
+	s.mu.Unlock()
+	return repos, nil
+}
+
+func (s *cacheService) ListStarredRepositories(ctx context.Context) ([]Repository, error) {
+	s.mu.RLock()
+	if s.starredEntry != nil && time.Now().Before(s.starredEntry.expiry) {
+		data := s.starredEntry.data
+		s.mu.RUnlock()
+		return data, nil
+	}
+	s.mu.RUnlock()
+
+	repos, err := s.inner.ListStarredRepositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.starredEntry = &cacheEntry[Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}

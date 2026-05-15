@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cli/go-gh/v2/pkg/browser"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
@@ -18,6 +19,19 @@ const (
 	ExitFailure = 1
 	ExitUsage   = 2
 )
+
+// openBrowser is overridable in tests.
+var openBrowser = func(url string) error {
+	return browser.New("", os.Stdout, os.Stderr).Browse(url)
+}
+
+// OpenBrowserForTest replaces openBrowser with fn and returns the previous value.
+// Intended only for use in tests.
+func OpenBrowserForTest(fn func(string) error) func(string) error {
+	prev := openBrowser
+	openBrowser = fn
+	return prev
+}
 
 // Run does not construct GitHub clients, so help and usage paths remain
 // auth-free and testable.
@@ -98,6 +112,59 @@ func RunWithOptions(
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
 		}
 	case ActionRepos:
+		if parsed.Unlisted {
+			lists, err := service.ListStarLists(ctx)
+			if err != nil {
+				return writeRuntimeFailure(stderr, ActionRepos, "", err)
+			}
+			listed := make(map[string]struct{})
+			for _, l := range lists {
+				listRepos, err := service.ListRepositories(ctx, l.ID)
+				if err != nil {
+					return writeRuntimeFailure(stderr, ActionRepos, l.ID, err)
+				}
+				for _, r := range listRepos {
+					listed[r.NameWithOwner] = struct{}{}
+				}
+			}
+			starred, err := service.ListStarredRepositories(ctx)
+			if err != nil {
+				return writeRuntimeFailure(stderr, ActionRepos, "", err)
+			}
+			unlisted := make([]githubapi.Repository, 0, len(starred))
+			for _, r := range starred {
+				if _, inList := listed[r.NameWithOwner]; !inList {
+					unlisted = append(unlisted, r)
+				}
+			}
+			unlisted = filterRepositories(unlisted, parsed.Filters)
+			sortRepositories(unlisted, parsed.SortKeys, parsed.SortDesc)
+			if parsed.Limit > 0 && len(unlisted) > parsed.Limit {
+				unlisted = unlisted[:parsed.Limit]
+			}
+			if err := format.WriteRepositoriesWithOptions(
+				stdout,
+				outputOptions,
+				unlisted,
+			); err != nil {
+				return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
+			}
+			return ExitSuccess
+		}
+		if parsed.Web {
+			rl, err := resolveList(ctx, service, parsed.ListID)
+			if err != nil {
+				return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err)
+			}
+			listURL := rl.URL
+			if listURL == "" {
+				listURL = rl.ID
+			}
+			if err := openBrowser(listURL); err != nil {
+				return writeFailure(stderr, fmt.Errorf("failed to open browser: %w", err))
+			}
+			return ExitSuccess
+		}
 		resolvedID, err := resolveListID(ctx, service, parsed.ListID)
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err)
@@ -121,20 +188,33 @@ func RunWithOptions(
 	return ExitSuccess
 }
 
-func resolveListID(ctx context.Context, service githubapi.Service, raw string) (string, error) {
+type resolvedList struct {
+	ID  string
+	URL string
+}
+
+func resolveList(ctx context.Context, service githubapi.Service, raw string) (resolvedList, error) {
 	if raw == "" {
-		return "", nil
+		return resolvedList{}, nil
 	}
 	lists, err := service.ListStarLists(ctx)
 	if err != nil {
-		return "", err
+		return resolvedList{}, err
 	}
 	for _, l := range lists {
-		if strings.EqualFold(l.Name, raw) {
-			return l.ID, nil
+		if strings.EqualFold(l.Name, raw) || l.ID == raw {
+			return resolvedList{ID: l.ID, URL: l.URL}, nil
 		}
 	}
-	return raw, nil
+	return resolvedList{ID: raw}, nil
+}
+
+func resolveListID(ctx context.Context, service githubapi.Service, raw string) (string, error) {
+	r, err := resolveList(ctx, service, raw)
+	if err != nil {
+		return "", err
+	}
+	return r.ID, nil
 }
 
 func filterStarLists(lists []githubapi.StarList, filters []Filter) []githubapi.StarList {
@@ -174,6 +254,10 @@ func filterRepositories(repos []githubapi.Repository, filters []Filter) []github
 				if r.IsFork != wantFork {
 					keep = false
 				}
+			case FilterKeyLanguage:
+				if strings.ToLower(r.Language) != f.Value {
+					keep = false
+				}
 			}
 		}
 		if keep {
@@ -210,6 +294,10 @@ func compareStarLists(left, right githubapi.StarList, sortKeys []string) int {
 			rightName := strings.ToLower(right.Name)
 			if leftName != rightName {
 				cmp = strings.Compare(leftName, rightName)
+			}
+		case SortKeyRepoCount:
+			if left.RepoCount != right.RepoCount {
+				cmp = left.RepoCount - right.RepoCount
 			}
 		}
 		if cmp != 0 {
@@ -252,6 +340,12 @@ func compareRepositories(left, right githubapi.Repository, sortKeys []string) in
 		case SortKeyPushed:
 			if left.PushedAt != right.PushedAt {
 				cmp = strings.Compare(left.PushedAt, right.PushedAt)
+			}
+		case SortKeyLanguage:
+			cmp = strings.Compare(strings.ToLower(left.Language), strings.ToLower(right.Language))
+		case SortKeyStarred:
+			if left.StarredAt != right.StarredAt {
+				cmp = strings.Compare(left.StarredAt, right.StarredAt)
 			}
 		}
 		if cmp != 0 {

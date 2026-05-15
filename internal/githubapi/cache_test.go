@@ -8,12 +8,14 @@ import (
 )
 
 type fakeCacheInner struct {
-	listCalls  int
-	reposCalls map[string]int
-	lists      []StarList
-	repos      map[string][]Repository
-	listErr    error
-	reposErr   error
+	listCalls    int
+	reposCalls   map[string]int
+	starredCalls int
+	lists        []StarList
+	repos        map[string][]Repository
+	starred      []Repository
+	listErr      error
+	reposErr     error
 }
 
 func (f *fakeCacheInner) ListStarLists(context.Context) ([]StarList, error) {
@@ -30,6 +32,11 @@ func (f *fakeCacheInner) ListRepositories(_ context.Context, listID string) ([]R
 		return nil, f.reposErr
 	}
 	return f.repos[listID], nil
+}
+
+func (f *fakeCacheInner) ListStarredRepositories(_ context.Context) ([]Repository, error) {
+	f.starredCalls++
+	return f.starred, nil
 }
 
 func TestCacheServiceHits(t *testing.T) {
@@ -169,6 +176,43 @@ func TestCacheServicePerListID(t *testing.T) {
 		t.Fatalf(
 			"UL_1 calls after cache = %d, want 1 (should not increase)",
 			inner.reposCalls["UL_1"],
+		)
+	}
+}
+
+func TestCacheServiceListStarredRepositoriesCaches(t *testing.T) {
+	inner := &fakeCacheInner{
+		starred: []Repository{{NameWithOwner: "owner/starred"}},
+	}
+	svc := newCacheService(inner)
+	svc.ttl = 10 * time.Minute
+
+	ctx := context.Background()
+
+	// First call hits inner.
+	repos1, err := svc.ListStarredRepositories(ctx)
+	if err != nil {
+		t.Fatalf("first ListStarredRepositories: %v", err)
+	}
+	if len(repos1) != 1 {
+		t.Fatalf("first call got %d repos, want 1", len(repos1))
+	}
+	if inner.starredCalls != 1 {
+		t.Fatalf("inner starred calls = %d, want 1", inner.starredCalls)
+	}
+
+	// Second call is cached.
+	repos2, err := svc.ListStarredRepositories(ctx)
+	if err != nil {
+		t.Fatalf("second ListStarredRepositories: %v", err)
+	}
+	if len(repos2) != 1 {
+		t.Fatalf("second call got %d repos, want 1", len(repos2))
+	}
+	if inner.starredCalls != 1 {
+		t.Fatalf(
+			"inner starred calls after cache = %d, want 1 (should not increase)",
+			inner.starredCalls,
 		)
 	}
 }

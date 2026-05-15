@@ -247,6 +247,64 @@ func TestParse(t *testing.T) {
 				NoColor: true,
 			},
 		},
+		{
+			name: "filter language on repos",
+			argv: []string{"repos", "UL_1", "--filter", "language:Go"},
+			want: command.Parsed{
+				Action:  command.ActionRepos,
+				ListID:  "UL_1",
+				Mode:    format.OutputHuman,
+				Filters: []command.Filter{{Key: "language", Value: "go"}},
+			},
+		},
+		{
+			name: "sort repos by language",
+			argv: []string{"repos", "UL_1", "--sort", "language"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				ListID:   "UL_1",
+				Mode:     format.OutputHuman,
+				SortKeys: []string{"language"},
+			},
+		},
+		{
+			name: "sort list by repos count",
+			argv: []string{"list", "--sort", "repos"},
+			want: command.Parsed{
+				Action:   command.ActionList,
+				Mode:     format.OutputHuman,
+				SortKeys: []string{"repos"},
+			},
+		},
+		{
+			name: "web flag on repos",
+			argv: []string{"repos", "UL_1", "--web"},
+			want: command.Parsed{
+				Action: command.ActionRepos,
+				ListID: "UL_1",
+				Mode:   format.OutputHuman,
+				Web:    true,
+			},
+		},
+		{
+			name: "unlisted flag on repos",
+			argv: []string{"repos", "--unlisted"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				Mode:     format.OutputHuman,
+				Unlisted: true,
+			},
+		},
+		{
+			name: "sort repos by starred",
+			argv: []string{"repos", "--unlisted", "--sort", "starred"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				Mode:     format.OutputHuman,
+				Unlisted: true,
+				SortKeys: []string{"starred"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -371,6 +429,61 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "filter fork on list",
 			argv:        []string{"list", "--filter", "fork:false"},
 			wantMessage: "filter key \"fork\" is only supported for repos",
+		},
+		{
+			name:        "filter language on list",
+			argv:        []string{"list", "--filter", "language:Go"},
+			wantMessage: "filter key \"language\" is only supported for repos",
+		},
+		{
+			name:        "sort language on list",
+			argv:        []string{"list", "--sort", "language"},
+			wantMessage: "unsupported sort key \"language\" for list",
+		},
+		{
+			name:        "sort repos count on repos action",
+			argv:        []string{"repos", "UL_1", "--sort", "repos"},
+			wantMessage: "unsupported sort key \"repos\" for repos",
+		},
+		{
+			name:        "web flag on list",
+			argv:        []string{"list", "--web"},
+			wantMessage: "--web is only supported for repos",
+		},
+		{
+			name:        "web flag on default list",
+			argv:        []string{"--web"},
+			wantMessage: "--web is only supported for repos",
+		},
+		{
+			name:        "web combined with json",
+			argv:        []string{"repos", "UL_1", "--web", "--json"},
+			wantMessage: "--web cannot be combined with output flags",
+		},
+		{
+			name:        "web combined with tsv",
+			argv:        []string{"repos", "UL_1", "--web", "--tsv"},
+			wantMessage: "--web cannot be combined with output flags",
+		},
+		{
+			name:        "unlisted on list",
+			argv:        []string{"list", "--unlisted"},
+			wantMessage: "--unlisted is only supported for repos",
+		},
+		{
+			name:        "unlisted on default list",
+			argv:        []string{"--unlisted"},
+			wantMessage: "--unlisted is only supported for repos",
+		},
+		{
+			name:        "unlisted with list id",
+			argv:        []string{"repos", "UL_1", "--unlisted"},
+			wantMessage: "--unlisted does not accept a list id",
+		},
+		{
+			name:        "sort starred on list",
+			argv:        []string{"list", "--sort", "starred"},
+			wantMessage: "unsupported sort key \"starred\" for list",
 		},
 		{
 			name:        "filter bad fork value",

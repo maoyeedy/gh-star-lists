@@ -19,16 +19,20 @@ const (
 
 // Sort keys accepted by --sort for list and repos subcommands.
 const (
-	SortKeyAdded  = "added"
-	SortKeyName   = "name"
-	SortKeyStars  = "stars"
-	SortKeyPushed = "pushed"
+	SortKeyAdded     = "added"
+	SortKeyName      = "name"
+	SortKeyStars     = "stars"
+	SortKeyPushed    = "pushed"
+	SortKeyLanguage  = "language"
+	SortKeyRepoCount = "repos"
+	SortKeyStarred   = "starred"
 )
 
 // Filter keys accepted by --filter for list and repos subcommands.
 const (
-	FilterKeyName = "name"
-	FilterKeyFork = "fork"
+	FilterKeyName     = "name"
+	FilterKeyFork     = "fork"
+	FilterKeyLanguage = "language"
 )
 
 type Filter struct {
@@ -49,6 +53,8 @@ type Parsed struct {
 	Filters    []Filter
 	OutputPath string
 	Template   string
+	Web        bool
+	Unlisted   bool
 }
 
 // UsageError describes invalid CLI input. Runners should map this to exit code 2.
@@ -63,18 +69,20 @@ func (e *UsageError) Error() string {
 // Parse normalizes gh-star-lists arguments without initializing GitHub clients.
 func Parse(argv []string) (Parsed, error) {
 	var (
-		positionals []string
-		jsonFlag    bool
-		tsvFlag     bool
-		plainFlag   bool
-		sortKeys    []string
-		sortDesc    bool
-		limit       int
-		cacheFlag   bool
-		noColorFlag bool
-		filters     []Filter
-		outputPath  string
-		templateStr string
+		positionals  []string
+		jsonFlag     bool
+		tsvFlag      bool
+		plainFlag    bool
+		sortKeys     []string
+		sortDesc     bool
+		limit        int
+		cacheFlag    bool
+		noColorFlag  bool
+		filters      []Filter
+		outputPath   string
+		templateStr  string
+		webFlag      bool
+		unlistedFlag bool
 	)
 
 	for i := 0; i < len(argv); i++ {
@@ -114,6 +122,10 @@ func Parse(argv []string) (Parsed, error) {
 			cacheFlag = true
 		case "--no-color":
 			noColorFlag = true
+		case "--web":
+			webFlag = true
+		case "--unlisted":
+			unlistedFlag = true
 		case "--limit":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --limit")
@@ -175,85 +187,88 @@ func Parse(argv []string) (Parsed, error) {
 		mode = format.OutputTemplate
 	}
 
-	if len(positionals) == 0 {
-		if err := validateFilters(ActionList, filters); err != nil {
-			return Parsed{}, err
+	if len(positionals) > 0 {
+		switch positionals[0] {
+		case "list":
+			if len(positionals) > 1 {
+				return Parsed{}, usage(
+					"too many arguments for list: %s",
+					strings.Join(positionals[1:], " "),
+				)
+			}
+		case "repos":
+			if len(positionals) == 1 {
+				if !unlistedFlag {
+					return Parsed{}, usage("missing list id for repos")
+				}
+			}
+			if unlistedFlag && len(positionals) > 1 {
+				return Parsed{}, usage("--unlisted does not accept a list id")
+			}
+			if !unlistedFlag && len(positionals) > 2 {
+				return Parsed{}, usage(
+					"too many arguments for repos: %s",
+					strings.Join(positionals[2:], " "),
+				)
+			}
+			if webFlag &&
+				(jsonFlag || tsvFlag || plainFlag || templateStr != "" || outputPath != "") {
+				return Parsed{}, usage("--web cannot be combined with output flags")
+			}
+			if err := validateFilters(ActionRepos, filters); err != nil {
+				return Parsed{}, err
+			}
+			if err := validateSort(ActionRepos, sortKeys, sortDesc); err != nil {
+				return Parsed{}, err
+			}
+			listID := ""
+			if !unlistedFlag && len(positionals) > 1 {
+				listID = positionals[1]
+			}
+			return Parsed{
+				Action:     ActionRepos,
+				ListID:     listID,
+				Mode:       mode,
+				SortKeys:   sortKeys,
+				SortDesc:   sortDesc,
+				Limit:      limit,
+				NoColor:    noColorFlag,
+				Filters:    filters,
+				Cache:      cacheFlag,
+				OutputPath: outputPath,
+				Template:   templateStr,
+				Web:        webFlag,
+				Unlisted:   unlistedFlag,
+			}, nil
+		default:
+			return Parsed{}, usage("unknown command %q", positionals[0])
 		}
-		if err := validateSort(ActionList, sortKeys, sortDesc); err != nil {
-			return Parsed{}, err
-		}
-		return Parsed{
-			Action:     ActionList,
-			Mode:       mode,
-			SortKeys:   sortKeys,
-			SortDesc:   sortDesc,
-			Limit:      limit,
-			NoColor:    noColorFlag,
-			Filters:    filters,
-			Cache:      cacheFlag,
-			OutputPath: outputPath,
-			Template:   templateStr,
-		}, nil
 	}
 
-	switch positionals[0] {
-	case "list":
-		if len(positionals) > 1 {
-			return Parsed{}, usage(
-				"too many arguments for list: %s",
-				strings.Join(positionals[1:], " "),
-			)
-		}
-		if err := validateFilters(ActionList, filters); err != nil {
-			return Parsed{}, err
-		}
-		if err := validateSort(ActionList, sortKeys, sortDesc); err != nil {
-			return Parsed{}, err
-		}
-		return Parsed{
-			Action:     ActionList,
-			Mode:       mode,
-			SortKeys:   sortKeys,
-			SortDesc:   sortDesc,
-			Limit:      limit,
-			NoColor:    noColorFlag,
-			Filters:    filters,
-			Cache:      cacheFlag,
-			OutputPath: outputPath,
-			Template:   templateStr,
-		}, nil
-	case "repos":
-		if len(positionals) == 1 {
-			return Parsed{}, usage("missing list id for repos")
-		}
-		if len(positionals) > 2 {
-			return Parsed{}, usage(
-				"too many arguments for repos: %s",
-				strings.Join(positionals[2:], " "),
-			)
-		}
-		if err := validateFilters(ActionRepos, filters); err != nil {
-			return Parsed{}, err
-		}
-		if err := validateSort(ActionRepos, sortKeys, sortDesc); err != nil {
-			return Parsed{}, err
-		}
-		return Parsed{
-			Action:     ActionRepos,
-			ListID:     positionals[1],
-			Mode:       mode,
-			SortKeys:   sortKeys,
-			SortDesc:   sortDesc,
-			Limit:      limit,
-			NoColor:    noColorFlag,
-			Filters:    filters,
-			Cache:      cacheFlag,
-			OutputPath: outputPath,
-			Template:   templateStr,
-		}, nil
-	default:
-		return Parsed{}, usage("unknown command %q", positionals[0])
+	if webFlag {
+		return Parsed{}, usage("--web is only supported for repos")
 	}
+	if unlistedFlag {
+		return Parsed{}, usage("--unlisted is only supported for repos")
+	}
+	if err := validateFilters(ActionList, filters); err != nil {
+		return Parsed{}, err
+	}
+	if err := validateSort(ActionList, sortKeys, sortDesc); err != nil {
+		return Parsed{}, err
+	}
+	return Parsed{
+		Action:     ActionList,
+		Mode:       mode,
+		SortKeys:   sortKeys,
+		SortDesc:   sortDesc,
+		Limit:      limit,
+		NoColor:    noColorFlag,
+		Filters:    filters,
+		Cache:      cacheFlag,
+		OutputPath: outputPath,
+		Template:   templateStr,
+	}, nil
 }
 
 func validateFilters(action Action, filters []Filter) error {
@@ -270,8 +285,12 @@ func validateFilters(action Action, filters []Filter) error {
 					f.Value,
 				)
 			}
+		case FilterKeyLanguage:
+			if action != ActionRepos {
+				return usage("filter key %q is only supported for repos", f.Key)
+			}
 		default:
-			return usage("unknown filter key %q; supported keys: name, fork", f.Key)
+			return usage("unknown filter key %q; supported keys: name, fork, language", f.Key)
 		}
 	}
 	return nil
@@ -289,16 +308,19 @@ func validateSort(action Action, sortKeys []string, sortDesc bool) error {
 		switch action {
 		case ActionList:
 			switch key {
-			case SortKeyAdded, SortKeyName:
+			case SortKeyAdded, SortKeyName, SortKeyRepoCount:
 			default:
-				return usage("unsupported sort key %q for list; supported keys: added, name", key)
+				return usage(
+					"unsupported sort key %q for list; supported keys: added, name, repos",
+					key,
+				)
 			}
 		case ActionRepos:
 			switch key {
-			case SortKeyName, SortKeyStars, SortKeyPushed:
+			case SortKeyName, SortKeyStars, SortKeyPushed, SortKeyLanguage, SortKeyStarred:
 			default:
 				return usage(
-					"unsupported sort key %q for repos; supported keys: name, stars, pushed",
+					"unsupported sort key %q for repos; supported keys: name, stars, pushed, language, starred",
 					key,
 				)
 			}

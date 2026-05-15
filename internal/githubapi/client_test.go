@@ -12,7 +12,9 @@ type lazyFakeService struct {
 
 func (f *lazyFakeService) ListStarLists(context.Context) ([]StarList, error) {
 	f.listCalls++
-	return []StarList{{Name: "Tools", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/tools"}}, nil
+	return []StarList{
+		{Name: "Tools", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/tools"},
+	}, nil
 }
 
 func (f *lazyFakeService) ListRepositories(context.Context, string) ([]Repository, error) {

@@ -83,7 +83,13 @@ func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
-	want := StarList{Name: "Tools", Description: "", LastAddedAt: "", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/tools"}
+	want := StarList{
+		Name:        "Tools",
+		Description: "",
+		LastAddedAt: "",
+		ID:          "UL_1",
+		URL:         "https://github.com/stars/testuser/lists/tools",
+	}
 	if len(lists) != 1 || lists[0] != want {
 		t.Fatalf("ListStarLists() = %#v, want %#v", lists, []StarList{want})
 	}

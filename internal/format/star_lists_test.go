@@ -29,7 +29,13 @@ func TestWriteStarListsTSVIncludesRepoCount(t *testing.T) {
 			RepoCount:   5,
 			URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 		},
-		{Name: "No Description", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2", RepoCount: 0, URL: "https://github.com/stars/maoyeedy/lists/no-description"},
+		{
+			Name:        "No Description",
+			LastAddedAt: "2024-05-02T12:00:00Z",
+			ID:          "UL_2",
+			RepoCount:   0,
+			URL:         "https://github.com/stars/maoyeedy/lists/no-description",
+		},
 	}
 
 	var out bytes.Buffer

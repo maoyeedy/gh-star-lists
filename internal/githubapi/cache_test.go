@@ -34,7 +34,9 @@ func (f *fakeCacheInner) ListRepositories(_ context.Context, listID string) ([]R
 
 func TestCacheServiceHits(t *testing.T) {
 	inner := &fakeCacheInner{
-		lists: []StarList{{Name: "test", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/test"}},
+		lists: []StarList{
+			{Name: "test", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/test"},
+		},
 		repos: map[string][]Repository{
 			"UL_1": {{NameWithOwner: "owner/repo"}},
 		},
@@ -99,7 +101,9 @@ func TestCacheServiceHits(t *testing.T) {
 
 func TestCacheServiceMisses(t *testing.T) {
 	inner := &fakeCacheInner{
-		lists: []StarList{{Name: "test", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/test"}},
+		lists: []StarList{
+			{Name: "test", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/test"},
+		},
 	}
 	svc := newCacheService(inner)
 	svc.ttl = 1 * time.Millisecond

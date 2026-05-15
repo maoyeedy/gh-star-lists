@@ -29,7 +29,10 @@ func (f *fakeService) ListStarLists(context.Context) ([]githubapi.StarList, erro
 	return f.lists, f.listErr
 }
 
-func (f *fakeService) ListRepositories(_ context.Context, listID string) ([]githubapi.Repository, error) {
+func (f *fakeService) ListRepositories(
+	_ context.Context,
+	listID string,
+) ([]githubapi.Repository, error) {
 	f.reposCalls++
 	f.reposListIDs = append(f.reposListIDs, listID)
 	return f.repos, f.reposErr
@@ -44,10 +47,22 @@ func (errWriter) Write([]byte) (int, error) {
 func fixtureService() *fakeService {
 	return &fakeService{
 		lists: []githubapi.StarList{
-			{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+			{
+				Name:        "Go Tools",
+				Description: "CLI helpers",
+				LastAddedAt: "2024-05-01T12:00:00Z",
+				ID:          "UL_1",
+			},
 		},
 		repos: []githubapi.Repository{
-			{NameWithOwner: "cli/cli", Description: "GitHub CLI", IsFork: false, StargazerCount: 41000, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/cli/cli"},
+			{
+				NameWithOwner:  "cli/cli",
+				Description:    "GitHub CLI",
+				IsFork:         false,
+				StargazerCount: 41000,
+				PushedAt:       "2024-05-01T12:00:00Z",
+				URL:            "https://github.com/cli/cli",
+			},
 		},
 	}
 }
@@ -55,14 +70,50 @@ func fixtureService() *fakeService {
 func sortableFixtureService() *fakeService {
 	return &fakeService{
 		lists: []githubapi.StarList{
-			{Name: "zeta", Description: "Last by name", LastAddedAt: "2024-05-03T12:00:00Z", ID: "UL_3"},
-			{Name: "Alpha", Description: "First by name", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2"},
-			{Name: "beta", Description: "Middle by name", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+			{
+				Name:        "zeta",
+				Description: "Last by name",
+				LastAddedAt: "2024-05-03T12:00:00Z",
+				ID:          "UL_3",
+			},
+			{
+				Name:        "Alpha",
+				Description: "First by name",
+				LastAddedAt: "2024-05-02T12:00:00Z",
+				ID:          "UL_2",
+			},
+			{
+				Name:        "beta",
+				Description: "Middle by name",
+				LastAddedAt: "2024-05-01T12:00:00Z",
+				ID:          "UL_1",
+			},
 		},
 		repos: []githubapi.Repository{
-			{NameWithOwner: "owner/zeta", Description: "Last by name", IsFork: false, StargazerCount: 2, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/owner/zeta"},
-			{NameWithOwner: "owner/Alpha", Description: "First by name", IsFork: false, StargazerCount: 5, PushedAt: "2024-05-03T12:00:00Z", URL: "https://github.com/owner/Alpha"},
-			{NameWithOwner: "owner/beta", Description: "Middle by name", IsFork: false, StargazerCount: 3, PushedAt: "2024-05-02T12:00:00Z", URL: "https://github.com/owner/beta"},
+			{
+				NameWithOwner:  "owner/zeta",
+				Description:    "Last by name",
+				IsFork:         false,
+				StargazerCount: 2,
+				PushedAt:       "2024-05-01T12:00:00Z",
+				URL:            "https://github.com/owner/zeta",
+			},
+			{
+				NameWithOwner:  "owner/Alpha",
+				Description:    "First by name",
+				IsFork:         false,
+				StargazerCount: 5,
+				PushedAt:       "2024-05-03T12:00:00Z",
+				URL:            "https://github.com/owner/Alpha",
+			},
+			{
+				NameWithOwner:  "owner/beta",
+				Description:    "Middle by name",
+				IsFork:         false,
+				StargazerCount: 3,
+				PushedAt:       "2024-05-02T12:00:00Z",
+				URL:            "https://github.com/owner/beta",
+			},
 		},
 	}
 }
@@ -70,19 +121,60 @@ func sortableFixtureService() *fakeService {
 func filterableFixtureService() *fakeService {
 	return &fakeService{
 		lists: []githubapi.StarList{
-			{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
-			{Name: "Go Web", Description: "Web frameworks", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2"},
-			{Name: "Rust", Description: "Rust ecosystem", LastAddedAt: "2024-05-03T12:00:00Z", ID: "UL_3"},
+			{
+				Name:        "Go Tools",
+				Description: "CLI helpers",
+				LastAddedAt: "2024-05-01T12:00:00Z",
+				ID:          "UL_1",
+			},
+			{
+				Name:        "Go Web",
+				Description: "Web frameworks",
+				LastAddedAt: "2024-05-02T12:00:00Z",
+				ID:          "UL_2",
+			},
+			{
+				Name:        "Rust",
+				Description: "Rust ecosystem",
+				LastAddedAt: "2024-05-03T12:00:00Z",
+				ID:          "UL_3",
+			},
 		},
 		repos: []githubapi.Repository{
-			{NameWithOwner: "owner/go-lib", Description: "Go library", IsFork: false, StargazerCount: 100, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/owner/go-lib"},
-			{NameWithOwner: "owner/rust-tool", Description: "Rust tool", IsFork: true, StargazerCount: 200, PushedAt: "2024-05-02T12:00:00Z", URL: "https://github.com/owner/rust-tool"},
-			{NameWithOwner: "owner/go-app", Description: "Go app", IsFork: false, StargazerCount: 300, PushedAt: "2024-05-03T12:00:00Z", URL: "https://github.com/owner/go-app"},
+			{
+				NameWithOwner:  "owner/go-lib",
+				Description:    "Go library",
+				IsFork:         false,
+				StargazerCount: 100,
+				PushedAt:       "2024-05-01T12:00:00Z",
+				URL:            "https://github.com/owner/go-lib",
+			},
+			{
+				NameWithOwner:  "owner/rust-tool",
+				Description:    "Rust tool",
+				IsFork:         true,
+				StargazerCount: 200,
+				PushedAt:       "2024-05-02T12:00:00Z",
+				URL:            "https://github.com/owner/rust-tool",
+			},
+			{
+				NameWithOwner:  "owner/go-app",
+				Description:    "Go app",
+				IsFork:         false,
+				StargazerCount: 300,
+				PushedAt:       "2024-05-03T12:00:00Z",
+				URL:            "https://github.com/owner/go-app",
+			},
 		},
 	}
 }
 
-func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service) int {
+func runCommand(
+	ctx context.Context,
+	args []string,
+	stdout, stderr io.Writer,
+	service githubapi.Service,
+) int {
 	return command.RunWithOptions(ctx, args, stdout, stderr, service, testOutputOptions)
 }
 
@@ -97,7 +189,10 @@ func testOutputOptions(mode format.OutputMode) format.Options {
 func TestRunHelpWritesStdoutAndDoesNotUseService(t *testing.T) {
 	t.Parallel()
 
-	svc := &fakeService{listErr: errors.New("not implemented"), reposErr: errors.New("not implemented")}
+	svc := &fakeService{
+		listErr:  errors.New("not implemented"),
+		reposErr: errors.New("not implemented"),
+	}
 	var stdout, stderr strings.Builder
 
 	code := runCommand(context.Background(), []string{"--help"}, &stdout, &stderr, svc)
@@ -105,7 +200,8 @@ func TestRunHelpWritesStdoutAndDoesNotUseService(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run help exit = %d, want %d", code, command.ExitSuccess)
 	}
-	if got := stdout.String(); !strings.Contains(got, "gh star-lists") || !strings.Contains(got, "repos <LIST_ID_OR_NAME>") {
+	if got := stdout.String(); !strings.Contains(got, "gh star-lists") ||
+		!strings.Contains(got, "repos <LIST_ID_OR_NAME>") {
 		t.Fatalf("help stdout missing command details:\n%s", got)
 	}
 	if stderr.Len() != 0 {
@@ -165,7 +261,13 @@ func TestRunWritesListOutput(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
-				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
 			}
 			if got := stdout.String(); got != tt.want {
 				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
@@ -174,7 +276,11 @@ func TestRunWritesListOutput(t *testing.T) {
 				t.Fatalf("Run(%q) stderr = %q, want empty", tt.argv, stderr.String())
 			}
 			if svc.listCalls != 1 || svc.reposCalls != 0 {
-				t.Fatalf("service calls list=%d repos=%d, want list=1 repos=0", svc.listCalls, svc.reposCalls)
+				t.Fatalf(
+					"service calls list=%d repos=%d, want list=1 repos=0",
+					svc.listCalls,
+					svc.reposCalls,
+				)
 			}
 		})
 	}
@@ -210,7 +316,13 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
-				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
 			}
 			if got := stdout.String(); got != tt.want {
 				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
@@ -219,7 +331,11 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 				t.Fatalf("Run(%q) stderr = %q, want empty", tt.argv, stderr.String())
 			}
 			if svc.listCalls != 1 || svc.reposCalls != 1 {
-				t.Fatalf("service calls list=%d repos=%d, want list=1 repos=1", svc.listCalls, svc.reposCalls)
+				t.Fatalf(
+					"service calls list=%d repos=%d, want list=1 repos=1",
+					svc.listCalls,
+					svc.reposCalls,
+				)
 			}
 			if got := strings.Join(svc.reposListIDs, ","); got != "UL_1" {
 				t.Fatalf("repos list IDs = %q, want UL_1", got)
@@ -262,7 +378,13 @@ func TestRunSortsListOutput(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
-				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
 			}
 			if got := stdout.String(); got != tt.want {
 				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
@@ -312,7 +434,13 @@ func TestRunSortsReposOutput(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
-				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
 			}
 			if got := stdout.String(); got != tt.want {
 				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
@@ -327,7 +455,13 @@ func TestRunReposResolvesNameToID(t *testing.T) {
 	svc := fixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"repos", "Go Tools", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "Go Tools", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -346,7 +480,13 @@ func TestRunReposFallsBackToID(t *testing.T) {
 	svc := fixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"repos", "nonexistent-name", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "nonexistent-name", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -362,7 +502,13 @@ func TestRunLimitsOutput(t *testing.T) {
 	svc := sortableFixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"list", "--limit", "2", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--limit", "2", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -380,7 +526,13 @@ func TestRunLimitsOutputAfterSort(t *testing.T) {
 	svc := sortableFixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"list", "--sort", "name", "--limit", "2", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--sort", "name", "--limit", "2", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -401,7 +553,13 @@ func TestRunWritesOutputFile(t *testing.T) {
 	outPath := dir + "/output.txt"
 	var stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"list", "--output", outPath}, io.Discard, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath},
+		io.Discard,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -421,7 +579,13 @@ func TestRunFiltersListOutput(t *testing.T) {
 	svc := filterableFixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"list", "--filter", "name:go", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--filter", "name:go", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -473,7 +637,13 @@ func TestRunFiltersReposOutput(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
-				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
 			}
 			if got := stdout.String(); got != tt.want {
 				t.Fatalf("Run(%q) stdout mismatch\ngot:  %q\nwant: %q", tt.argv, got, tt.want)
@@ -488,7 +658,13 @@ func TestRunFiltersCombined(t *testing.T) {
 	svc := filterableFixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"repos", "UL_1", "--filter", "name:go", "--filter", "fork:true", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "UL_1", "--filter", "name:go", "--filter", "fork:true", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -505,7 +681,13 @@ func TestRunFiltersEmptyResult(t *testing.T) {
 	svc := filterableFixtureService()
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"list", "--filter", "name:nonexistent", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--filter", "name:nonexistent", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
@@ -538,7 +720,13 @@ func TestRunEmptyResultsSucceed(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
 
 			if code != command.ExitSuccess {
-				t.Fatalf("Run(%q) exit = %d, want %d; stderr=%q", tt.argv, code, command.ExitSuccess, stderr.String())
+				t.Fatalf(
+					"Run(%q) exit = %d, want %d; stderr=%q",
+					tt.argv,
+					code,
+					command.ExitSuccess,
+					stderr.String(),
+				)
 			}
 			if got := stdout.String(); got != tt.want {
 				t.Fatalf("Run(%q) stdout = %q, want %q", tt.argv, got, tt.want)
@@ -558,18 +746,37 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 		argv    []string
 		wantErr string
 	}{
-		{name: "missing repos id", argv: []string{"repos"}, wantErr: "error: missing list id for repos"},
+		{
+			name:    "missing repos id",
+			argv:    []string{"repos"},
+			wantErr: "error: missing list id for repos",
+		},
 		{name: "unknown command", argv: []string{"stars"}, wantErr: "unknown command \"stars\""},
-		{name: "extra list args", argv: []string{"list", "extra"}, wantErr: "too many arguments for list"},
-		{name: "extra repos args", argv: []string{"repos", "UL_1", "extra"}, wantErr: "too many arguments for repos"},
-		{name: "conflicting output flags", argv: []string{"list", "--json", "--tsv"}, wantErr: "cannot combine --plain, --json, and --tsv"},
+		{
+			name:    "extra list args",
+			argv:    []string{"list", "extra"},
+			wantErr: "too many arguments for list",
+		},
+		{
+			name:    "extra repos args",
+			argv:    []string{"repos", "UL_1", "extra"},
+			wantErr: "too many arguments for repos",
+		},
+		{
+			name:    "conflicting output flags",
+			argv:    []string{"list", "--json", "--tsv"},
+			wantErr: "cannot combine --plain, --json, and --tsv",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			svc := &fakeService{listErr: errors.New("not implemented"), reposErr: errors.New("not implemented")}
+			svc := &fakeService{
+				listErr:  errors.New("not implemented"),
+				reposErr: errors.New("not implemented"),
+			}
 			var stdout, stderr strings.Builder
 
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
@@ -585,7 +792,11 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 				t.Fatalf("usage stderr missing diagnostic/help:\n%s", gotErr)
 			}
 			if svc.listCalls != 0 || svc.reposCalls != 0 {
-				t.Fatalf("service calls on usage error: list=%d repos=%d", svc.listCalls, svc.reposCalls)
+				t.Fatalf(
+					"service calls on usage error: list=%d repos=%d",
+					svc.listCalls,
+					svc.reposCalls,
+				)
 			}
 		})
 	}
@@ -610,25 +821,37 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			wantList: 1,
 		},
 		{
-			name:     "explicit list auth failure",
-			argv:     []string{"list"},
-			svc:      &fakeService{listErr: errors.New("GitHub GraphQL request failed: Bad credentials")},
-			wantErr:  []string{"error: failed to list Star Lists: GitHub GraphQL request failed: Bad credentials", "gh auth status"},
+			name: "explicit list auth failure",
+			argv: []string{"list"},
+			svc: &fakeService{
+				listErr: errors.New("GitHub GraphQL request failed: Bad credentials"),
+			},
+			wantErr: []string{
+				"error: failed to list Star Lists: GitHub GraphQL request failed: Bad credentials",
+				"gh auth status",
+			},
 			wantList: 1,
 		},
 		{
-			name:      "repos graphql failure",
-			argv:      []string{"repos", "UL_kwDOExample"},
-			svc:       &fakeService{reposErr: errors.New("GitHub GraphQL request failed: secondary rate limit")},
-			wantErr:   []string{"error: failed to list repositories for Star List \"UL_kwDOExample\": GitHub GraphQL request failed: secondary rate limit"},
+			name: "repos graphql failure",
+			argv: []string{"repos", "UL_kwDOExample"},
+			svc: &fakeService{
+				reposErr: errors.New("GitHub GraphQL request failed: secondary rate limit"),
+			},
+			wantErr: []string{
+				"error: failed to list repositories for Star List \"UL_kwDOExample\": GitHub GraphQL request failed: secondary rate limit",
+			},
 			wantRepos: 1,
 			wantList:  1,
 		},
 		{
-			name:      "repos inaccessible list",
-			argv:      []string{"repos", "UL_missing"},
-			svc:       &fakeService{reposErr: githubapi.ErrInaccessibleList},
-			wantErr:   []string{"error: failed to list repositories for Star List \"UL_missing\": GitHub Star List is inaccessible or is not a UserList", "deleted, private, inaccessible to this account, or from another GitHub account"},
+			name: "repos inaccessible list",
+			argv: []string{"repos", "UL_missing"},
+			svc:  &fakeService{reposErr: githubapi.ErrInaccessibleList},
+			wantErr: []string{
+				"error: failed to list repositories for Star List \"UL_missing\": GitHub Star List is inaccessible or is not a UserList",
+				"deleted, private, inaccessible to this account, or from another GitHub account",
+			},
 			wantRepos: 1,
 			wantList:  1,
 		},
@@ -655,7 +878,13 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 				}
 			}
 			if tt.svc.listCalls != tt.wantList || tt.svc.reposCalls != tt.wantRepos {
-				t.Fatalf("service calls list=%d repos=%d, want list=%d repos=%d", tt.svc.listCalls, tt.svc.reposCalls, tt.wantList, tt.wantRepos)
+				t.Fatalf(
+					"service calls list=%d repos=%d, want list=%d repos=%d",
+					tt.svc.listCalls,
+					tt.svc.reposCalls,
+					tt.wantList,
+					tt.wantRepos,
+				)
 			}
 		})
 	}
@@ -688,10 +917,30 @@ func TestRunWriteFailuresReturnFailure(t *testing.T) {
 		svc     *fakeService
 		wantErr string
 	}{
-		{name: "help", argv: []string{"--help"}, svc: &fakeService{}, wantErr: "failed to write help"},
-		{name: "data output", argv: []string{"list"}, svc: fixtureService(), wantErr: "failed to write output"},
-		{name: "list json output", argv: []string{"list", "--json"}, svc: fixtureService(), wantErr: "failed to write output"},
-		{name: "repos json output", argv: []string{"repos", "UL_1", "--json"}, svc: fixtureService(), wantErr: "failed to write output"},
+		{
+			name:    "help",
+			argv:    []string{"--help"},
+			svc:     &fakeService{},
+			wantErr: "failed to write help",
+		},
+		{
+			name:    "data output",
+			argv:    []string{"list"},
+			svc:     fixtureService(),
+			wantErr: "failed to write output",
+		},
+		{
+			name:    "list json output",
+			argv:    []string{"list", "--json"},
+			svc:     fixtureService(),
+			wantErr: "failed to write output",
+		},
+		{
+			name:    "repos json output",
+			argv:    []string{"repos", "UL_1", "--json"},
+			svc:     fixtureService(),
+			wantErr: "failed to write output",
+		},
 	}
 
 	for _, tt := range tests {
@@ -703,7 +952,12 @@ func TestRunWriteFailuresReturnFailure(t *testing.T) {
 			code := runCommand(context.Background(), tt.argv, errWriter{}, &stderr, tt.svc)
 
 			if code != command.ExitFailure {
-				t.Fatalf("Run %s write failure exit = %d, want %d", tt.name, code, command.ExitFailure)
+				t.Fatalf(
+					"Run %s write failure exit = %d, want %d",
+					tt.name,
+					code,
+					command.ExitFailure,
+				)
 			}
 			if !strings.Contains(stderr.String(), tt.wantErr) {
 				t.Fatalf("stderr = %q, want %q diagnostic", stderr.String(), tt.wantErr)

@@ -137,7 +137,10 @@ func Parse(argv []string) (Parsed, error) {
 			if !ok || key == "" {
 				return Parsed{}, usage("invalid filter %q: expected key:value", raw)
 			}
-			filters = append(filters, Filter{Key: strings.ToLower(key), Value: strings.ToLower(value)})
+			filters = append(
+				filters,
+				Filter{Key: strings.ToLower(key), Value: strings.ToLower(value)},
+			)
 		case "--template":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --template")
@@ -179,13 +182,27 @@ func Parse(argv []string) (Parsed, error) {
 		if err := validateSort(ActionList, sortKeys, sortDesc); err != nil {
 			return Parsed{}, err
 		}
-		return Parsed{Action: ActionList, Mode: mode, SortKeys: sortKeys, SortDesc: sortDesc, Limit: limit, NoColor: noColorFlag, Filters: filters, Cache: cacheFlag, OutputPath: outputPath, Template: templateStr}, nil
+		return Parsed{
+			Action:     ActionList,
+			Mode:       mode,
+			SortKeys:   sortKeys,
+			SortDesc:   sortDesc,
+			Limit:      limit,
+			NoColor:    noColorFlag,
+			Filters:    filters,
+			Cache:      cacheFlag,
+			OutputPath: outputPath,
+			Template:   templateStr,
+		}, nil
 	}
 
 	switch positionals[0] {
 	case "list":
 		if len(positionals) > 1 {
-			return Parsed{}, usage("too many arguments for list: %s", strings.Join(positionals[1:], " "))
+			return Parsed{}, usage(
+				"too many arguments for list: %s",
+				strings.Join(positionals[1:], " "),
+			)
 		}
 		if err := validateFilters(ActionList, filters); err != nil {
 			return Parsed{}, err
@@ -193,13 +210,27 @@ func Parse(argv []string) (Parsed, error) {
 		if err := validateSort(ActionList, sortKeys, sortDesc); err != nil {
 			return Parsed{}, err
 		}
-		return Parsed{Action: ActionList, Mode: mode, SortKeys: sortKeys, SortDesc: sortDesc, Limit: limit, NoColor: noColorFlag, Filters: filters, Cache: cacheFlag, OutputPath: outputPath, Template: templateStr}, nil
+		return Parsed{
+			Action:     ActionList,
+			Mode:       mode,
+			SortKeys:   sortKeys,
+			SortDesc:   sortDesc,
+			Limit:      limit,
+			NoColor:    noColorFlag,
+			Filters:    filters,
+			Cache:      cacheFlag,
+			OutputPath: outputPath,
+			Template:   templateStr,
+		}, nil
 	case "repos":
 		if len(positionals) == 1 {
 			return Parsed{}, usage("missing list id for repos")
 		}
 		if len(positionals) > 2 {
-			return Parsed{}, usage("too many arguments for repos: %s", strings.Join(positionals[2:], " "))
+			return Parsed{}, usage(
+				"too many arguments for repos: %s",
+				strings.Join(positionals[2:], " "),
+			)
 		}
 		if err := validateFilters(ActionRepos, filters); err != nil {
 			return Parsed{}, err
@@ -207,7 +238,19 @@ func Parse(argv []string) (Parsed, error) {
 		if err := validateSort(ActionRepos, sortKeys, sortDesc); err != nil {
 			return Parsed{}, err
 		}
-		return Parsed{Action: ActionRepos, ListID: positionals[1], Mode: mode, SortKeys: sortKeys, SortDesc: sortDesc, Limit: limit, NoColor: noColorFlag, Filters: filters, Cache: cacheFlag, OutputPath: outputPath, Template: templateStr}, nil
+		return Parsed{
+			Action:     ActionRepos,
+			ListID:     positionals[1],
+			Mode:       mode,
+			SortKeys:   sortKeys,
+			SortDesc:   sortDesc,
+			Limit:      limit,
+			NoColor:    noColorFlag,
+			Filters:    filters,
+			Cache:      cacheFlag,
+			OutputPath: outputPath,
+			Template:   templateStr,
+		}, nil
 	default:
 		return Parsed{}, usage("unknown command %q", positionals[0])
 	}
@@ -222,7 +265,10 @@ func validateFilters(action Action, filters []Filter) error {
 				return usage("filter key %q is only supported for repos", f.Key)
 			}
 			if f.Value != "true" && f.Value != "false" {
-				return usage("invalid filter value for fork: expected true or false, got %q", f.Value)
+				return usage(
+					"invalid filter value for fork: expected true or false, got %q",
+					f.Value,
+				)
 			}
 		default:
 			return usage("unknown filter key %q; supported keys: name, fork", f.Key)
@@ -251,7 +297,10 @@ func validateSort(action Action, sortKeys []string, sortDesc bool) error {
 			switch key {
 			case SortKeyName, SortKeyStars, SortKeyPushed:
 			default:
-				return usage("unsupported sort key %q for repos; supported keys: name, stars, pushed", key)
+				return usage(
+					"unsupported sort key %q for repos; supported keys: name, stars, pushed",
+					key,
+				)
 			}
 		default:
 			return nil

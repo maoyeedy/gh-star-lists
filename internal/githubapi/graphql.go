@@ -91,7 +91,10 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 	}
 }
 
-func (s *graphQLService) ListRepositories(ctx context.Context, listID string) ([]Repository, error) {
+func (s *graphQLService) ListRepositories(
+	ctx context.Context,
+	listID string,
+) ([]Repository, error) {
 	repositories := make([]Repository, 0, s.pageSize)
 	var endCursor any
 

@@ -15,7 +15,11 @@ func WriteRepositories(w io.Writer, mode OutputMode, repos []githubapi.Repositor
 }
 
 // WriteRepositoriesWithOptions writes repositories with terminal-aware human settings.
-func WriteRepositoriesWithOptions(w io.Writer, options Options, repos []githubapi.Repository) error {
+func WriteRepositoriesWithOptions(
+	w io.Writer,
+	options Options,
+	repos []githubapi.Repository,
+) error {
 	options = normalizeOptions(options)
 	switch options.Mode {
 	case OutputJSON:
@@ -39,7 +43,16 @@ func writeRepositoriesJSON(w io.Writer, repos []githubapi.Repository) error {
 
 func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 	for _, repo := range repos {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n", repo.NameWithOwner, repo.Description, yesNo(repo.IsFork), repo.StargazerCount, repo.PushedAt, repo.URL); err != nil {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\t%s\t%d\t%s\t%s\n",
+			repo.NameWithOwner,
+			repo.Description,
+			yesNo(repo.IsFork),
+			repo.StargazerCount,
+			repo.PushedAt,
+			repo.URL,
+		); err != nil {
 			return err
 		}
 	}
@@ -54,7 +67,10 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 	boldFn := bold(options.Color)
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
-	table.AddHeader([]string{"REPOSITORY", "STARS", "FORK", "PUSHED", "URL"}, tableprinter.WithColor(boldFn))
+	table.AddHeader(
+		[]string{"REPOSITORY", "STARS", "FORK", "PUSHED", "URL"},
+		tableprinter.WithColor(boldFn),
+	)
 	for _, repo := range repos {
 		table.AddField(repo.NameWithOwner, tableprinter.WithColor(boldFn))
 		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))

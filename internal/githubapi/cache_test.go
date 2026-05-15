@@ -90,7 +90,10 @@ func TestCacheServiceHits(t *testing.T) {
 		t.Fatalf("second repos call got %d, want 1", len(repos2))
 	}
 	if inner.reposCalls["UL_1"] != 1 {
-		t.Fatalf("inner repos calls after cache = %d, want 1 (should not increase)", inner.reposCalls["UL_1"])
+		t.Fatalf(
+			"inner repos calls after cache = %d, want 1 (should not increase)",
+			inner.reposCalls["UL_1"],
+		)
 	}
 }
 
@@ -159,7 +162,10 @@ func TestCacheServicePerListID(t *testing.T) {
 		t.Fatalf("UL_1 re-fetch: %v", err)
 	}
 	if inner.reposCalls["UL_1"] != 1 {
-		t.Fatalf("UL_1 calls after cache = %d, want 1 (should not increase)", inner.reposCalls["UL_1"])
+		t.Fatalf(
+			"UL_1 calls after cache = %d, want 1 (should not increase)",
+			inner.reposCalls["UL_1"],
+		)
 	}
 }
 
@@ -179,6 +185,9 @@ func TestCacheServiceErrorPropagation(t *testing.T) {
 		t.Fatalf("second call got error %v, want 'network error'", err)
 	}
 	if inner.listCalls != 2 {
-		t.Fatalf("inner calls after error = %d, want 2 (errors should not be cached)", inner.listCalls)
+		t.Fatalf(
+			"inner calls after error = %d, want 2 (errors should not be cached)",
+			inner.listCalls,
+		)
 	}
 }

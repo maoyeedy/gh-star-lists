@@ -20,7 +20,12 @@ type fakeGraphQLExecutor struct {
 	calls     []graphQLCall
 }
 
-func (f *fakeGraphQLExecutor) Execute(_ context.Context, query string, variables map[string]any, response any) error {
+func (f *fakeGraphQLExecutor) Execute(
+	_ context.Context,
+	query string,
+	variables map[string]any,
+	response any,
+) error {
 	f.calls = append(f.calls, graphQLCall{query: query, variables: maps.Clone(variables)})
 	if len(f.errors) > 0 {
 		err := f.errors[0]
@@ -171,8 +176,18 @@ func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
 	}
 
 	want := []StarList{
-		{Name: "Tools", Description: "Useful CLIs", LastAddedAt: "2025-01-02T03:04:05Z", ID: "UL_1"},
-		{Name: "Libraries", Description: "Packages", LastAddedAt: "2025-02-03T04:05:06Z", ID: "UL_2"},
+		{
+			Name:        "Tools",
+			Description: "Useful CLIs",
+			LastAddedAt: "2025-01-02T03:04:05Z",
+			ID:          "UL_1",
+		},
+		{
+			Name:        "Libraries",
+			Description: "Packages",
+			LastAddedAt: "2025-02-03T04:05:06Z",
+			ID:          "UL_2",
+		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] || lists[1] != want[1] {
 		t.Fatalf("ListStarLists() = %#v, want %#v", lists, want)
@@ -208,7 +223,14 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
 
-	want := []StarList{{Name: "Tools", Description: "Useful CLIs", LastAddedAt: "2025-01-02T03:04:05Z", ID: "UL_1"}}
+	want := []StarList{
+		{
+			Name:        "Tools",
+			Description: "Useful CLIs",
+			LastAddedAt: "2025-01-02T03:04:05Z",
+			ID:          "UL_1",
+		},
+	}
 	if len(lists) != len(want) || lists[0] != want[0] {
 		t.Fatalf("ListStarLists() = %#v, want %#v", lists, want)
 	}
@@ -257,8 +279,22 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 	}
 
 	want := []Repository{
-		{NameWithOwner: "cli/cli", Description: "GitHub CLI", URL: "https://github.com/cli/cli", IsFork: false, StargazerCount: 39000, PushedAt: "2026-01-02T03:04:05Z"},
-		{NameWithOwner: "cli/go-gh", Description: "Go helpers", URL: "https://github.com/cli/go-gh", IsFork: false, StargazerCount: 700, PushedAt: "2026-02-03T04:05:06Z"},
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			URL:            "https://github.com/cli/cli",
+			IsFork:         false,
+			StargazerCount: 39000,
+			PushedAt:       "2026-01-02T03:04:05Z",
+		},
+		{
+			NameWithOwner:  "cli/go-gh",
+			Description:    "Go helpers",
+			URL:            "https://github.com/cli/go-gh",
+			IsFork:         false,
+			StargazerCount: 700,
+			PushedAt:       "2026-02-03T04:05:06Z",
+		},
 	}
 	if len(repositories) != len(want) || repositories[0] != want[0] || repositories[1] != want[1] {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, want)
@@ -300,7 +336,14 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 	if err != nil {
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
-	want := Repository{NameWithOwner: "owner/repo", Description: "", URL: "https://github.com/owner/repo", IsFork: true, StargazerCount: 12, PushedAt: ""}
+	want := Repository{
+		NameWithOwner:  "owner/repo",
+		Description:    "",
+		URL:            "https://github.com/owner/repo",
+		IsFork:         true,
+		StargazerCount: 12,
+		PushedAt:       "",
+	}
 	if len(repositories) != 1 || repositories[0] != want {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
 	}
@@ -359,10 +402,14 @@ func TestGraphQLServiceListRepositoriesReturnsErrInaccessibleListForNilNode(t *t
 	}
 }
 
-func TestGraphQLServiceListRepositoriesReturnsErrInaccessibleListForMissingItemsConnection(t *testing.T) {
+func TestGraphQLServiceListRepositoriesReturnsErrInaccessibleListForMissingItemsConnection(
+	t *testing.T,
+) {
 	t.Parallel()
 
-	executor := &fakeGraphQLExecutor{responses: []string{`{"node": {"__typename": "UserList", "items": null}}`}}
+	executor := &fakeGraphQLExecutor{
+		responses: []string{`{"node": {"__typename": "UserList", "items": null}}`},
+	}
 	service := newGraphQLService(executor, 100)
 
 	repositories, err := service.ListRepositories(context.Background(), "UL_1")
@@ -397,7 +444,14 @@ func TestGraphQLServiceListRepositoriesSkipsNonRepositoryAndMissingNameItems(t *
 	if err != nil {
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
-	want := Repository{NameWithOwner: "owner/repo", Description: "kept", URL: "https://github.com/owner/repo", IsFork: false, StargazerCount: 2, PushedAt: "2026-01-02T00:00:00Z"}
+	want := Repository{
+		NameWithOwner:  "owner/repo",
+		Description:    "kept",
+		URL:            "https://github.com/owner/repo",
+		IsFork:         false,
+		StargazerCount: 2,
+		PushedAt:       "2026-01-02T00:00:00Z",
+	}
 	if len(repositories) != 1 || repositories[0] != want {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
 	}
@@ -457,6 +511,7 @@ func TestGraphQLServiceListRepositoriesStopsBeforeRequestWhenContextCanceled(t *
 		t.Fatalf("executor calls = %d, want 0", len(executor.calls))
 	}
 }
+
 func TestGraphQLServiceSmallPageSize(t *testing.T) {
 	t.Parallel()
 

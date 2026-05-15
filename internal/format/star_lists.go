@@ -38,7 +38,14 @@ func writeStarListsJSON(w io.Writer, lists []githubapi.StarList) error {
 
 func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
 	for _, list := range lists {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", list.Name, list.Description, list.LastAddedAt, list.ID); err != nil {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\t%s\t%s\n",
+			list.Name,
+			list.Description,
+			list.LastAddedAt,
+			list.ID,
+		); err != nil {
 			return err
 		}
 	}

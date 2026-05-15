@@ -32,15 +32,33 @@ func TestSelectOutputMode(t *testing.T) {
 			got, err := format.SelectOutputMode(tt.jsonFlag, tt.tsvFlag, tt.plainFlag)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("SelectOutputMode(%v, %v, %v) returned nil error", tt.jsonFlag, tt.tsvFlag, tt.plainFlag)
+					t.Fatalf(
+						"SelectOutputMode(%v, %v, %v) returned nil error",
+						tt.jsonFlag,
+						tt.tsvFlag,
+						tt.plainFlag,
+					)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("SelectOutputMode(%v, %v, %v) returned unexpected error: %v", tt.jsonFlag, tt.tsvFlag, tt.plainFlag, err)
+				t.Fatalf(
+					"SelectOutputMode(%v, %v, %v) returned unexpected error: %v",
+					tt.jsonFlag,
+					tt.tsvFlag,
+					tt.plainFlag,
+					err,
+				)
 			}
 			if got != tt.want {
-				t.Fatalf("SelectOutputMode(%v, %v, %v) = %q, want %q", tt.jsonFlag, tt.tsvFlag, tt.plainFlag, got, tt.want)
+				t.Fatalf(
+					"SelectOutputMode(%v, %v, %v) = %q, want %q",
+					tt.jsonFlag,
+					tt.tsvFlag,
+					tt.plainFlag,
+					got,
+					tt.want,
+				)
 			}
 		})
 	}

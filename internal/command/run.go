@@ -21,12 +21,23 @@ const (
 
 // Run does not construct GitHub clients, so help and usage paths remain
 // auth-free and testable.
-func Run(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service) int {
+func Run(
+	ctx context.Context,
+	args []string,
+	stdout, stderr io.Writer,
+	service githubapi.Service,
+) int {
 	return RunWithOptions(ctx, args, stdout, stderr, service, format.DefaultOptions)
 }
 
 // RunWithOptions is Run with injectable output settings for deterministic tests.
-func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, service githubapi.Service, outputOptionsForMode func(format.OutputMode) format.Options) int {
+func RunWithOptions(
+	ctx context.Context,
+	args []string,
+	stdout, stderr io.Writer,
+	service githubapi.Service,
+	outputOptionsForMode func(format.OutputMode) format.Options,
+) int {
 	parsed, err := Parse(args)
 	if err != nil {
 		var usageErr *UsageError
@@ -62,12 +73,14 @@ func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		service = githubapi.NewCacheService(service)
 	}
 	if parsed.OutputPath != "" {
-		f, err := os.OpenFile(parsed.OutputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(parsed.OutputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 		if err != nil {
 			_ = writeDiagnostic(stderr, "error: failed to open output file: %v\n", err)
 			return ExitFailure
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+		}()
 		stdout = f
 	}
 	switch parsed.Action {
@@ -231,7 +244,10 @@ func compareRepositories(left, right githubapi.Repository, sortKeys []string) in
 		var cmp int
 		switch key {
 		case SortKeyName:
-			cmp = strings.Compare(strings.ToLower(left.NameWithOwner), strings.ToLower(right.NameWithOwner))
+			cmp = strings.Compare(
+				strings.ToLower(left.NameWithOwner),
+				strings.ToLower(right.NameWithOwner),
+			)
 		case SortKeyStars:
 			if left.StargazerCount != right.StargazerCount {
 				cmp = left.StargazerCount - right.StargazerCount
@@ -259,9 +275,15 @@ func writeFailure(stderr io.Writer, err error) int {
 func writeRuntimeFailure(stderr io.Writer, action Action, listID string, err error) int {
 	_ = writeDiagnostic(stderr, "error: %s: %v\n", commandContext(action, listID), err)
 	if errors.Is(err, githubapi.ErrInaccessibleList) {
-		_ = writeDiagnostic(stderr, "The Star List ID may be deleted, private, inaccessible to this account, or from another GitHub account. Re-run `gh star-lists` with the intended account.\n")
+		_ = writeDiagnostic(
+			stderr,
+			"The Star List ID may be deleted, private, inaccessible to this account, or from another GitHub account. Re-run `gh star-lists` with the intended account.\n",
+		)
 	} else if looksLikeAuthError(err) {
-		_ = writeDiagnostic(stderr, "Run `gh auth status` to check GitHub CLI authentication, then `gh auth login` if needed.\n")
+		_ = writeDiagnostic(
+			stderr,
+			"Run `gh auth status` to check GitHub CLI authentication, then `gh auth login` if needed.\n",
+		)
 	}
 	return ExitFailure
 }

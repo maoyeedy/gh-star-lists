@@ -107,6 +107,11 @@ type goGHGraphQLExecutor struct {
 	client graphQLDoer
 }
 
-func (e goGHGraphQLExecutor) Execute(ctx context.Context, query string, variables map[string]any, response any) error {
+func (e goGHGraphQLExecutor) Execute(
+	ctx context.Context,
+	query string,
+	variables map[string]any,
+	response any,
+) error {
 	return e.client.DoWithContext(ctx, query, variables, response)
 }

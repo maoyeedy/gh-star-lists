@@ -13,8 +13,21 @@ func TestWriteRepositoriesTSVUsesLegacyFieldOrder(t *testing.T) {
 	t.Parallel()
 
 	repos := []githubapi.Repository{
-		{NameWithOwner: "cli/cli", Description: "GitHub CLI", IsFork: false, StargazerCount: 41000, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/cli/cli"},
-		{NameWithOwner: "fork/project", IsFork: true, StargazerCount: 0, PushedAt: "", URL: "https://github.com/fork/project"},
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			IsFork:         false,
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+		},
+		{
+			NameWithOwner:  "fork/project",
+			IsFork:         true,
+			StargazerCount: 0,
+			PushedAt:       "",
+			URL:            "https://github.com/fork/project",
+		},
 	}
 
 	var out bytes.Buffer
@@ -33,7 +46,14 @@ func TestWriteRepositoriesJSONUsesLowerCamelCaseArray(t *testing.T) {
 	t.Parallel()
 
 	repos := []githubapi.Repository{
-		{NameWithOwner: "cli/cli", Description: "GitHub CLI", IsFork: false, StargazerCount: 41000, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/cli/cli"},
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			IsFork:         false,
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+		},
 	}
 
 	var out bytes.Buffer
@@ -80,12 +100,28 @@ func TestWriteRepositoriesHumanIsDeterministic(t *testing.T) {
 	t.Parallel()
 
 	repos := []githubapi.Repository{
-		{NameWithOwner: "cli/cli", Description: "GitHub CLI", IsFork: false, StargazerCount: 41000, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/cli/cli"},
-		{NameWithOwner: "fork/project", IsFork: true, StargazerCount: 0, URL: "https://github.com/fork/project"},
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			IsFork:         false,
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+		},
+		{
+			NameWithOwner:  "fork/project",
+			IsFork:         true,
+			StargazerCount: 0,
+			URL:            "https://github.com/fork/project",
+		},
 	}
 
 	var out bytes.Buffer
-	options := format.Options{Mode: format.OutputHuman, Width: 120, Now: time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC)}
+	options := format.Options{
+		Mode:  format.OutputHuman,
+		Width: 120,
+		Now:   time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+	}
 	if err := format.WriteRepositoriesWithOptions(&out, options, repos); err != nil {
 		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
 	}
@@ -102,8 +138,20 @@ func TestWriteRepositoriesPlainPreservesDetailedOutput(t *testing.T) {
 	t.Parallel()
 
 	repos := []githubapi.Repository{
-		{NameWithOwner: "cli/cli", Description: "GitHub CLI", IsFork: false, StargazerCount: 41000, PushedAt: "2024-05-01T12:00:00Z", URL: "https://github.com/cli/cli"},
-		{NameWithOwner: "fork/project", IsFork: true, StargazerCount: 0, URL: "https://github.com/fork/project"},
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			IsFork:         false,
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+		},
+		{
+			NameWithOwner:  "fork/project",
+			IsFork:         true,
+			StargazerCount: 0,
+			URL:            "https://github.com/fork/project",
+		},
 	}
 
 	var out bytes.Buffer

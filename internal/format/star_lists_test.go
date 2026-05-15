@@ -21,7 +21,12 @@ func TestWriteStarListsTSVUsesLegacyFieldOrder(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
-		{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+		{
+			Name:        "Go Tools",
+			Description: "CLI helpers",
+			LastAddedAt: "2024-05-01T12:00:00Z",
+			ID:          "UL_1",
+		},
 		{Name: "No Description", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2"},
 	}
 
@@ -41,7 +46,12 @@ func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
-		{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+		{
+			Name:        "Go Tools",
+			Description: "CLI helpers",
+			LastAddedAt: "2024-05-01T12:00:00Z",
+			ID:          "UL_1",
+		},
 	}
 
 	var out bytes.Buffer
@@ -88,12 +98,21 @@ func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
-		{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+		{
+			Name:        "Go Tools",
+			Description: "CLI helpers",
+			LastAddedAt: "2024-05-01T12:00:00Z",
+			ID:          "UL_1",
+		},
 		{Name: "No Optional Fields", ID: "UL_2"},
 	}
 
 	var out bytes.Buffer
-	options := format.Options{Mode: format.OutputHuman, Width: 120, Now: time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC)}
+	options := format.Options{
+		Mode:  format.OutputHuman,
+		Width: 120,
+		Now:   time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+	}
 	if err := format.WriteStarListsWithOptions(&out, options, lists); err != nil {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
@@ -110,7 +129,12 @@ func TestWriteStarListsPlainPreservesDetailedOutput(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
-		{Name: "Go Tools", Description: "CLI helpers", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+		{
+			Name:        "Go Tools",
+			Description: "CLI helpers",
+			LastAddedAt: "2024-05-01T12:00:00Z",
+			ID:          "UL_1",
+		},
 		{Name: "No Optional Fields", ID: "UL_2"},
 	}
 
@@ -133,8 +157,14 @@ func TestWriteStarListsPlainPreservesDetailedOutput(t *testing.T) {
 func TestWriteStarListsHumanColorIsOptIn(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{{Name: "Go Tools", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"}}
-	options := format.Options{Mode: format.OutputHuman, Width: 120, Now: time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC)}
+	lists := []githubapi.StarList{
+		{Name: "Go Tools", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+	}
+	options := format.Options{
+		Mode:  format.OutputHuman,
+		Width: 120,
+		Now:   time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+	}
 
 	var plain bytes.Buffer
 	if err := format.WriteStarListsWithOptions(&plain, options, lists); err != nil {
@@ -165,7 +195,11 @@ func TestWriteStarListsHumanDateFallbacks(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	options := format.Options{Mode: format.OutputHuman, Width: 120, Now: time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC)}
+	options := format.Options{
+		Mode:  format.OutputHuman,
+		Width: 120,
+		Now:   time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+	}
 	if err := format.WriteStarListsWithOptions(&out, options, lists); err != nil {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}

@@ -3,7 +3,7 @@
 Interactive two-pane browser for GitHub Star Lists. Single fzf instance, two-mode state machine.
 
 ```
-┌─ Lists ── Enter: drill ── Alt-W: open in browser ── Alt-R: refresh ── Alt-H: quit ────┐
+┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ List>                                                                                  │
 │                                                                       ┌─ Repositories ─┐
 │ > Game Dev        12                                                  │                │
@@ -13,13 +13,14 @@ Interactive two-pane browser for GitHub Star Lists. Single fzf instance, two-mod
 │                                                                       │ Pushed  3d    │
 │                                                                       │ URL     …     │
 │                                                                       └────────────────┘
+├─ Keys ─────────────────────────────────────────────────────────────────────────────────┤
+│ Enter: repos  |  Esc: quit  |  Alt-S: sort (name)                                    │
 └────────────────────────────────────────────────────────────────────────────────────────┘
-  ▸ Lists  |  Enter: drill  |  Alt-W: open in browser  |  Alt-R: refresh  |  Alt-H: quit
 ```
 
 ## Requirements
 
-- `fzf` (recent), `gh` (authenticated), `gh star-lists` extension
+- `fzf` with footer support, `gh` (authenticated), `gh star-lists` extension
 
 ```sh
 bash examples/fzf-browse.sh
@@ -33,9 +34,8 @@ bash examples/fzf-browse.sh
 | Key | Action |
 |-----|--------|
 | `Enter` | Drill into focused list |
-| `Alt-W` | Open focused list page in browser |
-| `Alt-R` | Clear cache, reload lists from GitHub |
-| `Alt-H` / `Esc` | Quit |
+| `Esc` | Quit |
+| `Alt-S` | Cycle list sort: name, repo count, recently added, GitHub order |
 | `?` | Toggle preview pane |
 | Type | Fuzzy-match list names |
 
@@ -43,10 +43,9 @@ bash examples/fzf-browse.sh
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Open focused repo in browser, exit fzf |
-| `Alt-O` | Open focused repo in browser, stay in fzf |
-| `Alt-R` | Clear cache, reload repos from GitHub |
-| `Alt-H` / `Esc` | Back to list view |
+| `Enter` | Open focused repo in browser, stay in fzf |
+| `Esc` | Back to list view |
+| `Alt-S` | Cycle repo sort: name, stars, pushed, GitHub order |
 | `?` | Toggle preview pane |
 | Type | Fuzzy-match repo names |
 
@@ -57,9 +56,9 @@ $XDG_CACHE_HOME/gh-star-lists/fzf/   (if XDG_CACHE_HOME set)
 $HOME/.cache/gh-star-lists/fzf/      (default)
 ```
 
-- `_lists.tsv` — cached list index
-- `<list-ID>.tsv` — repos per list, fetched on first focus
-- `Ctrl-R` clears all, or `rm -rf ~/.cache/gh-star-lists/fzf`
+- `_lists.<sort>.tsv` — cached list index per sort mode
+- `<list-ID>.<sort>.tsv` — repos per list and sort mode, fetched on first focus
+- Remove the cache directory manually to force a fresh fetch.
 
 ## How it works
 
@@ -67,10 +66,10 @@ Single fzf instance, two-mode state machine tracked via `$FZF_PROMPT`:
 
 | Prompt | Items | Preview |
 |--------|-------|---------|
-| `List> ` | Star lists from `gsl_lists` | Repos in focused list (cached `gsl_repos`) |
-| `Repo> ` | Repos of drilled list | Detail for focused repo (ANSI-formatted) |
+| `List> ` | Star lists sorted by name by default | Repos in focused list (cached `gsl_repos`) |
+| `Repo> ` | Repos of drilled list, sorted by full `owner/repo` name by default | Detail for focused repo (ANSI-formatted) |
 
-Mode switch: `Enter` sends `change-prompt(...)+reload(...)+transform-header(...)` via fzf `transform` action. `Alt-H` sends reverse.
+Mode switch: `Enter` sends `change-prompt(...)+reload(...)+transform-footer(...)` via fzf `transform` action. `Esc` sends reverse from repo view or quits from list view.
 
 Bash functions (`gsl_*`) `export -f`'d. Script forces `SHELL=bash` so functions survive into fzf subshells regardless of login shell.
 
@@ -94,47 +93,71 @@ fzf invocation at bottom of script. Current defaults:
 
 ```sh
   --height=95% --layout=reverse --border --margin=1 --padding=1,2 --info=inline \
+  --list-border=none --input-border=line --input-label=' Search ' \
+  --footer="$LIST_FOOTER" --footer-border=line --footer-label=' Keys ' \
   --pointer='▸ ' --marker='★ ' --ellipsis='…' \
-  --preview-window='right,60%,border-left,nowrap,~3' \
-  --color='fg:#d0d0d0,fg+:#ffffff,bg:#1e1e2e,bg+:#313244' \
-  --color='hl:#f9e2af,hl+:#f9e2af' \
-  --color='border:#45475a,label:#a6adc8' \
-  --color='prompt:#89b4fa,pointer:#f38ba8,marker:#a6e3a1' \
-  --color='header:#6c7086,spinner:#f9e2af,info:#6c7086'
+  --preview-window='right,55%,border-left,wrap,~3' \
+  --color='fg:#d7dae0,fg+:#ffffff,bg:#1f2329,bg+:#2b3139' \
+  --color='hl:#f2cc60,hl+:#f2cc60' \
+  --color='border:#4b5563,label:#b8c0cc,input-border:#5c6674,input-label:#9fb7ff' \
+  --color='prompt:#9fb7ff,pointer:#f28fad,marker:#8bd5a9' \
+  --color='preview-border:#4b5563,preview-label:#8bd5a9,footer:#8b949e,footer-border:#4b5563,footer-label:#b8c0cc,spinner:#f2cc60,info:#8b949e'
 ```
 
 Smaller `--height` for less obtrusive overlay. Drop `--color` lines for terminal theme. Tweak `--preview-window` size/position:
 
 ```sh
---preview-window='right,70%,border-left,nowrap,~3'   # wider preview
---preview-window='left,50%,border-right,nowrap,~3'    # left side
---preview-window='down,40%,border-top,nowrap,~3'      # below
+--preview-window='right,70%,border-left,wrap,~3'   # wider preview
+--preview-window='left,50%,border-right,wrap,~3'    # left side
+--preview-window='down,40%,border-top,wrap,~3'      # below
 ```
 
 ### Preview content
 
-`gsl_preview_list` — formats repo rows in list-mode right pane:
+`gsl_preview_list` — formats repo rows in list-mode right pane. It intentionally omits descriptions to keep browsing quiet:
 
 ```sh
-# Current: NameWithOwner  Stars  Description
-printf "%-45s  %6s \342\230\205  %s\n", name, fmtstars($4), d
+# Current: Stars  Language  NameWithOwner  Fork marker
+printf "\033[33m%7s \342\230\205\033[0m  \033[36m%-12s\033[0m  \033[37m%s\033[0m\033[2m%s\033[0m\n", fmtstars($4), lang, name, fork
 
-# Add language and fork:
-printf "%-45s  %6s \342\230\205  %-12s  %s  %s\n", name, fmtstars($4), $7, $3, d
+# Add description back if you prefer a denser preview:
+printf "%-45s  %6s \342\230\205  %s\n", name, fmtstars($4), d
 ```
 
-`gsl_preview_repo` — formats repo detail in repo-mode right pane. Emits ANSI for label coloring.
+`gsl_preview_repo` — formats repo detail in repo-mode right pane. Emits ANSI for hierarchy and label coloring.
 
 TSV repo columns: `1=NameWithOwner 2=Desc 3=IsFork 4=Stars 5=PushedAt 6=URL 7=Language`
 
-### Sort repos in preview
+### Sort lists and repos
 
-Override `gsl_preview_list` or `gsl_drill`:
+The browser sorts Star Lists by name by default. In list view, `Alt-S` cycles through:
+
+| Mode | Command behavior |
+|------|------------------|
+| `name` | `gh star-lists list --tsv --sort name` |
+| `repos` | `gh star-lists list --tsv --sort repos --desc` |
+| `added` | `gh star-lists list --tsv --sort added --desc` |
+| `github` | `gh star-lists list --tsv` |
+
+Repos are sorted by full `owner/repo` name by default. In repo view, `Alt-S` cycles through:
+
+| Mode | Command behavior |
+|------|------------------|
+| `name` | `gh star-lists repos <id> --tsv --sort name` |
+| `stars` | `gh star-lists repos <id> --tsv --sort stars --desc` |
+| `pushed` | `gh star-lists repos <id> --tsv --sort pushed --desc` |
+| `github` | `gh star-lists repos <id> --tsv` |
+
+To change the repo default, edit `gsl_repo_sort_mode`:
 
 ```sh
-gsl_drill() {
-  printf '%s' "$1" >"$STATE_FILE"
-  gh star-lists repos "$1" --tsv --sort stars --desc | tee "$CACHE_DIR/$1.tsv"
+gsl_repo_sort_mode() {
+  local mode
+  mode=$(cat "$REPO_SORT_FILE" 2>/dev/null || true)
+  case "$mode" in
+    name|stars|pushed|github) printf '%s' "$mode" ;;
+    *) printf 'stars' ;;
+  esac
 }
 ```
 
@@ -147,24 +170,6 @@ gsl_drill() {
   [[ -s "$f" ]] || gh star-lists repos "$id" --tsv >"$f" 2>/dev/null
   awk -F'\t' 'tolower($7) == "go"' "$f"
 }
-```
-
-### Enter stays in fzf (swap Enter / Alt-O behavior)
-
-In `ENTER` variable, change:
-
-```sh
-  echo "execute-silent(gsl_open_repo {1})+accept"
-# to:
-  echo "execute-silent(gsl_open_repo {1})"
-```
-
-### Rebind keys
-
-```sh
---bind="ctrl-o:transform:$ALT_O"   # move "open+stay" to Ctrl-O
---bind="ctrl-l:transform:$ALT_W"   # move "list page" to Ctrl-L
---bind="alt-o:ignore"              # remove old binding
 ```
 
 ### Change cache location

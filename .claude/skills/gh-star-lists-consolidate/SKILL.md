@@ -2,17 +2,15 @@
 name: gh-star-lists-consolidate
 description: >
   Consolidate GitHub Star Lists by merging small, overlapping, or empty lists
-  into broader categories. Trigger when user says: clean up, merge, consolidate,
-  reorganize, compact, reduce, or "too many" lists. Also when they mention
-  reaching list limits, fragmentation, or wanting to restructure their lists.
-  DESTRUCTIVE workflow — moves repos and deletes emptied lists. Always show
-  plan first and ask approval before any mutations.
+  into broader categories. Trigger: clean up, merge, consolidate, reorganize,
+  compact, reduce, "too many" lists, list limits, fragmentation, restructure
+  requests. DESTRUCTIVE — moves repos, deletes emptied lists. Show plan first,
+  ask approval before mutations.
 ---
 
 # gh-star-lists-consolidate
 
-Consolidate GitHub Star Lists by intelligently grouping similar lists and
-merging small/empty ones. Uses `gh` CLI with `user` OAuth scope.
+Consolidate GitHub Star Lists by grouping similar lists, merging small/empty ones. Uses `gh` CLI with `user` OAuth scope.
 
 ## Workflow
 
@@ -26,7 +24,7 @@ Discover → Analyze → Show Plan → Ask Approval → Execute → Report
 gh star-lists --json
 ```
 
-Also run the analysis script for structured data:
+Also run analysis script for structured data:
 
 ```bash
 gh star-lists --json | python scripts/analyze-lists.py
@@ -34,32 +32,30 @@ gh star-lists --json | python scripts/analyze-lists.py
 
 ## Phase 2: Analyze
 
-Use your judgment to classify each list. Look at the data holistically:
+Judge each list holistically.
 
 ### Patterns to detect
 
 | Pattern | Description |
 |---------|-------------|
-| **Prefix groups** | Lists sharing a prefix (e.g. `Foo-A`, `Foo-B`, `Foo-C`) are almost certainly fragments of the same topic. |
-| **Semantic overlap** | Lists with different prefixes but overlapping keywords (e.g. one named `Graphics`, another `Shader`, another `VFX`). The `word_clusters` field in the analysis output highlights these. |
-| **Tiny lists** | Lists with 1-2 repos are usually over-split. They can likely fold into a broader sibling. |
+| **Prefix groups** | Lists sharing prefix (e.g. `Foo-A`, `Foo-B`, `Foo-C`) likely fragments of same topic. |
+| **Semantic overlap** | Different prefixes, overlapping keywords (e.g. `Graphics`, `Shader`, `VFX`). `word_clusters` field highlights these. |
+| **Tiny lists** | 1-2 repos usually over-split. Fold into broader sibling. |
 | **Empty lists** | 0 repos — delete candidates. |
-| **Solitary lists** | Lists that don't group with any other. Keep these as-is. |
+| **Solitary lists** | Don't group with any other. Keep as-is. |
 
-### How to decide the target
+### How to decide target
 
-When merging list A into list B:
+- **Larger list absorbs smaller.** `Render` absorbs `Render-Features`, not reverse.
+- **Generic name absorbs specific.** `Games` absorbs `RPG-Tools`, `Network` absorbs `WebSocket`. Narrower is subset of broader.
+- **When doubt semantics**, read repo names inside tiny lists (`gh star-lists repos <list-name> --json | jq '.[].nameWithOwner'`) to understand, then decide.
+- **If same size and specificity**, keep both unless clearly redundant.
 
-- **The larger list should absorb the smaller**, not the reverse. A big list named `Render` should absorb a tiny `Render-Features`, not the other way.
-- **The more generic name should absorb the more specific.** `Games` absorbs `RPG-Tools`, `Network` absorbs `WebSocket`. The narrower term is a subset of the broader.
-- **When in doubt about semantics**, read the actual repo names inside tiny lists (`gh star-lists repos <list-name> --json | jq '.[].nameWithOwner'`) to understand what they contain, then decide.
-- **If two lists are the same size and same level of specificity**, keep both unless they're clearly redundant.
-
-There is no fixed merge map. Every user's list taxonomy is different. Apply common sense.
+No fixed merge map. Each user's taxonomy different. Apply common sense.
 
 ## Phase 3: Show Plan + Ask Approval
 
-Print the full plan in a table:
+Print full plan in table:
 
 ```
 | Source | Repos | Action | Target |
@@ -69,33 +65,33 @@ Print the full plan in a table:
 | Baz    | 12    | KEEP   | —      |
 ```
 
-Include a summary: **X lists → Y lists** (Z deletions, N repos moved).
+Summary: **X lists → Y lists** (Z deletions, N repos moved).
 
-Then **wait for the user to explicitly approve**. Do not proceed without approval.
+Wait for user explicit approval. No proceed without.
 
 ## Phase 4: Execute
 
 ### Step A: Check auth scope
 
-Mutations require the `user` OAuth scope:
+Mutations require `user` OAuth scope:
 
 ```bash
 gh auth status 2>&1
 ```
 
-Look for `'user'` in the token scopes list. If missing:
+Look for `'user'` in token scopes. If missing:
 
 ```bash
 gh auth refresh --scopes user
 ```
 
-The user must complete browser-based OAuth before you can proceed.
+User must complete browser-based OAuth before proceed.
 
 ### Step B: Move repos
 
-For each source list being merged, get its repos and move them one at a time.
+For each source list, get repos and move one at a time.
 
-Resolve a repo's GraphQL node ID:
+Resolve repo GraphQL node ID:
 
 ```bash
 OWNER="repo-owner"
@@ -105,7 +101,7 @@ REPO_ID=$(gh api graphql \
   --jq '.data.r.id')
 ```
 
-Move the repo to the target list (this REPLACES all list memberships):
+Move repo to target list (REPLACES all list memberships):
 
 ```bash
 gh api graphql --jq '.' \
@@ -113,7 +109,7 @@ gh api graphql --jq '.' \
   > /dev/null
 ```
 
-The bundled script handles this end-to-end for a batch:
+Bundled script handles batch end-to-end:
 
 ```bash
 gh star-lists repos "<source-list>" --json | bash scripts/move-repos.sh "<TARGET_LIST_ID>"
@@ -121,7 +117,7 @@ gh star-lists repos "<source-list>" --json | bash scripts/move-repos.sh "<TARGET
 
 ### Step C: Verify and delete
 
-After all repos from a source list have been moved, confirm it's empty:
+After all repos moved, confirm empty:
 
 ```bash
 gh star-lists repos "<source-list>" --json | jq length
@@ -135,25 +131,25 @@ gh api graphql --jq '.' \
   > /dev/null
 ```
 
-Only delete lists you verified are empty.
+Only delete verified empty lists.
 
 ## Phase 5: Report
 
-Print the final state:
+Print final state:
 
 ```bash
 gh star-lists --json | jq -r '["List","Repos"],["----","-----"],(.[] | [.name, (.repoCount|tostring)]) | @tsv'
 ```
 
 Summarize:
-- How many lists were deleted
-- How many repos were relocated
-- How many lists remain
+- Lists deleted
+- Repos relocated
+- Lists remain
 
 ## Guardrails
 
-- **Plan first, execute second.** No mutation calls before user approval.
-- **Verify emptiness before delete.** Always check `repoCount == 0` first.
-- **Scope check before mutations.** Don't attempt `updateUserListsForItem` without `user` scope — it will fail with `INSUFFICIENT_SCOPES`.
-- **`updateUserListsForItem` replaces, not appends.** Calling it with `listIds: ["target"]` removes the repo from ALL other lists. This is fine for consolidation (you're deliberately moving repos), but be aware of the semantics.
-- **One repo can only be in one target.** If a merge plan puts the same repo in two target lists, the second mutation will remove it from the first.
+- **Plan first, execute second.** No mutations before approval.
+- **Verify empty before delete.** Check `repoCount == 0` first.
+- **Scope check before mutations.** `updateUserListsForItem` without `user` scope fails with `INSUFFICIENT_SCOPES`.
+- **`updateUserListsForItem` replaces, not appends.** `listIds: ["target"]` removes repo from ALL other lists. Fine for consolidation (deliberately moving repos), but beware semantics.
+- **One repo, one target.** If merge plan puts same repo in two targets, second mutation removes from first.

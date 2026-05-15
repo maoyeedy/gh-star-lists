@@ -40,9 +40,10 @@ func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
 	for _, list := range lists {
 		if _, err := fmt.Fprintf(
 			w,
-			"%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%d\t%s\t%s\n",
 			list.Name,
 			list.Description,
+			list.RepoCount,
 			list.LastAddedAt,
 			list.ID,
 		); err != nil {
@@ -60,9 +61,10 @@ func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarLis
 	boldFn := bold(options.Color)
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
-	table.AddHeader([]string{"NAME", "ADDED", "ID"}, tableprinter.WithColor(boldFn))
+	table.AddHeader([]string{"NAME", "REPOS", "ADDED", "ID"}, tableprinter.WithColor(boldFn))
 	for _, list := range lists {
 		table.AddField(list.Name, tableprinter.WithColor(boldFn))
+		table.AddField(fmt.Sprintf("%d", list.RepoCount), tableprinter.WithTruncate(nil))
 		table.AddField(shortAge(list.LastAddedAt, options.Now), tableprinter.WithTruncate(nil))
 		table.AddField(list.ID, tableprinter.WithColor(faintFn))
 		table.EndRow()
@@ -83,6 +85,9 @@ func writeStarListsPlain(w io.Writer, lists []githubapi.StarList) error {
 			if _, err := fmt.Fprintf(w, "  Description: %s\n", list.Description); err != nil {
 				return err
 			}
+		}
+		if _, err := fmt.Fprintf(w, "  Repos: %d\n", list.RepoCount); err != nil {
+			return err
 		}
 		if list.LastAddedAt != "" {
 			if _, err := fmt.Fprintf(w, "  Last added: %s\n", list.LastAddedAt); err != nil {

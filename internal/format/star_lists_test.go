@@ -17,7 +17,7 @@ func (errWriter) Write([]byte) (int, error) {
 	return 0, errors.New("write failed")
 }
 
-func TestWriteStarListsTSVUsesLegacyFieldOrder(t *testing.T) {
+func TestWriteStarListsTSVIncludesRepoCount(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
@@ -26,8 +26,9 @@ func TestWriteStarListsTSVUsesLegacyFieldOrder(t *testing.T) {
 			Description: "CLI helpers",
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
+			RepoCount:   5,
 		},
-		{Name: "No Description", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2"},
+		{Name: "No Description", LastAddedAt: "2024-05-02T12:00:00Z", ID: "UL_2", RepoCount: 0},
 	}
 
 	var out bytes.Buffer
@@ -35,8 +36,8 @@ func TestWriteStarListsTSVUsesLegacyFieldOrder(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "Go Tools\tCLI helpers\t2024-05-01T12:00:00Z\tUL_1\n" +
-		"No Description\t\t2024-05-02T12:00:00Z\tUL_2\n"
+	want := "Go Tools\tCLI helpers\t5\t2024-05-01T12:00:00Z\tUL_1\n" +
+		"No Description\t\t0\t2024-05-02T12:00:00Z\tUL_2\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists TSV output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -51,6 +52,7 @@ func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 			Description: "CLI helpers",
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
+			RepoCount:   5,
 		},
 	}
 
@@ -59,7 +61,7 @@ func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\"}]\n"
+	want := "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":5}]\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists JSON output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -103,8 +105,9 @@ func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 			Description: "CLI helpers",
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
+			RepoCount:   5,
 		},
-		{Name: "No Optional Fields", ID: "UL_2"},
+		{Name: "No Optional Fields", ID: "UL_2", RepoCount: 0},
 	}
 
 	var out bytes.Buffer
@@ -117,9 +120,9 @@ func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "NAME                ADDED   ID\n" +
-		"Go Tools            2y ago  UL_1\n" +
-		"No Optional Fields  -       UL_2\n"
+	want := "NAME                REPOS  ADDED   ID\n" +
+		"Go Tools            5      2y ago  UL_1\n" +
+		"No Optional Fields  0      -       UL_2\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists human output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -134,8 +137,9 @@ func TestWriteStarListsPlainPreservesDetailedOutput(t *testing.T) {
 			Description: "CLI helpers",
 			LastAddedAt: "2024-05-01T12:00:00Z",
 			ID:          "UL_1",
+			RepoCount:   5,
 		},
-		{Name: "No Optional Fields", ID: "UL_2"},
+		{Name: "No Optional Fields", ID: "UL_2", RepoCount: 0},
 	}
 
 	var out bytes.Buffer
@@ -145,9 +149,11 @@ func TestWriteStarListsPlainPreservesDetailedOutput(t *testing.T) {
 
 	want := "Go Tools\n" +
 		"  Description: CLI helpers\n" +
+		"  Repos: 5\n" +
 		"  Last added: 2024-05-01T12:00:00Z\n" +
 		"  ID: UL_1\n" +
 		"No Optional Fields\n" +
+		"  Repos: 0\n" +
 		"  ID: UL_2\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists human output mismatch\ngot:  %q\nwant: %q", got, want)
@@ -158,7 +164,7 @@ func TestWriteStarListsHumanColorIsOptIn(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
-		{Name: "Go Tools", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1"},
+		{Name: "Go Tools", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1", RepoCount: 5},
 	}
 	options := format.Options{
 		Mode:  format.OutputHuman,
@@ -189,9 +195,9 @@ func TestWriteStarListsHumanDateFallbacks(t *testing.T) {
 	t.Parallel()
 
 	lists := []githubapi.StarList{
-		{Name: "Bad Date", LastAddedAt: "not-a-date", ID: "UL_bad"},
-		{Name: "Future", LastAddedAt: "2026-06-01T00:00:00Z", ID: "UL_future"},
-		{Name: "Missing", ID: "UL_missing"},
+		{Name: "Bad Date", LastAddedAt: "not-a-date", ID: "UL_bad", RepoCount: 1},
+		{Name: "Future", LastAddedAt: "2026-06-01T00:00:00Z", ID: "UL_future", RepoCount: 2},
+		{Name: "Missing", ID: "UL_missing", RepoCount: 0},
 	}
 
 	var out bytes.Buffer
@@ -215,7 +221,7 @@ func TestWriteStarListsHumanDateFallbacks(t *testing.T) {
 func TestWriteStarListsReturnsWriterErrors(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{{Name: "Go Tools", ID: "UL_1"}}
+	lists := []githubapi.StarList{{Name: "Go Tools", ID: "UL_1", RepoCount: 5}}
 	if err := format.WriteStarLists(errWriter{}, format.OutputHuman, lists); err == nil {
 		t.Fatal("WriteStarLists human returned nil error for failing writer")
 	}

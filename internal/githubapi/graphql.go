@@ -13,6 +13,9 @@ const listStarListsQuery = `query($endCursor: String, $first: Int!) {
         name
         description
         lastAddedAt
+        items {
+          totalCount
+        }
       }
       pageInfo {
         hasNextPage
@@ -77,11 +80,16 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 		}
 
 		for _, node := range result.Viewer.Lists.Nodes {
+			repoCount := 0
+			if node.Items != nil {
+				repoCount = node.Items.TotalCount
+			}
 			lists = append(lists, StarList{
 				Name:        node.Name,
 				Description: stringValue(node.Description),
 				LastAddedAt: stringValue(node.LastAddedAt),
 				ID:          node.ID,
+				RepoCount:   repoCount,
 			})
 		}
 		if !result.Viewer.Lists.PageInfo.HasNextPage {
@@ -141,11 +149,16 @@ type listStarListsResponse struct {
 	} `json:"viewer"`
 }
 
+type starListItemsConnection struct {
+	TotalCount int `json:"totalCount"`
+}
+
 type starListNode struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	LastAddedAt *string `json:"lastAddedAt"`
+	ID          string                   `json:"id"`
+	Name        string                   `json:"name"`
+	Description *string                  `json:"description"`
+	LastAddedAt *string                  `json:"lastAddedAt"`
+	Items       *starListItemsConnection `json:"items"`
 }
 
 type pageInfo struct {

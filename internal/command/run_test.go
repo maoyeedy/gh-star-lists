@@ -52,6 +52,7 @@ func fixtureService() *fakeService {
 				Description: "CLI helpers",
 				LastAddedAt: "2024-05-01T12:00:00Z",
 				ID:          "UL_1",
+				RepoCount:   3,
 			},
 		},
 		repos: []githubapi.Repository{
@@ -75,18 +76,21 @@ func sortableFixtureService() *fakeService {
 				Description: "Last by name",
 				LastAddedAt: "2024-05-03T12:00:00Z",
 				ID:          "UL_3",
+				RepoCount:   1,
 			},
 			{
 				Name:        "Alpha",
 				Description: "First by name",
 				LastAddedAt: "2024-05-02T12:00:00Z",
 				ID:          "UL_2",
+				RepoCount:   5,
 			},
 			{
 				Name:        "beta",
 				Description: "Middle by name",
 				LastAddedAt: "2024-05-01T12:00:00Z",
 				ID:          "UL_1",
+				RepoCount:   3,
 			},
 		},
 		repos: []githubapi.Repository{
@@ -126,18 +130,21 @@ func filterableFixtureService() *fakeService {
 				Description: "CLI helpers",
 				LastAddedAt: "2024-05-01T12:00:00Z",
 				ID:          "UL_1",
+				RepoCount:   10,
 			},
 			{
 				Name:        "Go Web",
 				Description: "Web frameworks",
 				LastAddedAt: "2024-05-02T12:00:00Z",
 				ID:          "UL_2",
+				RepoCount:   5,
 			},
 			{
 				Name:        "Rust",
 				Description: "Rust ecosystem",
 				LastAddedAt: "2024-05-03T12:00:00Z",
 				ID:          "UL_3",
+				RepoCount:   8,
 			},
 		},
 		repos: []githubapi.Repository{
@@ -223,26 +230,27 @@ func TestRunWritesListOutput(t *testing.T) {
 		{
 			name: "empty args default human list",
 			argv: nil,
-			want: "NAME      ADDED   ID\n" +
-				"Go Tools  2y ago  UL_1\n",
+			want: "NAME      REPOS  ADDED   ID\n" +
+				"Go Tools  3      2y ago  UL_1\n",
 		},
 		{
 			name: "plain list",
 			argv: []string{"list", "--plain"},
 			want: "Go Tools\n" +
 				"  Description: CLI helpers\n" +
+				"  Repos: 3\n" +
 				"  Last added: 2024-05-01T12:00:00Z\n" +
 				"  ID: UL_1\n",
 		},
 		{
 			name: "json",
 			argv: []string{"list", "--json"},
-			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\"}]\n",
+			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":3}]\n",
 		},
 		{
 			name: "tsv",
 			argv: []string{"list", "--tsv"},
-			want: "Go Tools\tCLI helpers\t2024-05-01T12:00:00Z\tUL_1\n",
+			want: "Go Tools\tCLI helpers\t3\t2024-05-01T12:00:00Z\tUL_1\n",
 		},
 		{
 			name: "template",
@@ -355,16 +363,16 @@ func TestRunSortsListOutput(t *testing.T) {
 		{
 			name: "name ascending",
 			argv: []string{"list", "--sort", "name", "--tsv"},
-			want: "Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n" +
-				"beta\tMiddle by name\t2024-05-01T12:00:00Z\tUL_1\n" +
-				"zeta\tLast by name\t2024-05-03T12:00:00Z\tUL_3\n",
+			want: "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n" +
+				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\n" +
+				"zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\n",
 		},
 		{
 			name: "added descending",
 			argv: []string{"list", "--sort", "added", "--desc", "--tsv"},
-			want: "zeta\tLast by name\t2024-05-03T12:00:00Z\tUL_3\n" +
-				"Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n" +
-				"beta\tMiddle by name\t2024-05-01T12:00:00Z\tUL_1\n",
+			want: "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\n" +
+				"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n" +
+				"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\n",
 		},
 	}
 
@@ -513,8 +521,8 @@ func TestRunLimitsOutput(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	want := "zeta\tLast by name\t2024-05-03T12:00:00Z\tUL_3\n" +
-		"Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n"
+	want := "zeta\tLast by name\t1\t2024-05-03T12:00:00Z\tUL_3\n" +
+		"Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -538,8 +546,8 @@ func TestRunLimitsOutputAfterSort(t *testing.T) {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
 	// Sorted by name asc: Alpha, beta, zeta. Limit 2 should return first 2.
-	want := "Alpha\tFirst by name\t2024-05-02T12:00:00Z\tUL_2\n" +
-		"beta\tMiddle by name\t2024-05-01T12:00:00Z\tUL_1\n"
+	want := "Alpha\tFirst by name\t5\t2024-05-02T12:00:00Z\tUL_2\n" +
+		"beta\tMiddle by name\t3\t2024-05-01T12:00:00Z\tUL_1\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
 	}
@@ -590,8 +598,8 @@ func TestRunFiltersListOutput(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	want := "Go Tools\tCLI helpers\t2024-05-01T12:00:00Z\tUL_1\n" +
-		"Go Web\tWeb frameworks\t2024-05-02T12:00:00Z\tUL_2\n"
+	want := "Go Tools\tCLI helpers\t10\t2024-05-01T12:00:00Z\tUL_1\n" +
+		"Go Web\tWeb frameworks\t5\t2024-05-02T12:00:00Z\tUL_2\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("Run stdout mismatch\ngot:  %q\nwant: %q", got, want)
 	}

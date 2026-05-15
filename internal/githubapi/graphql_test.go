@@ -210,7 +210,7 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 		"viewer": {
 			"lists": {
 				"nodes": [
-					{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z"}
+					{"id": "UL_1", "name": "Tools", "description": "Useful CLIs", "lastAddedAt": "2025-01-02T03:04:05Z", "items": {"totalCount": 5}}
 				],
 				"pageInfo": {"hasNextPage": false, "endCursor": null}
 			}
@@ -229,6 +229,7 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 			Description: "Useful CLIs",
 			LastAddedAt: "2025-01-02T03:04:05Z",
 			ID:          "UL_1",
+			RepoCount:   5,
 		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] {

@@ -1,4 +1,11 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+
   - repo: local
     hooks:
       - id: goimports
@@ -15,9 +22,17 @@ repos:
         types: [go]
         pass_filenames: false
 
+      - id: golangci-lint
+        name: golangci-lint (fix + check)
+        language: system
+        entry: golangci-lint run --fix
+        pass_filenames: false
+        always_run: true
+
       - id: ascii-check
         name: ascii-check (no non-ASCII in Go source)
         language: system
-        entry: bash -c 'if LC_ALL=C grep -Pn "[^\x00-\x7F]" --include="*.go" -r . 2>/dev/null; then echo "ERROR: non-ASCII found"; exit 1; fi'
+        entry: >
+          bash -c 'if LC_ALL=C grep -Pn "[^\x00-\x7F]" --include="*.go" -r . 2>/dev/null; then echo "ERROR: non-ASCII found"; exit 1; fi'
         pass_filenames: false
         always_run: true

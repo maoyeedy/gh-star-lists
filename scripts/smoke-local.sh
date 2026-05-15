@@ -14,7 +14,7 @@ go vet ./...
 go build -o "$binary" .
 
 help="$($binary --help)"
-[[ "$help" == *"gh star-lists v0.1"* ]]
+[[ "$help" == *"gh star-lists"* ]]
 [[ "$help" == *"Usage:"* ]]
 [[ "$help" == *"Commands:"* ]]
 [[ "$help" == *"repos <LIST_ID>"* ]]

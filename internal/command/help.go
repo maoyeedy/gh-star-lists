@@ -1,6 +1,6 @@
 package command
 
-const helpText = `gh star-lists v0.1
+const helpText = `gh star-lists
 
 Query GitHub Star Lists through the GitHub CLI authentication context.
 

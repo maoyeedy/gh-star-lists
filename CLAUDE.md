@@ -105,5 +105,5 @@ Use `query-docs` with these IDs when working on the relevant package. Skip `reso
 - Prefer `sd` for focused token/keyword-based replacements, insertions, and bulk renames. Match semantic anchors, not tab depth.
 - Avoid multi-line edits that depend on counting tabs or exact indentation.
 - After editing Go files, run `goimports -w` on touched files. (`goimports` is a superset of `gofmt` — handles both formatting and imports in one pass.)
-- Final validation: `make check` (runs `goimports -w .`, ascii-check, `go vet ./...`, `go test ./...`, `go build`). Skills `/go-check` and `/ascii-check` available as interactive aliases.
+- Final validation: `make check` (runs `scripts/check.sh`: `go test ./...`, `go vet ./...`, `go build`). Skills `/go-check` and `/ascii-check` available as interactive aliases.
 - Before committing: `make ascii-check` or `/ascii-check` to catch non-ASCII punctuation in Go source.

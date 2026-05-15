@@ -81,9 +81,10 @@ gh star-lists repos "$LIST_ID" --sort stars --desc --limit 10 \
 ## Development
 
 ```sh
-make check   # goimports, vet, test, build
+make check   # scripts/check.sh: test, vet, build
 make lint    # golangci-lint
-make smoke   # install as gh extension + smoke tests
+make smoke   # scripts/smoke-local.sh
+scripts/smoke-gh-extension.sh
 ```
 
 ```sh

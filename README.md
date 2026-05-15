@@ -134,6 +134,14 @@ gh star-lists repos --unlisted --sort starred --desc
 gh star-lists repos "$LIST_ID" --web
 ```
 
+### Interactive browser (fzf)
+
+See [`examples/README.md`](examples/README.md) — two-pane fzf browser with live repo preview, disk cache, and customization guide. Requires `fzf`.
+
+```sh
+bash examples/fzf-browse.sh
+```
+
 ## Development
 
 ```sh

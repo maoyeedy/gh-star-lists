@@ -36,6 +36,11 @@ bash examples/fzf-browse.sh
 | `Enter` | Drill into focused list |
 | `Esc` | Quit |
 | `Alt-S` | Cycle list sort: name, repo count, recently added, GitHub order |
+| `Ctrl-R` | Refresh cached lists and previews |
+| `n` | Create a Star List |
+| `e` | Edit focused Star List name/description |
+| `D` | Delete focused Star List after typed confirmation |
+| `c` | Copy focused Star List contents to another list |
 | `?` | Toggle preview pane |
 | Type | Fuzzy-match list names |
 
@@ -46,6 +51,11 @@ bash examples/fzf-browse.sh
 | `Enter` | Open focused repo in browser, stay in fzf |
 | `Esc` | Back to list view |
 | `Alt-S` | Cycle repo sort: name, stars, pushed, GitHub order |
+| `Ctrl-R` | Refresh cached repos and previews |
+| `a` | Add focused repo to another Star List |
+| `x` | Remove focused repo from the current Star List |
+| `m` | Move focused repo from the current Star List to another |
+| `u` | Unstar focused repo after typed confirmation |
 | `?` | Toggle preview pane |
 | Type | Fuzzy-match repo names |
 
@@ -58,7 +68,7 @@ $HOME/.cache/gh-star-lists/fzf/      (default)
 
 - `_lists.<sort>.tsv` — cached list index per sort mode
 - `<list-ID>.<sort>.tsv` — repos per list and sort mode, fetched on first focus
-- Remove the cache directory manually to force a fresh fetch.
+- Mutating fzf actions clear the cache automatically. `Ctrl-R` also clears and reloads.
 
 ## How it works
 

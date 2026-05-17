@@ -515,6 +515,21 @@ func TestParseUsageErrors(t *testing.T) {
 			argv:        []string{"list", "--sort", "name,stars"},
 			wantMessage: "unsupported sort key \"stars\" for list",
 		},
+		{
+			name:        "copy rejects identical from and to",
+			argv:        []string{"copy", "--from", "Work", "--to", "Work"},
+			wantMessage: "copy requires distinct --from and --to",
+		},
+		{
+			name:        "merge rejects identical from and to case insensitive",
+			argv:        []string{"merge", "--from", "Work", "--to", "work"},
+			wantMessage: "merge requires distinct --from and --to",
+		},
+		{
+			name:        "move rejects identical from and to",
+			argv:        []string{"move", "owner/repo", "--from", "A", "--to", "A"},
+			wantMessage: "move requires distinct --from and --to",
+		},
 	}
 
 	for _, tt := range tests {

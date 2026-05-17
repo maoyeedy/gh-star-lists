@@ -47,6 +47,10 @@ func (f *fakeCacheInner) GetRepository(_ context.Context, nameWithOwner string) 
 	return Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
 }
 
+func (f *fakeCacheInner) GetRepositoryMemberships(context.Context, string) (string, []string, error) {
+	return "R_1", nil, nil
+}
+
 func (f *fakeCacheInner) CreateStarList(_ context.Context, input StarListInput) (StarList, error) {
 	return StarList{Name: input.Name, ID: "UL_new"}, nil
 }

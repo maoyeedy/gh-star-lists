@@ -17,6 +17,7 @@ type Service interface {
 	ListRepositories(ctx context.Context, listID string, options ...ListOptions) ([]Repository, error)
 	ListStarredRepositories(ctx context.Context, options ...ListOptions) ([]Repository, error)
 	GetRepository(ctx context.Context, nameWithOwner string) (Repository, error)
+	GetRepositoryMemberships(ctx context.Context, nameWithOwner string) (string, []string, error)
 	CreateStarList(ctx context.Context, input StarListInput) (StarList, error)
 	UpdateStarList(ctx context.Context, input UpdateStarListInput) (StarList, error)
 	DeleteStarList(ctx context.Context, listID string) error
@@ -116,6 +117,17 @@ func (s *lazyService) GetRepository(ctx context.Context, nameWithOwner string) (
 		return Repository{}, err
 	}
 	return service.GetRepository(ctx, nameWithOwner)
+}
+
+func (s *lazyService) GetRepositoryMemberships(
+	ctx context.Context,
+	nameWithOwner string,
+) (string, []string, error) {
+	service, err := s.init(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	return service.GetRepositoryMemberships(ctx, nameWithOwner)
 }
 
 func (s *lazyService) CreateStarList(ctx context.Context, input StarListInput) (StarList, error) {

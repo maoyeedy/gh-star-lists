@@ -87,6 +87,32 @@ func (f *fakeService) GetRepository(_ context.Context, nameWithOwner string) (gi
 	return githubapi.Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
 }
 
+func (f *fakeService) GetRepositoryMemberships(
+	_ context.Context,
+	nameWithOwner string,
+) (string, []string, error) {
+	if f.getRepoErr != nil {
+		return "", nil, f.getRepoErr
+	}
+	repoID := "R_1"
+	if f.gotRepo.ID != "" {
+		repoID = f.gotRepo.ID
+	}
+	var listIDs []string
+	for listID, repos := range f.reposByList {
+		for _, repo := range repos {
+			if repo.NameWithOwner == nameWithOwner {
+				listIDs = append(listIDs, listID)
+				if repo.ID != "" {
+					repoID = repo.ID
+				}
+				break
+			}
+		}
+	}
+	return repoID, listIDs, nil
+}
+
 func (f *fakeService) CreateStarList(_ context.Context, input githubapi.StarListInput) (githubapi.StarList, error) {
 	f.createCalls++
 	if f.createErr != nil {

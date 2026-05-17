@@ -438,6 +438,9 @@ func Parse(argv []string) (Parsed, error) {
 			if fromValue == "" || toValue == "" {
 				return Parsed{}, usage("move requires --from and --to")
 			}
+			if strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
+				return Parsed{}, usage("move requires distinct --from and --to")
+			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err
 			}
@@ -448,6 +451,9 @@ func Parse(argv []string) (Parsed, error) {
 			}
 			if fromValue == "" || toValue == "" {
 				return Parsed{}, usage("%s requires --from and --to", positionals[0])
+			}
+			if strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
+				return Parsed{}, usage("%s requires distinct --from and --to", positionals[0])
 			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err

@@ -118,6 +118,13 @@ func (s *cacheService) GetRepository(ctx context.Context, nameWithOwner string) 
 	return s.inner.GetRepository(ctx, nameWithOwner)
 }
 
+func (s *cacheService) GetRepositoryMemberships(
+	ctx context.Context,
+	nameWithOwner string,
+) (string, []string, error) {
+	return s.inner.GetRepositoryMemberships(ctx, nameWithOwner)
+}
+
 func (s *cacheService) CreateStarList(ctx context.Context, input StarListInput) (StarList, error) {
 	list, err := s.inner.CreateStarList(ctx, input)
 	if err != nil {

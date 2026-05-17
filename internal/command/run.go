@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cli/go-gh/v2/pkg/browser"
 	"github.com/cli/go-gh/v2/pkg/prompter"
@@ -308,17 +309,16 @@ func runRepoListMutation(
 			return writeFailure(stderr, fmt.Errorf("Star List %q not found", parsed.ToListID))
 		}
 	}
-	index, err := loadMembershipIndex(ctx, service, lists)
+	if parsed.Action == ActionMove && from.ID == to.ID {
+		return writeFailure(stderr, fmt.Errorf("--from and --to resolve to the same list"))
+	}
+	repoID, currentLists, err := service.GetRepositoryMemberships(ctx, parsed.RepoName)
 	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err)
 	}
-	repoID, memberships, err := index.repositoryMemberships(ctx, service, parsed.RepoName)
-	if err != nil {
-		return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err)
-	}
-	next := maps.Clone(memberships)
-	if next == nil {
-		next = make(map[string]struct{})
+	next := make(map[string]struct{}, len(currentLists)+1)
+	for _, id := range currentLists {
+		next[id] = struct{}{}
 	}
 	switch parsed.Action {
 	case ActionAdd:
@@ -361,6 +361,9 @@ func runListCopy(
 	if toFound {
 		to = toList.ID
 	}
+	if from == to {
+		return writeFailure(stderr, fmt.Errorf("--from and --to resolve to the same list"))
+	}
 	index, err := loadMembershipIndex(ctx, service, lists)
 	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
@@ -379,27 +382,36 @@ func runListCopy(
 		}
 		return ExitSuccess
 	}
-	changed := 0
+	var changed atomic.Int64
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(5)
 	for _, repo := range repos {
-		repoID, memberships, err := index.repositoryMemberships(ctx, service, repo.NameWithOwner)
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, repo.NameWithOwner, err)
-		}
-		if _, ok := memberships[to]; ok {
-			continue
-		}
-		memberships[to] = struct{}{}
-		if err := service.UpdateRepositoryLists(ctx, repoID, slices.Sorted(maps.Keys(memberships))); err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, repo.NameWithOwner, err)
-		}
-		changed++
+		repo := repo
+		group.Go(func() error {
+			repoID, memberships, err := index.repositoryMemberships(groupCtx, service, repo.NameWithOwner)
+			if err != nil {
+				return fmt.Errorf("%s: %w", repo.NameWithOwner, err)
+			}
+			if _, ok := memberships[to]; ok {
+				return nil
+			}
+			memberships[to] = struct{}{}
+			if err := service.UpdateRepositoryLists(groupCtx, repoID, slices.Sorted(maps.Keys(memberships))); err != nil {
+				return fmt.Errorf("%s: %w", repo.NameWithOwner, err)
+			}
+			changed.Add(1)
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 	}
 	if parsed.DeleteSource || parsed.Action == ActionMerge {
 		if err := service.DeleteStarList(ctx, from); err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 		}
 	}
-	_, _ = fmt.Fprintf(stdout, "Copied %d repositories from %q to %q.\n", changed, parsed.FromListID, parsed.ToListID)
+	_, _ = fmt.Fprintf(stdout, "Copied %d repositories from %q to %q.\n", changed.Load(), parsed.FromListID, parsed.ToListID)
 	return ExitSuccess
 }
 

@@ -93,6 +93,19 @@ const getRepositoryQuery = `query($owner: String!, $name: String!) {
   }
 }`
 
+const getRepositoryWithListsQuery = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    nameWithOwner
+    userLists(first: 100) {
+      nodes {
+        id
+        name
+      }
+    }
+  }
+}`
+
 const createStarListMutation = `mutation($name: String!, $description: String, $private: Boolean!) {
   createUserList(input: {name: $name, description: $description, isPrivate: $private}) {
     list {
@@ -506,6 +519,25 @@ type repositoryNode struct {
 	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
 }
 
+type repositoryMembershipsResponse struct {
+	Repository *repositoryMembershipsNode `json:"repository"`
+}
+
+type repositoryMembershipsNode struct {
+	ID            string              `json:"id"`
+	NameWithOwner string              `json:"nameWithOwner"`
+	UserLists     repositoryUserLists `json:"userLists"`
+}
+
+type repositoryUserLists struct {
+	Nodes []userListIDNode `json:"nodes"`
+}
+
+type userListIDNode struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type starListMutationResponse struct {
 	List starListNode `json:"list"`
 }
@@ -550,6 +582,35 @@ func (s *graphQLService) GetRepository(
 		License:        result.Repository.LicenseInfo.OrEmpty(),
 		Topics:         result.Repository.RepositoryTopics.Names(),
 	}, nil
+}
+
+func (s *graphQLService) GetRepositoryMemberships(
+	ctx context.Context,
+	nameWithOwner string,
+) (string, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	owner, name, ok := strings.Cut(nameWithOwner, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return "", nil, fmt.Errorf("invalid repository %q: expected owner/name", nameWithOwner)
+	}
+	var result repositoryMembershipsResponse
+	variables := map[string]any{"owner": owner, "name": name}
+	if err := s.client.DoWithContext(ctx, getRepositoryWithListsQuery, variables, &result); err != nil {
+		return "", nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	}
+	if result.Repository == nil || result.Repository.ID == "" {
+		return "", nil, fmt.Errorf("repository %q not found", nameWithOwner)
+	}
+	listIDs := make([]string, 0, len(result.Repository.UserLists.Nodes))
+	for _, node := range result.Repository.UserLists.Nodes {
+		if node.ID == "" {
+			continue
+		}
+		listIDs = append(listIDs, node.ID)
+	}
+	return result.Repository.ID, listIDs, nil
 }
 
 func (s *graphQLService) CreateStarList(ctx context.Context, input StarListInput) (StarList, error) {

@@ -29,6 +29,10 @@ func (f *lazyFakeService) GetRepository(context.Context, string) (Repository, er
 	return Repository{}, nil
 }
 
+func (f *lazyFakeService) GetRepositoryMemberships(context.Context, string) (string, []string, error) {
+	return "", nil, nil
+}
+
 func (f *lazyFakeService) CreateStarList(context.Context, StarListInput) (StarList, error) {
 	return StarList{}, nil
 }

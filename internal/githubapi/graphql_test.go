@@ -21,7 +21,7 @@ type fakeGraphQLExecutor struct {
 	calls     []graphQLCall
 }
 
-func (f *fakeGraphQLExecutor) Execute(
+func (f *fakeGraphQLExecutor) DoWithContext(
 	_ context.Context,
 	query string,
 	variables map[string]any,

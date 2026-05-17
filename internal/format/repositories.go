@@ -23,7 +23,7 @@ func WriteRepositoriesWithOptions(
 	options = normalizeOptions(options)
 	switch options.Mode {
 	case OutputJSON:
-		return writeRepositoriesJSON(w, repos)
+		return writeJSONSliceWithOptions(w, options, repos)
 	case OutputTSV:
 		return writeRepositoriesTSV(w, repos)
 	case OutputPlain:
@@ -35,10 +35,6 @@ func WriteRepositoriesWithOptions(
 	default:
 		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
-}
-
-func writeRepositoriesJSON(w io.Writer, repos []githubapi.Repository) error {
-	return writeJSONSlice(w, repos)
 }
 
 func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {

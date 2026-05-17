@@ -15,19 +15,42 @@ import (
 )
 
 type fakeService struct {
-	listCalls    int
-	reposCalls   int
-	starredCalls int
-	reposListIDs []string
-	lists        []githubapi.StarList
-	repos        []githubapi.Repository
-	starred      []githubapi.Repository
-	listErr      error
-	reposErr     error
-	starredErr   error
+	listCalls           int
+	reposCalls          int
+	starredCalls        int
+	getRepoCalls        int
+	createCalls         int
+	updateCalls         int
+	deleteCalls         int
+	updateRepoListCalls int
+	addStarCalls        int
+	removeStarCalls     int
+	reposListIDs        []string
+	lists               []githubapi.StarList
+	repos               []githubapi.Repository
+	reposByList         map[string][]githubapi.Repository
+	starred             []githubapi.Repository
+	gotRepo             githubapi.Repository
+	createdList         githubapi.StarList
+	updatedList         githubapi.StarList
+	updatedRepoID       string
+	updatedListIDs      []string
+	deletedListID       string
+	addedStarID         string
+	removedStarID       string
+	listErr             error
+	reposErr            error
+	starredErr          error
+	getRepoErr          error
+	createErr           error
+	updateErr           error
+	deleteErr           error
+	updateRepoListErr   error
+	addStarErr          error
+	removeStarErr       error
 }
 
-func (f *fakeService) ListStarLists(context.Context) ([]githubapi.StarList, error) {
+func (f *fakeService) ListStarLists(context.Context, ...githubapi.ListOptions) ([]githubapi.StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
@@ -35,15 +58,80 @@ func (f *fakeService) ListStarLists(context.Context) ([]githubapi.StarList, erro
 func (f *fakeService) ListRepositories(
 	_ context.Context,
 	listID string,
+	_ ...githubapi.ListOptions,
 ) ([]githubapi.Repository, error) {
 	f.reposCalls++
 	f.reposListIDs = append(f.reposListIDs, listID)
+	if f.reposByList != nil {
+		return f.reposByList[listID], f.reposErr
+	}
 	return f.repos, f.reposErr
 }
 
-func (f *fakeService) ListStarredRepositories(context.Context) ([]githubapi.Repository, error) {
+func (f *fakeService) ListStarredRepositories(
+	_ context.Context,
+	_ ...githubapi.ListOptions,
+) ([]githubapi.Repository, error) {
 	f.starredCalls++
 	return f.starred, f.starredErr
+}
+
+func (f *fakeService) GetRepository(_ context.Context, nameWithOwner string) (githubapi.Repository, error) {
+	f.getRepoCalls++
+	if f.getRepoErr != nil {
+		return githubapi.Repository{}, f.getRepoErr
+	}
+	if f.gotRepo.ID != "" {
+		return f.gotRepo, nil
+	}
+	return githubapi.Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
+}
+
+func (f *fakeService) CreateStarList(_ context.Context, input githubapi.StarListInput) (githubapi.StarList, error) {
+	f.createCalls++
+	if f.createErr != nil {
+		return githubapi.StarList{}, f.createErr
+	}
+	if f.createdList.ID != "" {
+		return f.createdList, nil
+	}
+	return githubapi.StarList{Name: input.Name, ID: "UL_new"}, nil
+}
+
+func (f *fakeService) UpdateStarList(_ context.Context, input githubapi.UpdateStarListInput) (githubapi.StarList, error) {
+	f.updateCalls++
+	if f.updateErr != nil {
+		return githubapi.StarList{}, f.updateErr
+	}
+	if f.updatedList.ID != "" {
+		return f.updatedList, nil
+	}
+	return githubapi.StarList{Name: input.Name, ID: input.ID}, nil
+}
+
+func (f *fakeService) DeleteStarList(_ context.Context, listID string) error {
+	f.deleteCalls++
+	f.deletedListID = listID
+	return f.deleteErr
+}
+
+func (f *fakeService) UpdateRepositoryLists(_ context.Context, repoID string, listIDs []string) error {
+	f.updateRepoListCalls++
+	f.updatedRepoID = repoID
+	f.updatedListIDs = append([]string(nil), listIDs...)
+	return f.updateRepoListErr
+}
+
+func (f *fakeService) AddStar(_ context.Context, repoID string) error {
+	f.addStarCalls++
+	f.addedStarID = repoID
+	return f.addStarErr
+}
+
+func (f *fakeService) RemoveStar(_ context.Context, repoID string) error {
+	f.removeStarCalls++
+	f.removedStarID = repoID
+	return f.removeStarErr
 }
 
 type errWriter struct{}

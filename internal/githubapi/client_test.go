@@ -10,19 +10,47 @@ type lazyFakeService struct {
 	listCalls int
 }
 
-func (f *lazyFakeService) ListStarLists(context.Context) ([]StarList, error) {
+func (f *lazyFakeService) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
 	f.listCalls++
 	return []StarList{
 		{Name: "Tools", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/tools"},
 	}, nil
 }
 
-func (f *lazyFakeService) ListRepositories(context.Context, string) ([]Repository, error) {
+func (f *lazyFakeService) ListRepositories(context.Context, string, ...ListOptions) ([]Repository, error) {
 	return nil, nil
 }
 
-func (f *lazyFakeService) ListStarredRepositories(context.Context) ([]Repository, error) {
+func (f *lazyFakeService) ListStarredRepositories(context.Context, ...ListOptions) ([]Repository, error) {
 	return nil, nil
+}
+
+func (f *lazyFakeService) GetRepository(context.Context, string) (Repository, error) {
+	return Repository{}, nil
+}
+
+func (f *lazyFakeService) CreateStarList(context.Context, StarListInput) (StarList, error) {
+	return StarList{}, nil
+}
+
+func (f *lazyFakeService) UpdateStarList(context.Context, UpdateStarListInput) (StarList, error) {
+	return StarList{}, nil
+}
+
+func (f *lazyFakeService) DeleteStarList(context.Context, string) error {
+	return nil
+}
+
+func (f *lazyFakeService) UpdateRepositoryLists(context.Context, string, []string) error {
+	return nil
+}
+
+func (f *lazyFakeService) AddStar(context.Context, string) error {
+	return nil
+}
+
+func (f *lazyFakeService) RemoveStar(context.Context, string) error {
+	return nil
 }
 
 func TestLazyServiceDefersConstructionUntilRuntimeCall(t *testing.T) {

@@ -67,6 +67,92 @@ const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!) {
   }
 }`
 
+const getRepositoryQuery = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    nameWithOwner
+    description
+    url
+    isFork
+    isArchived
+    stargazerCount
+    pushedAt
+    licenseInfo {
+      key
+    }
+    repositoryTopics(first: 20) {
+      nodes {
+        topic {
+          name
+        }
+      }
+    }
+    primaryLanguage {
+      name
+    }
+  }
+}`
+
+const createStarListMutation = `mutation($name: String!, $description: String, $private: Boolean!) {
+  createUserList(input: {name: $name, description: $description, isPrivate: $private}) {
+    list {
+      id
+      name
+      slug
+      description
+      lastAddedAt
+      items {
+        totalCount
+      }
+      user {
+        login
+      }
+    }
+  }
+}`
+
+const updateStarListMutation = `mutation($listID: ID!, $name: String, $description: String, $private: Boolean) {
+  updateUserList(input: {listId: $listID, name: $name, description: $description, isPrivate: $private}) {
+    list {
+      id
+      name
+      slug
+      description
+      lastAddedAt
+      items {
+        totalCount
+      }
+      user {
+        login
+      }
+    }
+  }
+}`
+
+const deleteStarListMutation = `mutation($listID: ID!) {
+  deleteUserList(input: {listId: $listID}) {
+    clientMutationId
+  }
+}`
+
+const updateRepositoryListsMutation = `mutation($itemID: ID!, $listIDs: [ID!]!) {
+  updateUserListsForItem(input: {itemId: $itemID, listIds: $listIDs}) {
+    clientMutationId
+  }
+}`
+
+const addStarMutation = `mutation($starrableID: ID!) {
+  addStar(input: {starrableId: $starrableID}) {
+    clientMutationId
+  }
+}`
+
+const removeStarMutation = `mutation($starrableID: ID!) {
+  removeStar(input: {starrableId: $starrableID}) {
+    clientMutationId
+  }
+}`
+
 const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!) {
   node(id: $id) {
     __typename
@@ -108,20 +194,25 @@ const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!)
   }
 }`
 
-type graphQLExecutor interface {
-	Execute(ctx context.Context, query string, variables map[string]any, response any) error
-}
-
 type graphQLService struct {
-	executor graphQLExecutor
+	client   graphQLDoer
 	pageSize int
+	host     string
 }
 
-func newGraphQLService(executor graphQLExecutor, pageSize int) *graphQLService {
-	return &graphQLService{executor: executor, pageSize: pageSize}
+func newGraphQLService(client graphQLDoer, pageSize int, host ...string) *graphQLService {
+	service := &graphQLService{client: client, pageSize: pageSize, host: "github.com"}
+	if len(host) > 0 && host[0] != "" {
+		service.host = host[0]
+	}
+	return service
 }
 
-func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) {
+func (s *graphQLService) ListStarLists(
+	ctx context.Context,
+	options ...ListOptions,
+) ([]StarList, error) {
+	limit := limitFromOptions(options)
 	lists := make([]StarList, 0, s.pageSize)
 	var endCursor any
 
@@ -131,8 +222,8 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 		}
 
 		var result listStarListsResponse
-		variables := map[string]any{"endCursor": endCursor, "first": s.pageSize}
-		if err := s.executor.Execute(ctx, listStarListsQuery, variables, &result); err != nil {
+		variables := map[string]any{"endCursor": endCursor, "first": pageFirst(s.pageSize, limit, len(lists))}
+		if err := s.client.DoWithContext(ctx, listStarListsQuery, variables, &result); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}
 
@@ -147,8 +238,11 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 				LastAddedAt: stringValue(node.LastAddedAt),
 				ID:          node.ID,
 				RepoCount:   repoCount,
-				URL:         listURL(node.User.Login, node.Slug),
+				URL:         listURL(s.host, node.User.Login, node.Slug),
 			})
+			if limitReached(limit, len(lists)) {
+				return lists, nil
+			}
 		}
 		if !result.Viewer.Lists.PageInfo.HasNextPage {
 			return lists, nil
@@ -160,7 +254,9 @@ func (s *graphQLService) ListStarLists(ctx context.Context) ([]StarList, error) 
 func (s *graphQLService) ListRepositories(
 	ctx context.Context,
 	listID string,
+	options ...ListOptions,
 ) ([]Repository, error) {
+	limit := limitFromOptions(options)
 	repositories := make([]Repository, 0, s.pageSize)
 	var endCursor any
 
@@ -170,8 +266,8 @@ func (s *graphQLService) ListRepositories(
 		}
 
 		var result listRepositoriesResponse
-		variables := map[string]any{"id": listID, "endCursor": endCursor, "first": s.pageSize}
-		if err := s.executor.Execute(ctx, listRepositoriesQuery, variables, &result); err != nil {
+		variables := map[string]any{"id": listID, "endCursor": endCursor, "first": pageFirst(s.pageSize, limit, len(repositories))}
+		if err := s.client.DoWithContext(ctx, listRepositoriesQuery, variables, &result); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}
 		if result.Node == nil || result.Node.Typename != "UserList" || result.Node.Items == nil {
@@ -195,6 +291,9 @@ func (s *graphQLService) ListRepositories(
 				License:        node.LicenseInfo.OrEmpty(),
 				Topics:         node.RepositoryTopics.Names(),
 			})
+			if limitReached(limit, len(repositories)) {
+				return repositories, nil
+			}
 		}
 		if !result.Node.Items.PageInfo.HasNextPage {
 			return repositories, nil
@@ -339,7 +438,11 @@ type starredRepoItemNode struct {
 	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
 }
 
-func (s *graphQLService) ListStarredRepositories(ctx context.Context) ([]Repository, error) {
+func (s *graphQLService) ListStarredRepositories(
+	ctx context.Context,
+	options ...ListOptions,
+) ([]Repository, error) {
+	limit := limitFromOptions(options)
 	repositories := make([]Repository, 0, s.pageSize)
 	var endCursor any
 
@@ -349,8 +452,8 @@ func (s *graphQLService) ListStarredRepositories(ctx context.Context) ([]Reposit
 		}
 
 		var result listStarredRepositoriesResponse
-		variables := map[string]any{"endCursor": endCursor, "first": s.pageSize}
-		if err := s.executor.Execute(
+		variables := map[string]any{"endCursor": endCursor, "first": pageFirst(s.pageSize, limit, len(repositories))}
+		if err := s.client.DoWithContext(
 			ctx,
 			listStarredRepositoriesQuery,
 			variables,
@@ -374,12 +477,201 @@ func (s *graphQLService) ListStarredRepositories(ctx context.Context) ([]Reposit
 				License:        edge.Node.LicenseInfo.OrEmpty(),
 				Topics:         edge.Node.RepositoryTopics.Names(),
 			})
+			if limitReached(limit, len(repositories)) {
+				return repositories, nil
+			}
 		}
 		if !result.Viewer.StarredRepositories.PageInfo.HasNextPage {
 			return repositories, nil
 		}
 		endCursor = stringValue(result.Viewer.StarredRepositories.PageInfo.EndCursor)
 	}
+}
+
+type getRepositoryResponse struct {
+	Repository *repositoryNode `json:"repository"`
+}
+
+type repositoryNode struct {
+	ID               string                    `json:"id"`
+	NameWithOwner    string                    `json:"nameWithOwner"`
+	Description      *string                   `json:"description"`
+	URL              string                    `json:"url"`
+	IsFork           bool                      `json:"isFork"`
+	IsArchived       bool                      `json:"isArchived"`
+	StargazerCount   int                       `json:"stargazerCount"`
+	PushedAt         *string                   `json:"pushedAt"`
+	LicenseInfo      *licenseNode              `json:"licenseInfo"`
+	RepositoryTopics repositoryTopicConnection `json:"repositoryTopics"`
+	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
+}
+
+type starListMutationResponse struct {
+	List starListNode `json:"list"`
+}
+
+type createStarListResponse struct {
+	CreateUserList starListMutationResponse `json:"createUserList"`
+}
+
+type updateStarListResponse struct {
+	UpdateUserList starListMutationResponse `json:"updateUserList"`
+}
+
+func (s *graphQLService) GetRepository(
+	ctx context.Context,
+	nameWithOwner string,
+) (Repository, error) {
+	if err := ctx.Err(); err != nil {
+		return Repository{}, err
+	}
+	owner, name, ok := strings.Cut(nameWithOwner, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return Repository{}, fmt.Errorf("invalid repository %q: expected owner/name", nameWithOwner)
+	}
+	var result getRepositoryResponse
+	variables := map[string]any{"owner": owner, "name": name}
+	if err := s.client.DoWithContext(ctx, getRepositoryQuery, variables, &result); err != nil {
+		return Repository{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	}
+	if result.Repository == nil || result.Repository.ID == "" {
+		return Repository{}, fmt.Errorf("repository %q not found", nameWithOwner)
+	}
+	return Repository{
+		ID:             result.Repository.ID,
+		NameWithOwner:  result.Repository.NameWithOwner,
+		Description:    stringValue(result.Repository.Description),
+		IsFork:         result.Repository.IsFork,
+		IsArchived:     result.Repository.IsArchived,
+		StargazerCount: result.Repository.StargazerCount,
+		PushedAt:       stringValue(result.Repository.PushedAt),
+		URL:            result.Repository.URL,
+		Language:       result.Repository.PrimaryLanguage.OrEmpty(),
+		License:        result.Repository.LicenseInfo.OrEmpty(),
+		Topics:         result.Repository.RepositoryTopics.Names(),
+	}, nil
+}
+
+func (s *graphQLService) CreateStarList(ctx context.Context, input StarListInput) (StarList, error) {
+	if err := ctx.Err(); err != nil {
+		return StarList{}, err
+	}
+	var result createStarListResponse
+	variables := map[string]any{
+		"name":        input.Name,
+		"description": input.Description,
+		"private":     input.Private,
+	}
+	if err := s.client.DoWithContext(ctx, createStarListMutation, variables, &result); err != nil {
+		return StarList{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	}
+	return s.starListFromNode(result.CreateUserList.List), nil
+}
+
+func (s *graphQLService) UpdateStarList(
+	ctx context.Context,
+	input UpdateStarListInput,
+) (StarList, error) {
+	if err := ctx.Err(); err != nil {
+		return StarList{}, err
+	}
+	var result updateStarListResponse
+	variables := map[string]any{
+		"listID":      input.ID,
+		"name":        nullableString(input.Name),
+		"description": nullableString(input.Description),
+		"private":     input.Private,
+	}
+	if err := s.client.DoWithContext(ctx, updateStarListMutation, variables, &result); err != nil {
+		return StarList{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	}
+	return s.starListFromNode(result.UpdateUserList.List), nil
+}
+
+func (s *graphQLService) DeleteStarList(ctx context.Context, listID string) error {
+	return s.execMutation(ctx, deleteStarListMutation, map[string]any{"listID": listID})
+}
+
+func (s *graphQLService) UpdateRepositoryLists(
+	ctx context.Context,
+	repoID string,
+	listIDs []string,
+) error {
+	return s.execMutation(
+		ctx,
+		updateRepositoryListsMutation,
+		map[string]any{"itemID": repoID, "listIDs": listIDs},
+	)
+}
+
+func (s *graphQLService) AddStar(ctx context.Context, repoID string) error {
+	return s.execMutation(ctx, addStarMutation, map[string]any{"starrableID": repoID})
+}
+
+func (s *graphQLService) RemoveStar(ctx context.Context, repoID string) error {
+	return s.execMutation(ctx, removeStarMutation, map[string]any{"starrableID": repoID})
+}
+
+func (s *graphQLService) execMutation(
+	ctx context.Context,
+	query string,
+	variables map[string]any,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var result map[string]any
+	if err := s.client.DoWithContext(ctx, query, variables, &result); err != nil {
+		return fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	}
+	return nil
+}
+
+func (s *graphQLService) starListFromNode(node starListNode) StarList {
+	repoCount := 0
+	if node.Items != nil {
+		repoCount = node.Items.TotalCount
+	}
+	return StarList{
+		Name:        node.Name,
+		Description: stringValue(node.Description),
+		LastAddedAt: stringValue(node.LastAddedAt),
+		ID:          node.ID,
+		RepoCount:   repoCount,
+		URL:         listURL(s.host, node.User.Login, node.Slug),
+	}
+}
+
+func limitFromOptions(options []ListOptions) int {
+	if len(options) == 0 {
+		return 0
+	}
+	return options[0].Limit
+}
+
+func pageFirst(pageSize, limit, current int) int {
+	if limit <= 0 {
+		return pageSize
+	}
+	remaining := limit - current
+	if remaining <= 0 {
+		return 1
+	}
+	if remaining < pageSize {
+		return remaining
+	}
+	return pageSize
+}
+
+func limitReached(limit, count int) bool {
+	return limit > 0 && count >= limit
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func stringValue(value *string) string {
@@ -389,10 +681,12 @@ func stringValue(value *string) string {
 	return *value
 }
 
-func listURL(login, slug string) string {
+func listURL(host, login, slug string) string {
 	var b strings.Builder
-	b.Grow(len("https://github.com/stars/") + len(login) + len("/lists/") + len(slug))
-	b.WriteString("https://github.com/stars/")
+	b.Grow(len("https://") + len(host) + len("/stars/") + len(login) + len("/lists/") + len(slug))
+	b.WriteString("https://")
+	b.WriteString(host)
+	b.WriteString("/stars/")
 	b.WriteString(login)
 	b.WriteString("/lists/")
 	b.WriteString(slug)

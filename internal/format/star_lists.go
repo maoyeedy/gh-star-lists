@@ -18,7 +18,7 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 	options = normalizeOptions(options)
 	switch options.Mode {
 	case OutputJSON:
-		return writeStarListsJSON(w, lists)
+		return writeJSONSliceWithOptions(w, options, lists)
 	case OutputTSV:
 		return writeStarListsTSV(w, lists)
 	case OutputPlain:
@@ -30,10 +30,6 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 	default:
 		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
-}
-
-func writeStarListsJSON(w io.Writer, lists []githubapi.StarList) error {
-	return writeJSONSlice(w, lists)
 }
 
 func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {

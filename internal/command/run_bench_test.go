@@ -43,7 +43,7 @@ func BenchmarkSortStarLists(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cp := make([]githubapi.StarList, len(lists))
 		copy(cp, lists)
-		sortStarLists(cp, sortKeys, false)
+		sortStarLists(cp, sortKeys, nil, false)
 	}
 }
 
@@ -55,7 +55,7 @@ func BenchmarkSortRepositories(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cp := make([]githubapi.Repository, len(repos))
 		copy(cp, repos)
-		sortRepositories(cp, sortKeys, true)
+		sortRepositories(cp, sortKeys, nil, true)
 	}
 }
 
@@ -67,6 +67,6 @@ func BenchmarkSortStarListsMultiKey(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cp := make([]githubapi.StarList, len(lists))
 		copy(cp, lists)
-		sortStarLists(cp, sortKeys, false)
+		sortStarLists(cp, sortKeys, nil, false)
 	}
 }

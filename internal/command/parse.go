@@ -8,16 +8,23 @@ import (
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 )
 
-// Action identifies the operation requested by the CLI arguments.
 type Action string
 
 const (
-	ActionList  Action = "list"
-	ActionRepos Action = "repos"
-	ActionHelp  Action = "help"
+	ActionList   Action = "list"
+	ActionRepos  Action = "repos"
+	ActionCreate Action = "create"
+	ActionEdit   Action = "edit"
+	ActionDelete Action = "delete"
+	ActionAdd    Action = "add"
+	ActionRemove Action = "remove"
+	ActionMove   Action = "move"
+	ActionCopy   Action = "copy"
+	ActionMerge  Action = "merge"
+	ActionUnstar Action = "unstar"
+	ActionHelp   Action = "help"
 )
 
-// Sort keys accepted by --sort for list and repos subcommands.
 const (
 	SortKeyAdded     = "added"
 	SortKeyName      = "name"
@@ -28,11 +35,15 @@ const (
 	SortKeyStarred   = "starred"
 )
 
-// Filter keys accepted by --filter for list and repos subcommands.
 const (
 	FilterKeyName     = "name"
 	FilterKeyFork     = "fork"
 	FilterKeyLanguage = "language"
+	FilterKeyArchived = "archived"
+	FilterKeyLicense  = "license"
+	FilterKeyMinStars = "min-stars"
+	FilterKeyMaxStars = "max-stars"
+	FilterKeyTopic    = "topic"
 )
 
 type Filter struct {
@@ -40,24 +51,42 @@ type Filter struct {
 	Value string
 }
 
-// Parsed is the normalized command state consumed by the runner.
-type Parsed struct {
-	Action     Action
-	ListID     string
-	Mode       format.OutputMode
-	SortKeys   []string
-	SortDesc   bool
-	NoColor    bool
-	Limit      int
-	Cache      bool
-	Filters    []Filter
-	OutputPath string
-	Template   string
-	Web        bool
-	Unlisted   bool
+type SortTerm struct {
+	Key  string
+	Desc bool
 }
 
-// UsageError describes invalid CLI input. Runners should map this to exit code 2.
+type Parsed struct {
+	Action       Action
+	ListID       string
+	FromListID   string
+	ToListID     string
+	RepoName     string
+	Name         string
+	Description  string
+	Private      bool
+	PrivateSet   bool
+	Mode         format.OutputMode
+	SortKeys     []string
+	SortTerms    []SortTerm
+	SortDesc     bool
+	NoColor      bool
+	Limit        int
+	Cache        bool
+	Filters      []Filter
+	Search       string
+	OutputPath   string
+	Template     string
+	JQ           string
+	Host         string
+	Web          bool
+	Unlisted     bool
+	All          bool
+	Yes          bool
+	DryRun       bool
+	DeleteSource bool
+}
+
 type UsageError struct {
 	Message string
 }
@@ -66,23 +95,37 @@ func (e *UsageError) Error() string {
 	return e.Message
 }
 
-// Parse normalizes gh-star-lists arguments without initializing GitHub clients.
 func Parse(argv []string) (Parsed, error) {
 	var (
-		positionals  []string
-		jsonFlag     bool
-		tsvFlag      bool
-		plainFlag    bool
-		sortKeys     []string
-		sortDesc     bool
-		limit        int
-		cacheFlag    bool
-		noColorFlag  bool
-		filters      []Filter
-		outputPath   string
-		templateStr  string
-		webFlag      bool
-		unlistedFlag bool
+		positionals      []string
+		jsonFlag         bool
+		tsvFlag          bool
+		plainFlag        bool
+		sortKeys         []string
+		sortTerms        []SortTerm
+		rawSortTerms     []string
+		sortDesc         bool
+		limit            int
+		cacheFlag        bool
+		noColorFlag      bool
+		filters          []Filter
+		searchValue      string
+		outputPath       string
+		templateStr      string
+		jqValue          string
+		hostValue        string
+		webFlag          bool
+		unlistedFlag     bool
+		allFlag          bool
+		yesFlag          bool
+		dryRunFlag       bool
+		deleteSourceFlag bool
+		toValue          string
+		fromValue        string
+		nameValue        string
+		descriptionValue string
+		privateFlag      bool
+		publicFlag       bool
 	)
 
 	for i := 0; i < len(argv); i++ {
@@ -110,22 +153,74 @@ func Parse(argv []string) (Parsed, error) {
 			if strings.HasPrefix(raw, "-") {
 				return Parsed{}, usage("missing value for --sort")
 			}
-			for _, key := range strings.Split(raw, ",") {
-				key = strings.TrimSpace(key)
-				if key != "" {
-					sortKeys = append(sortKeys, key)
-				}
-			}
+			rawSortTerms = append(rawSortTerms, strings.Split(raw, ",")...)
 		case "--desc":
 			sortDesc = true
 		case "--cache":
 			cacheFlag = true
 		case "--no-color":
 			noColorFlag = true
+		case "--host":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --host")
+			}
+			i++
+			hostValue = strings.TrimSpace(argv[i])
+			if hostValue == "" {
+				return Parsed{}, usage("empty value for --host")
+			}
+			if err := validateHost(hostValue); err != nil {
+				return Parsed{}, err
+			}
 		case "--web":
 			webFlag = true
 		case "--unlisted":
 			unlistedFlag = true
+		case "--all":
+			allFlag = true
+		case "--yes", "-y":
+			yesFlag = true
+		case "--dry-run":
+			dryRunFlag = true
+		case "--delete-source":
+			deleteSourceFlag = true
+		case "--private":
+			privateFlag = true
+		case "--public":
+			publicFlag = true
+		case "--to":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --to")
+			}
+			i++
+			toValue = argv[i]
+			if toValue == "" {
+				return Parsed{}, usage("empty value for --to")
+			}
+		case "--from":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --from")
+			}
+			i++
+			fromValue = argv[i]
+			if fromValue == "" {
+				return Parsed{}, usage("empty value for --from")
+			}
+		case "--name":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --name")
+			}
+			i++
+			nameValue = argv[i]
+			if nameValue == "" {
+				return Parsed{}, usage("empty value for --name")
+			}
+		case "--description":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --description")
+			}
+			i++
+			descriptionValue = argv[i]
 		case "--limit":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --limit")
@@ -153,6 +248,18 @@ func Parse(argv []string) (Parsed, error) {
 				filters,
 				Filter{Key: strings.ToLower(key), Value: strings.ToLower(value)},
 			)
+		case "--search":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --search")
+			}
+			i++
+			searchValue = strings.TrimSpace(argv[i])
+			if searchValue == "" {
+				return Parsed{}, usage("empty value for --search")
+			}
+			if len(searchTerms(searchValue)) == 0 {
+				return Parsed{}, usage("search has no searchable terms")
+			}
 		case "--template":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --template")
@@ -161,6 +268,15 @@ func Parse(argv []string) (Parsed, error) {
 			templateStr = argv[i]
 			if templateStr == "" {
 				return Parsed{}, usage("empty value for --template")
+			}
+		case "--jq":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --jq")
+			}
+			i++
+			jqValue = argv[i]
+			if jqValue == "" {
+				return Parsed{}, usage("empty value for --jq")
 			}
 		case "--output":
 			if i+1 >= len(argv) {
@@ -186,6 +302,21 @@ func Parse(argv []string) (Parsed, error) {
 	if templateStr != "" {
 		mode = format.OutputTemplate
 	}
+	if jqValue != "" {
+		if tsvFlag || plainFlag || templateStr != "" {
+			return Parsed{}, usage("--jq cannot be combined with --plain, --tsv, or --template")
+		}
+		mode = format.OutputJSON
+	}
+	sortKeys, sortTerms, err = parseSortTerms(rawSortTerms, sortDesc)
+	if err != nil {
+		return Parsed{}, err
+	}
+	if privateFlag && publicFlag {
+		return Parsed{}, usage("cannot combine --private and --public")
+	}
+	privateSet := privateFlag || publicFlag
+	privateValue := privateFlag
 
 	if len(positionals) > 0 {
 		switch positionals[0] {
@@ -198,21 +329,27 @@ func Parse(argv []string) (Parsed, error) {
 			}
 		case "repos":
 			if len(positionals) == 1 {
-				if !unlistedFlag {
+				if !unlistedFlag && !allFlag {
 					return Parsed{}, usage("missing list id for repos")
 				}
+			}
+			if allFlag && unlistedFlag {
+				return Parsed{}, usage("cannot combine --all and --unlisted")
 			}
 			if unlistedFlag && len(positionals) > 1 {
 				return Parsed{}, usage("--unlisted does not accept a list id")
 			}
-			if !unlistedFlag && len(positionals) > 2 {
+			if allFlag && len(positionals) > 1 {
+				return Parsed{}, usage("--all does not accept a list id")
+			}
+			if !unlistedFlag && !allFlag && len(positionals) > 2 {
 				return Parsed{}, usage(
 					"too many arguments for repos: %s",
 					strings.Join(positionals[2:], " "),
 				)
 			}
 			if webFlag &&
-				(jsonFlag || tsvFlag || plainFlag || templateStr != "" || outputPath != "") {
+				(jsonFlag || tsvFlag || plainFlag || templateStr != "" || outputPath != "" || jqValue != "") {
 				return Parsed{}, usage("--web cannot be combined with output flags")
 			}
 			if err := validateFilters(ActionRepos, filters); err != nil {
@@ -230,16 +367,104 @@ func Parse(argv []string) (Parsed, error) {
 				ListID:     listID,
 				Mode:       mode,
 				SortKeys:   sortKeys,
+				SortTerms:  sortTerms,
 				SortDesc:   sortDesc,
 				Limit:      limit,
 				NoColor:    noColorFlag,
 				Filters:    filters,
+				Search:     searchValue,
 				Cache:      cacheFlag,
 				OutputPath: outputPath,
 				Template:   templateStr,
+				JQ:         jqValue,
+				Host:       hostValue,
 				Web:        webFlag,
 				Unlisted:   unlistedFlag,
+				All:        allFlag,
 			}, nil
+		case "create":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("create requires exactly one list name")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionCreate, Name: positionals[1], Description: descriptionValue, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+		case "edit":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("edit requires exactly one list id or name")
+			}
+			if nameValue == "" && descriptionValue == "" && !privateSet {
+				return Parsed{}, usage("edit requires --name, --description, --private, or --public")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionEdit, ListID: positionals[1], Name: nameValue, Description: descriptionValue, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+		case "delete":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("delete requires exactly one list id or name")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionDelete, ListID: positionals[1], Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+		case "add":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("add requires exactly one repository owner/name")
+			}
+			if toValue == "" {
+				return Parsed{}, usage("add requires --to <LIST_ID_OR_NAME>")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionAdd, RepoName: positionals[1], ToListID: toValue, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+		case "remove":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("remove requires exactly one repository owner/name")
+			}
+			if fromValue == "" {
+				return Parsed{}, usage("remove requires --from <LIST_ID_OR_NAME>")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionRemove, RepoName: positionals[1], FromListID: fromValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+		case "move":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("move requires exactly one repository owner/name")
+			}
+			if fromValue == "" || toValue == "" {
+				return Parsed{}, usage("move requires --from and --to")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionMove, RepoName: positionals[1], FromListID: fromValue, ToListID: toValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+		case "copy", "merge":
+			if len(positionals) != 1 {
+				return Parsed{}, usage("%s does not accept positional arguments", positionals[0])
+			}
+			if fromValue == "" || toValue == "" {
+				return Parsed{}, usage("%s requires --from and --to", positionals[0])
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			action := ActionCopy
+			if positionals[0] == "merge" {
+				action = ActionMerge
+			}
+			return Parsed{Action: action, FromListID: fromValue, ToListID: toValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, DeleteSource: deleteSourceFlag, Host: hostValue}, nil
+		case "unstar":
+			if len(positionals) != 2 {
+				return Parsed{}, usage("unstar requires exactly one repository owner/name")
+			}
+			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+				return Parsed{}, err
+			}
+			return Parsed{Action: ActionUnstar, RepoName: positionals[1], Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
 		default:
 			return Parsed{}, usage("unknown command %q", positionals[0])
 		}
@@ -251,6 +476,12 @@ func Parse(argv []string) (Parsed, error) {
 	if unlistedFlag {
 		return Parsed{}, usage("--unlisted is only supported for repos")
 	}
+	if allFlag {
+		return Parsed{}, usage("--all is only supported for repos")
+	}
+	if searchValue != "" {
+		return Parsed{}, usage("--search is only supported for repos")
+	}
 	if err := validateFilters(ActionList, filters); err != nil {
 		return Parsed{}, err
 	}
@@ -261,6 +492,7 @@ func Parse(argv []string) (Parsed, error) {
 		Action:     ActionList,
 		Mode:       mode,
 		SortKeys:   sortKeys,
+		SortTerms:  sortTerms,
 		SortDesc:   sortDesc,
 		Limit:      limit,
 		NoColor:    noColorFlag,
@@ -268,29 +500,116 @@ func Parse(argv []string) (Parsed, error) {
 		Cache:      cacheFlag,
 		OutputPath: outputPath,
 		Template:   templateStr,
+		JQ:         jqValue,
+		Host:       hostValue,
 	}, nil
+}
+
+func validateWriteOutputFlags(
+	jsonFlag, tsvFlag, plainFlag bool,
+	templateStr string,
+	outputPath string,
+	jqValue string,
+) error {
+	if jsonFlag || tsvFlag || plainFlag || templateStr != "" || outputPath != "" || jqValue != "" {
+		return usage("output flags are not supported for write commands")
+	}
+	return nil
+}
+
+func HostFromArgs(argv []string) string {
+	for i := 0; i < len(argv); i++ {
+		if argv[i] == "--host" && i+1 < len(argv) {
+			return strings.TrimSpace(argv[i+1])
+		}
+	}
+	return ""
+}
+
+func CacheFromArgs(argv []string) bool {
+	for _, arg := range argv {
+		if arg == "--cache" {
+			return true
+		}
+	}
+	return false
+}
+
+func parseSortTerms(rawTerms []string, globalDesc bool) ([]string, []SortTerm, error) {
+	keys := make([]string, 0, len(rawTerms))
+	terms := make([]SortTerm, 0, len(rawTerms))
+	hasDirection := false
+	for _, raw := range rawTerms {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		key, direction, hasDir := strings.Cut(raw, ":")
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, nil, usage("empty sort key in %q", raw)
+		}
+		desc := globalDesc
+		if hasDir {
+			hasDirection = true
+			switch strings.ToLower(strings.TrimSpace(direction)) {
+			case "asc":
+				desc = false
+			case "desc":
+				desc = true
+			default:
+				return nil, nil, usage("invalid sort direction %q for %q: expected asc or desc", direction, key)
+			}
+		}
+		keys = append(keys, key)
+		terms = append(terms, SortTerm{Key: key, Desc: desc})
+	}
+	if !hasDirection {
+		if len(keys) == 0 {
+			return nil, nil, nil
+		}
+		return keys, nil, nil
+	}
+	return keys, terms, nil
+}
+
+func validateHost(host string) error {
+	if strings.Contains(host, "://") || strings.Contains(host, "/") {
+		return usage("invalid value for --host: expected hostname, got %q", host)
+	}
+	return nil
+}
+
+var reposOnlyFilterKeys = map[string]struct{}{
+	FilterKeyFork:     {},
+	FilterKeyLanguage: {},
+	FilterKeyArchived: {},
+	FilterKeyLicense:  {},
+	FilterKeyTopic:    {},
+	FilterKeyMinStars: {},
+	FilterKeyMaxStars: {},
 }
 
 func validateFilters(action Action, filters []Filter) error {
 	for _, f := range filters {
+		if _, reposOnly := reposOnlyFilterKeys[f.Key]; reposOnly && action != ActionRepos {
+			return usage("filter key %q is only supported for repos", f.Key)
+		}
 		switch f.Key {
-		case FilterKeyName:
-		case FilterKeyFork:
-			if action != ActionRepos {
-				return usage("filter key %q is only supported for repos", f.Key)
-			}
+		case FilterKeyName, FilterKeyLanguage, FilterKeyLicense, FilterKeyTopic:
+		case FilterKeyFork, FilterKeyArchived:
 			if f.Value != "true" && f.Value != "false" {
 				return usage(
-					"invalid filter value for fork: expected true or false, got %q",
-					f.Value,
+					"invalid filter value for %s: expected true or false, got %q",
+					f.Key, f.Value,
 				)
 			}
-		case FilterKeyLanguage:
-			if action != ActionRepos {
-				return usage("filter key %q is only supported for repos", f.Key)
+		case FilterKeyMinStars, FilterKeyMaxStars:
+			if _, err := strconv.Atoi(f.Value); err != nil {
+				return usage("invalid filter value for %s: expected integer, got %q", f.Key, f.Value)
 			}
 		default:
-			return usage("unknown filter key %q; supported keys: name, fork, language", f.Key)
+			return usage("unknown filter key %q; supported keys: name, fork, language, archived, license, min-stars, max-stars, topic", f.Key)
 		}
 	}
 	return nil

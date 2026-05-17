@@ -18,12 +18,16 @@ type fakeCacheInner struct {
 	reposErr     error
 }
 
-func (f *fakeCacheInner) ListStarLists(context.Context) ([]StarList, error) {
+func (f *fakeCacheInner) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
 
-func (f *fakeCacheInner) ListRepositories(_ context.Context, listID string) ([]Repository, error) {
+func (f *fakeCacheInner) ListRepositories(
+	_ context.Context,
+	listID string,
+	_ ...ListOptions,
+) ([]Repository, error) {
 	if f.reposCalls == nil {
 		f.reposCalls = make(map[string]int)
 	}
@@ -34,9 +38,37 @@ func (f *fakeCacheInner) ListRepositories(_ context.Context, listID string) ([]R
 	return f.repos[listID], nil
 }
 
-func (f *fakeCacheInner) ListStarredRepositories(_ context.Context) ([]Repository, error) {
+func (f *fakeCacheInner) ListStarredRepositories(_ context.Context, _ ...ListOptions) ([]Repository, error) {
 	f.starredCalls++
 	return f.starred, nil
+}
+
+func (f *fakeCacheInner) GetRepository(_ context.Context, nameWithOwner string) (Repository, error) {
+	return Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
+}
+
+func (f *fakeCacheInner) CreateStarList(_ context.Context, input StarListInput) (StarList, error) {
+	return StarList{Name: input.Name, ID: "UL_new"}, nil
+}
+
+func (f *fakeCacheInner) UpdateStarList(_ context.Context, input UpdateStarListInput) (StarList, error) {
+	return StarList{Name: input.Name, ID: input.ID}, nil
+}
+
+func (f *fakeCacheInner) DeleteStarList(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeCacheInner) UpdateRepositoryLists(context.Context, string, []string) error {
+	return nil
+}
+
+func (f *fakeCacheInner) AddStar(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeCacheInner) RemoveStar(context.Context, string) error {
+	return nil
 }
 
 func TestCacheServiceHits(t *testing.T) {

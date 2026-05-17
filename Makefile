@@ -12,8 +12,7 @@ vet:
 	go vet ./...
 
 build:
-	mkdir -p ./bin
-	go build -o ./bin/gh-star-lists$(GOEXE) .
+	go build -o ./gh-star-lists$(GOEXE) .
 
 lint:
 	go vet ./...

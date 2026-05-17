@@ -6,8 +6,7 @@ if [[ ! -f go.mod ]]; then
   exit 1
 fi
 
-mkdir -p ./bin
-binary="./bin/gh-star-lists$(go env GOEXE)"
+binary="./gh-star-lists$(go env GOEXE)"
 
 go test ./...
 go vet ./...

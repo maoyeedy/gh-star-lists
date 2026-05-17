@@ -33,14 +33,18 @@ type StarList struct {
 }
 
 type Repository struct {
-	NameWithOwner  string `json:"nameWithOwner"`
-	Description    string `json:"description"`
-	IsFork         bool   `json:"isFork"`
-	StargazerCount int    `json:"stargazerCount"`
-	PushedAt       string `json:"pushedAt"`
-	URL            string `json:"url"`
-	Language       string `json:"language"`
-	StarredAt      string `json:"starredAt,omitempty"`
+	ID             string   `json:"-"`
+	NameWithOwner  string   `json:"nameWithOwner"`
+	Description    string   `json:"description"`
+	IsFork         bool     `json:"isFork"`
+	StargazerCount int      `json:"stargazerCount"`
+	PushedAt       string   `json:"pushedAt"`
+	URL            string   `json:"url"`
+	Language       string   `json:"language"`
+	StarredAt      string   `json:"starredAt,omitempty"`
+	IsArchived     bool     `json:"-"`
+	License        string   `json:"-"`
+	Topics         []string `json:"-"`
 }
 
 type serviceConstructor func() (Service, error)

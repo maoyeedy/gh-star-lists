@@ -36,12 +36,24 @@ const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!) {
       edges {
         starredAt
         node {
+          id
           nameWithOwner
           description
           url
           isFork
+          isArchived
           stargazerCount
           pushedAt
+          licenseInfo {
+            key
+          }
+          repositoryTopics(first: 20) {
+            nodes {
+              topic {
+                name
+              }
+            }
+          }
           primaryLanguage {
             name
           }
@@ -64,12 +76,24 @@ const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!)
         nodes {
           __typename
           ... on Repository {
+            id
             nameWithOwner
             description
             url
             isFork
+            isArchived
             stargazerCount
             pushedAt
+            licenseInfo {
+              key
+            }
+            repositoryTopics(first: 20) {
+              nodes {
+                topic {
+                  name
+                }
+              }
+            }
             primaryLanguage {
               name
             }
@@ -159,13 +183,17 @@ func (s *graphQLService) ListRepositories(
 				continue
 			}
 			repositories = append(repositories, Repository{
+				ID:             node.ID,
 				NameWithOwner:  node.NameWithOwner,
 				Description:    stringValue(node.Description),
 				IsFork:         node.IsFork,
+				IsArchived:     node.IsArchived,
 				StargazerCount: node.StargazerCount,
 				PushedAt:       stringValue(node.PushedAt),
 				URL:            node.URL,
 				Language:       node.PrimaryLanguage.OrEmpty(),
+				License:        node.LicenseInfo.OrEmpty(),
+				Topics:         node.RepositoryTopics.Names(),
 			})
 		}
 		if !result.Node.Items.PageInfo.HasNextPage {
@@ -232,15 +260,55 @@ func (l *languageNode) OrEmpty() string {
 	return l.Name
 }
 
+type licenseNode struct {
+	Key string `json:"key"`
+}
+
+func (l *licenseNode) OrEmpty() string {
+	if l == nil {
+		return ""
+	}
+	return l.Key
+}
+
+type repositoryTopicConnection struct {
+	Nodes []repositoryTopicNode `json:"nodes"`
+}
+
+func (c repositoryTopicConnection) Names() []string {
+	if len(c.Nodes) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(c.Nodes))
+	for _, node := range c.Nodes {
+		if node.Topic.Name != "" {
+			names = append(names, node.Topic.Name)
+		}
+	}
+	return names
+}
+
+type repositoryTopicNode struct {
+	Topic topicNode `json:"topic"`
+}
+
+type topicNode struct {
+	Name string `json:"name"`
+}
+
 type repositoryItemNode struct {
-	Typename        string        `json:"__typename"`
-	NameWithOwner   string        `json:"nameWithOwner"`
-	Description     *string       `json:"description"`
-	URL             string        `json:"url"`
-	IsFork          bool          `json:"isFork"`
-	StargazerCount  int           `json:"stargazerCount"`
-	PushedAt        *string       `json:"pushedAt"`
-	PrimaryLanguage *languageNode `json:"primaryLanguage"`
+	Typename         string                    `json:"__typename"`
+	ID               string                    `json:"id"`
+	NameWithOwner    string                    `json:"nameWithOwner"`
+	Description      *string                   `json:"description"`
+	URL              string                    `json:"url"`
+	IsFork           bool                      `json:"isFork"`
+	IsArchived       bool                      `json:"isArchived"`
+	StargazerCount   int                       `json:"stargazerCount"`
+	PushedAt         *string                   `json:"pushedAt"`
+	LicenseInfo      *licenseNode              `json:"licenseInfo"`
+	RepositoryTopics repositoryTopicConnection `json:"repositoryTopics"`
+	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
 }
 
 type listStarredRepositoriesResponse struct {
@@ -258,13 +326,17 @@ type starredRepositoryEdge struct {
 }
 
 type starredRepoItemNode struct {
-	NameWithOwner   string        `json:"nameWithOwner"`
-	Description     *string       `json:"description"`
-	URL             string        `json:"url"`
-	IsFork          bool          `json:"isFork"`
-	StargazerCount  int           `json:"stargazerCount"`
-	PushedAt        *string       `json:"pushedAt"`
-	PrimaryLanguage *languageNode `json:"primaryLanguage"`
+	ID               string                    `json:"id"`
+	NameWithOwner    string                    `json:"nameWithOwner"`
+	Description      *string                   `json:"description"`
+	URL              string                    `json:"url"`
+	IsFork           bool                      `json:"isFork"`
+	IsArchived       bool                      `json:"isArchived"`
+	StargazerCount   int                       `json:"stargazerCount"`
+	PushedAt         *string                   `json:"pushedAt"`
+	LicenseInfo      *licenseNode              `json:"licenseInfo"`
+	RepositoryTopics repositoryTopicConnection `json:"repositoryTopics"`
+	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
 }
 
 func (s *graphQLService) ListStarredRepositories(ctx context.Context) ([]Repository, error) {
@@ -289,14 +361,18 @@ func (s *graphQLService) ListStarredRepositories(ctx context.Context) ([]Reposit
 
 		for _, edge := range result.Viewer.StarredRepositories.Edges {
 			repositories = append(repositories, Repository{
+				ID:             edge.Node.ID,
 				NameWithOwner:  edge.Node.NameWithOwner,
 				Description:    stringValue(edge.Node.Description),
 				IsFork:         edge.Node.IsFork,
+				IsArchived:     edge.Node.IsArchived,
 				StargazerCount: edge.Node.StargazerCount,
 				PushedAt:       stringValue(edge.Node.PushedAt),
 				URL:            edge.Node.URL,
 				Language:       edge.Node.PrimaryLanguage.OrEmpty(),
 				StarredAt:      edge.StarredAt,
+				License:        edge.Node.LicenseInfo.OrEmpty(),
+				Topics:         edge.Node.RepositoryTopics.Names(),
 			})
 		}
 		if !result.Viewer.StarredRepositories.PageInfo.HasNextPage {

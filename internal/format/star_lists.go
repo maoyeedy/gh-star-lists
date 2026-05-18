@@ -55,7 +55,7 @@ func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarLis
 		_, err := fmt.Fprintln(w, "No Star Lists found.")
 		return err
 	}
-	boldFn := bold(options.Color)
+	boldFn := Bold(options.Color)
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader([]string{"NAME", "REPOS", "ADDED", "ID", "URL"}, tableprinter.WithColor(boldFn))

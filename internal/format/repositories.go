@@ -61,7 +61,7 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 		_, err := fmt.Fprintln(w, "No repositories found.")
 		return err
 	}
-	boldFn := bold(options.Color)
+	boldFn := Bold(options.Color)
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader(

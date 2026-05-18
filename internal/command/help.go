@@ -106,24 +106,20 @@ func HelpTextWithOptions(options format.Options) string {
 		return helpText
 	}
 	var b strings.Builder
-	bold := boldAnsi
+	boldFn := format.Bold(true)
 	lines := strings.Split(helpText, "\n")
 	for _, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "gh star-lists"):
-			b.WriteString(bold(line))
+			b.WriteString(boldFn(line))
 		case strings.HasPrefix(line, "  gh star-lists"):
-			b.WriteString(bold(line))
+			b.WriteString(boldFn(line))
 		default:
 			b.WriteString(line)
 		}
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-func boldAnsi(s string) string {
-	return "\x1b[1m" + s + "\x1b[0m"
 }
 
 func UsageText() string {

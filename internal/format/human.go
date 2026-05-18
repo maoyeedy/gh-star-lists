@@ -20,7 +20,7 @@ func ansiStyle(enabled bool, code string) func(string) string {
 	}
 }
 
-func bold(enabled bool) func(string) string  { return ansiStyle(enabled, "1") }
+func Bold(enabled bool) func(string) string  { return ansiStyle(enabled, "1") }
 func faint(enabled bool) func(string) string { return ansiStyle(enabled, "2") }
 
 func writeJSONSliceWithOptions[T any](w io.Writer, options Options, data []T) error {

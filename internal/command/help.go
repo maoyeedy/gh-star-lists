@@ -44,7 +44,7 @@ Output:
   --plain           Detailed plain text output.
   --json            Machine-readable JSON output.
   --tsv             Tab-separated output for scripts.
-  --output <FILE>   Write output to a file instead of stdout.
+  --output <FILE>   Write output to a file instead of stdout. Prompts before overwriting an existing file; pass --yes to skip the prompt.
   --template <STR>  Go template string applied to JSON data (implies --json data model).
   --jq <QUERY>      jq-style query applied to JSON output (implies --json).
   --no-color        Disable ANSI color in human output.

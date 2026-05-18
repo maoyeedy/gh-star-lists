@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/auth"
@@ -230,7 +231,7 @@ func newGoGHGraphQLService(options ProductionOptions) (Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize GitHub GraphQL client: %w", err)
 	}
-	return newGraphQLService(client, 100, host), nil
+	return newGraphQLService(newRetryDoer(client, 3, time.Second), 100, host), nil
 }
 
 type graphQLDoer interface {

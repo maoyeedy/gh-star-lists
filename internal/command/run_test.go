@@ -1493,6 +1493,73 @@ func TestRunOutputFileError(t *testing.T) {
 	}
 }
 
+func TestRunOutputFileExistsWithYesOverwrites(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	dir := t.TempDir()
+	outPath := dir + "/output.txt"
+
+	if err := os.WriteFile(outPath, []byte("old content"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath, "--yes"},
+		io.Discard,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "old content") {
+		t.Fatalf("output file still contains old content after --yes overwrite")
+	}
+}
+
+func TestRunOutputFileExistsNoYesNonTTYFails(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	dir := t.TempDir()
+	outPath := dir + "/output.txt"
+
+	if err := os.WriteFile(outPath, []byte("old content"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath},
+		io.Discard,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitFailure {
+		t.Fatalf("exit = %d, want ExitFailure", code)
+	}
+	if !strings.Contains(stderr.String(), "already exists") {
+		t.Fatalf("stderr = %q, want 'already exists' diagnostic", stderr.String())
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "old content" {
+		t.Fatalf("output file was modified despite failure; got %q", string(data))
+	}
+}
+
 func TestRunDryRun(t *testing.T) {
 	t.Parallel()
 

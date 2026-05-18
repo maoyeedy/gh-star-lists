@@ -305,6 +305,56 @@ func TestParse(t *testing.T) {
 				SortKeys: []string{"starred"},
 			},
 		},
+		{
+			name: "filter min-stars negative clamps to zero",
+			argv: []string{"repos", "UL_1", "--filter", "min-stars:-5"},
+			want: command.Parsed{
+				Action:  command.ActionRepos,
+				ListID:  "UL_1",
+				Mode:    format.OutputHuman,
+				Filters: []command.Filter{{Key: "min-stars", Value: "0"}},
+			},
+		},
+		{
+			name: "filter max-stars negative clamps to zero",
+			argv: []string{"repos", "UL_1", "--filter", "max-stars:-1"},
+			want: command.Parsed{
+				Action:  command.ActionRepos,
+				ListID:  "UL_1",
+				Mode:    format.OutputHuman,
+				Filters: []command.Filter{{Key: "max-stars", Value: "0"}},
+			},
+		},
+		{
+			name: "filter min-stars zero is accepted as-is",
+			argv: []string{"repos", "UL_1", "--filter", "min-stars:0"},
+			want: command.Parsed{
+				Action:  command.ActionRepos,
+				ListID:  "UL_1",
+				Mode:    format.OutputHuman,
+				Filters: []command.Filter{{Key: "min-stars", Value: "0"}},
+			},
+		},
+		{
+			name: "filter topic single value accepted",
+			argv: []string{"repos", "UL_1", "--filter", "topic:go"},
+			want: command.Parsed{
+				Action:  command.ActionRepos,
+				ListID:  "UL_1",
+				Mode:    format.OutputHuman,
+				Filters: []command.Filter{{Key: "topic", Value: "go"}},
+			},
+		},
+		{
+			name: "filter topic repeated flags AND",
+			argv: []string{"repos", "UL_1", "--filter", "topic:go", "--filter", "topic:rust"},
+			want: command.Parsed{
+				Action:  command.ActionRepos,
+				ListID:  "UL_1",
+				Mode:    format.OutputHuman,
+				Filters: []command.Filter{{Key: "topic", Value: "go"}, {Key: "topic", Value: "rust"}},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -529,6 +579,61 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "move rejects identical from and to",
 			argv:        []string{"move", "owner/repo", "--from", "A", "--to", "A"},
 			wantMessage: "move requires distinct --from and --to",
+		},
+		{
+			name:        "filter topic comma-separated rejected",
+			argv:        []string{"repos", "UL_1", "--filter", "topic:go,rust"},
+			wantMessage: "only one topic per --filter",
+		},
+		{
+			name:        "filter min-stars non-integer rejected",
+			argv:        []string{"repos", "UL_1", "--filter", "min-stars:abc"},
+			wantMessage: "expected integer",
+		},
+		{
+			name:        "search on create rejected",
+			argv:        []string{"create", "MyList", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on edit rejected",
+			argv:        []string{"edit", "UL_1", "--name", "New", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on delete rejected",
+			argv:        []string{"delete", "UL_1", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on add rejected",
+			argv:        []string{"add", "owner/repo", "--to", "UL_1", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on remove rejected",
+			argv:        []string{"remove", "owner/repo", "--from", "UL_1", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on move rejected",
+			argv:        []string{"move", "owner/repo", "--from", "A", "--to", "B", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on copy rejected",
+			argv:        []string{"copy", "--from", "A", "--to", "B", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on merge rejected",
+			argv:        []string{"merge", "--from", "A", "--to", "B", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
+		},
+		{
+			name:        "search on unstar rejected",
+			argv:        []string{"unstar", "owner/repo", "--search", "foo"},
+			wantMessage: "--search is only supported for repos",
 		},
 	}
 

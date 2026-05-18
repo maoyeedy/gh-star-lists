@@ -100,6 +100,26 @@ func RunWithOptions(
 		service = githubapi.NewCacheService(service)
 	}
 	if parsed.OutputPath != "" {
+		if _, statErr := os.Stat(parsed.OutputPath); statErr == nil {
+			if !parsed.Yes {
+				if canPrompt() {
+					confirmed, err := confirmAction(fmt.Sprintf("Overwrite %s?", parsed.OutputPath))
+					if err != nil {
+						_ = writeDiagnostic(stderr, "error: %v\n", err)
+						return ExitFailure
+					}
+					if !confirmed {
+						return ExitFailure
+					}
+				} else {
+					_ = writeDiagnostic(stderr, "error: --output target %s already exists; pass --yes to overwrite\n", parsed.OutputPath)
+					return ExitFailure
+				}
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			_ = writeDiagnostic(stderr, "error: failed to stat output file: %v\n", statErr)
+			return ExitFailure
+		}
 		f, err := os.OpenFile(parsed.OutputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 		if err != nil {
 			_ = writeDiagnostic(stderr, "error: failed to open output file: %v\n", err)

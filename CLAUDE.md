@@ -33,13 +33,13 @@
 
 ## Common Pitfalls
 
-**Sort key literals.** Use `command.SortKey*` constants (`parse.go:30-37`), not raw strings `"added"`, `"stars"`, `"repos"`.
+**Sort key literals.** Use `command.SortKey*` constants, not raw strings `"added"`, `"stars"`, `"repos"`.
 
-**Filter key literals.** Use `command.FilterKey*` constants (`parse.go:40-48`), not raw strings.
+**Filter key literals.** Use `command.FilterKey*` constants, not raw strings.
 
 **Filter values already lowered.** `Parse` lowers key+value. Compare `f.Value` directly — no `strings.ToLower` needed in filter functions.
 
-**Adding a repos-only filter.** Add key to `reposOnlyFilterKeys` map at `parse.go:636-644`, handle in `validateFilters` switch, implement in `filterRepositories` at `run.go:623-675`.
+**Adding a repos-only filter.** Add key to `reposOnlyFilterKeys` map, handle in `validateFilters` switch, implement in `filterRepositories`.
 
 **ANSI styling.** Use `ansiStyle(enabled, code)` / `bold(bool)` / `faint(bool)` from `internal/format/human.go`. No raw escape sequences.
 
@@ -59,7 +59,7 @@
 
 **Per-key sort direction.** Comparators return `(int, bool)` — `SortTerm.Desc`. Keys can mix directions: `--sort stars:desc,name:asc`.
 
-**Name resolution.** `resolveList()` returns `resolvedList{ID, URL}` by matching name or ID. `resolveListID` delegates to it. `--web` uses URL. Name-not-found returns raw input — subsequent call surfaces the real error.
+**Name resolution.** `resolveList()` returns `resolvedList{ID, URL, Name}` by matching name or ID. `resolveListID` delegates to it. `--web` uses URL. Name-not-found returns raw input — subsequent call surfaces the real error.
 
 **Server-side limit pushdown.** `directListOptions()` pushes `Limit` server-side only when no local post-processing exists (no filters, search, or sort). Otherwise fetches all pages, applies limit locally.
 
@@ -71,7 +71,7 @@
 
 **Cache invalidation.** Write ops call `invalidateLists()`, `invalidateStarred()`, or `invalidateAll()`. Never in `command` or `format` packages.
 
-**Search buffer reuse.** Hoist `tokenCache` map and `editPrev`/`editCurr` `[]int` buffers outside the repo loop in `searchRepositories()`. Reused via `growIntSlice` to avoid per-repo DP allocation (`search.go:28-29`).
+**Search buffer reuse.** Hoist `tokenCache` map and `editPrev`/`editCurr` `[]int` buffers outside the repo loop in `searchRepositories()`. Reused via `growIntSlice` to avoid per-repo DP allocation.
 
 **`Topics` field type.** `Repository.Topics` is `[]string` (`json:"-"`). Not in JSON/TSV. Used for `--filter topic:` and template matching.
 

@@ -25,9 +25,12 @@ func searchRepositories(repos []githubapi.Repository, query string) []githubapi.
 	}
 	phrase := normalizeSearchText(query)
 
+	var editPrev, editCurr []int
+	tokenCache := make(map[string][]string)
+
 	matches := make([]repositorySearchMatch, 0, len(repos))
 	for _, repo := range repos {
-		score := repositorySearchScore(repo, terms, phrase)
+		score := repositorySearchScore(repo, terms, phrase, tokenCache, &editPrev, &editCurr)
 		if score > 0 {
 			matches = append(matches, repositorySearchMatch{repo: repo, score: score})
 		}
@@ -50,7 +53,7 @@ func searchRepositories(repos []githubapi.Repository, query string) []githubapi.
 	return out
 }
 
-func repositorySearchScore(repo githubapi.Repository, terms []string, phrase string) int {
+func repositorySearchScore(repo githubapi.Repository, terms []string, phrase string, tokenCache map[string][]string, editPrev, editCurr *[]int) int {
 	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
 	rawFields := []searchField{
 		{text: name, weight: 120},
@@ -67,7 +70,7 @@ func repositorySearchScore(repo githubapi.Repository, terms []string, phrase str
 		}
 		fields = append(fields, preparedField{
 			text:   text,
-			tokens: searchTerms(text),
+			tokens: cachedSearchTerms(tokenCache, text),
 			weight: f.weight,
 		})
 	}
@@ -85,7 +88,7 @@ func repositorySearchScore(repo githubapi.Repository, terms []string, phrase str
 	for _, term := range terms {
 		best := 0
 		for _, field := range fields {
-			if s := field.scoreTerm(term); s > best {
+			if s := field.scoreTerm(term, editPrev, editCurr); s > best {
 				best = s
 			}
 		}
@@ -108,7 +111,7 @@ type preparedField struct {
 	weight int
 }
 
-func (f preparedField) scoreTerm(term string) int {
+func (f preparedField) scoreTerm(term string, editPrev, editCurr *[]int) int {
 	if f.text == term {
 		return f.weight + 100
 	}
@@ -126,7 +129,7 @@ func (f preparedField) scoreTerm(term string) int {
 			best = max(best, f.weight+20)
 		}
 
-		if distance, ok := boundedEditDistance(term, token, maxSearchDistance(term)); ok {
+		if distance, ok := boundedEditDistance(term, token, maxSearchDistance(term), editPrev, editCurr); ok {
 			best = max(best, f.weight+35-(distance*10))
 		}
 	}
@@ -165,6 +168,17 @@ func searchTerms(text string) []string {
 	})
 }
 
+// cachedSearchTerms returns tokens for text, using cache to avoid re-tokenizing identical strings.
+// Callers must not mutate the returned slice.
+func cachedSearchTerms(cache map[string][]string, text string) []string {
+	if tokens, ok := cache[text]; ok {
+		return tokens
+	}
+	tokens := searchTerms(text)
+	cache[text] = tokens
+	return tokens
+}
+
 func normalizeSearchText(text string) string {
 	return strings.ToLower(strings.TrimSpace(text))
 }
@@ -180,7 +194,15 @@ func maxSearchDistance(term string) int {
 	}
 }
 
-func boundedEditDistance(a, b string, limit int) (int, bool) {
+func growIntSlice(s *[]int, need int) {
+	if cap(*s) < need {
+		*s = make([]int, need)
+	} else {
+		*s = (*s)[:need]
+	}
+}
+
+func boundedEditDistance(a, b string, limit int, prevBuf, currBuf *[]int) (int, bool) {
 	if a == "" || b == "" {
 		return 0, false
 	}
@@ -192,8 +214,12 @@ func boundedEditDistance(a, b string, limit int) (int, bool) {
 		return 0, false
 	}
 
-	prev := make([]int, len(b)+1)
-	curr := make([]int, len(b)+1)
+	n := len(b) + 1
+	growIntSlice(prevBuf, n)
+	growIntSlice(currBuf, n)
+	prev := *prevBuf
+	curr := *currBuf
+
 	for j := range prev {
 		prev[j] = j
 	}

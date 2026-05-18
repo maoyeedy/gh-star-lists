@@ -28,7 +28,8 @@ type Service interface {
 }
 
 type ListOptions struct {
-	Limit int
+	Limit      int
+	WithTopics bool
 }
 
 type StarList struct {

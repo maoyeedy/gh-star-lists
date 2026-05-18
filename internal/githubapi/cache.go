@@ -13,26 +13,51 @@ type cacheEntry[T any] struct {
 	expiry time.Time
 }
 
+type reposCacheKey struct {
+	listID     string
+	withTopics bool
+}
+
+type cacheRepo struct {
+	data   Repository
+	expiry time.Time
+}
+
 type cacheService struct {
 	inner Service
 
 	mu           sync.RWMutex
 	listsEntry   *cacheEntry[StarList]
-	reposEntry   map[string]*cacheEntry[Repository]
-	starredEntry *cacheEntry[Repository]
+	reposEntry   map[reposCacheKey]*cacheEntry[Repository]
+	starredEntry map[bool]*cacheEntry[Repository]
+	repoEntry    map[string]*cacheRepo
 	ttl          time.Duration
 }
 
 func newCacheService(inner Service) *cacheService {
 	return &cacheService{
-		inner:      inner,
-		reposEntry: make(map[string]*cacheEntry[Repository]),
-		ttl:        defaultCacheTTL,
+		inner:        inner,
+		reposEntry:   make(map[reposCacheKey]*cacheEntry[Repository]),
+		starredEntry: make(map[bool]*cacheEntry[Repository]),
+		repoEntry:    make(map[string]*cacheRepo),
+		ttl:          defaultCacheTTL,
 	}
 }
 
 func NewCacheService(inner Service) Service {
 	return newCacheService(inner)
+}
+
+type CacheOptions struct {
+	TTL time.Duration
+}
+
+func NewCacheServiceWithOptions(inner Service, opts CacheOptions) Service {
+	svc := newCacheService(inner)
+	if opts.TTL > 0 {
+		svc.ttl = opts.TTL
+	}
+	return svc
 }
 
 func (s *cacheService) ListStarLists(ctx context.Context, options ...ListOptions) ([]StarList, error) {
@@ -65,8 +90,9 @@ func (s *cacheService) ListRepositories(
 	options ...ListOptions,
 ) ([]Repository, error) {
 	limit := limitFromOptions(options)
+	key := reposCacheKey{listID: listID, withTopics: withTopicsFromOptions(options)}
 	s.mu.RLock()
-	if entry, ok := s.reposEntry[listID]; ok && time.Now().Before(entry.expiry) {
+	if entry, ok := s.reposEntry[key]; ok && time.Now().Before(entry.expiry) {
 		data := entry.data
 		s.mu.RUnlock()
 		return applyLimit(data, limit), nil
@@ -79,7 +105,7 @@ func (s *cacheService) ListRepositories(
 	}
 
 	s.mu.Lock()
-	s.reposEntry[listID] = &cacheEntry[Repository]{
+	s.reposEntry[key] = &cacheEntry[Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -92,9 +118,10 @@ func (s *cacheService) ListStarredRepositories(
 	options ...ListOptions,
 ) ([]Repository, error) {
 	limit := limitFromOptions(options)
+	withTopics := withTopicsFromOptions(options)
 	s.mu.RLock()
-	if s.starredEntry != nil && time.Now().Before(s.starredEntry.expiry) {
-		data := s.starredEntry.data
+	if entry, ok := s.starredEntry[withTopics]; ok && time.Now().Before(entry.expiry) {
+		data := entry.data
 		s.mu.RUnlock()
 		return applyLimit(data, limit), nil
 	}
@@ -106,7 +133,7 @@ func (s *cacheService) ListStarredRepositories(
 	}
 
 	s.mu.Lock()
-	s.starredEntry = &cacheEntry[Repository]{
+	s.starredEntry[withTopics] = &cacheEntry[Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -115,7 +142,26 @@ func (s *cacheService) ListStarredRepositories(
 }
 
 func (s *cacheService) GetRepository(ctx context.Context, nameWithOwner string) (Repository, error) {
-	return s.inner.GetRepository(ctx, nameWithOwner)
+	s.mu.RLock()
+	if entry, ok := s.repoEntry[nameWithOwner]; ok && time.Now().Before(entry.expiry) {
+		data := entry.data
+		s.mu.RUnlock()
+		return data, nil
+	}
+	s.mu.RUnlock()
+
+	repo, err := s.inner.GetRepository(ctx, nameWithOwner)
+	if err != nil {
+		return Repository{}, err
+	}
+
+	s.mu.Lock()
+	s.repoEntry[nameWithOwner] = &cacheRepo{
+		data:   repo,
+		expiry: time.Now().Add(s.ttl),
+	}
+	s.mu.Unlock()
+	return repo, nil
 }
 
 func (s *cacheService) GetRepositoryMemberships(
@@ -149,7 +195,8 @@ func (s *cacheService) DeleteStarList(ctx context.Context, listID string) error 
 	}
 	s.mu.Lock()
 	s.listsEntry = nil
-	delete(s.reposEntry, listID)
+	delete(s.reposEntry, reposCacheKey{listID: listID, withTopics: false})
+	delete(s.reposEntry, reposCacheKey{listID: listID, withTopics: true})
 	s.mu.Unlock()
 	return nil
 }
@@ -190,15 +237,16 @@ func (s *cacheService) invalidateLists() {
 
 func (s *cacheService) invalidateStarred() {
 	s.mu.Lock()
-	s.starredEntry = nil
+	s.starredEntry = make(map[bool]*cacheEntry[Repository])
 	s.mu.Unlock()
 }
 
 func (s *cacheService) invalidateAll() {
 	s.mu.Lock()
 	s.listsEntry = nil
-	s.reposEntry = make(map[string]*cacheEntry[Repository])
-	s.starredEntry = nil
+	s.reposEntry = make(map[reposCacheKey]*cacheEntry[Repository])
+	s.starredEntry = make(map[bool]*cacheEntry[Repository])
+	s.repoEntry = make(map[string]*cacheRepo)
 	s.mu.Unlock()
 }
 

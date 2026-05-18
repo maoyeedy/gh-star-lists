@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/browser"
 	"github.com/cli/go-gh/v2/pkg/prompter"
@@ -96,8 +97,12 @@ func RunWithOptions(
 	if parsed.NoColor {
 		outputOptions.Color = false
 	}
-	if parsed.Cache {
-		service = githubapi.NewCacheService(service)
+	cacheTTL := 5 * time.Minute
+	if parsed.CacheTTL != nil {
+		cacheTTL = *parsed.CacheTTL
+	}
+	if cacheTTL > 0 {
+		service = githubapi.NewCacheServiceWithOptions(service, githubapi.CacheOptions{TTL: cacheTTL})
 	}
 	if parsed.OutputPath != "" {
 		if _, statErr := os.Stat(parsed.OutputPath); statErr == nil {
@@ -132,7 +137,7 @@ func RunWithOptions(
 	}
 	switch parsed.Action {
 	case ActionList:
-		lists, err := service.ListStarLists(ctx, directListOptions(parsed))
+		lists, err := service.ListStarLists(ctx, directListOptions(parsed, false))
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)
 		}
@@ -262,6 +267,7 @@ func fetchReposForAction(
 	service githubapi.Service,
 	parsed Parsed,
 ) ([]githubapi.Repository, error) {
+	withTopics := topicsNeeded(parsed)
 	switch {
 	case parsed.Unlisted:
 		lists, err := service.ListStarLists(ctx)
@@ -284,14 +290,23 @@ func fetchReposForAction(
 		}
 		return unlisted, nil
 	case parsed.All:
-		return service.ListStarredRepositories(ctx, directListOptions(parsed))
+		return service.ListStarredRepositories(ctx, directListOptions(parsed, withTopics))
 	default:
 		resolvedID, err := resolveListID(ctx, service, parsed.ListID)
 		if err != nil {
 			return nil, err
 		}
-		return service.ListRepositories(ctx, resolvedID, directListOptions(parsed))
+		return service.ListRepositories(ctx, resolvedID, directListOptions(parsed, withTopics))
 	}
+}
+
+func topicsNeeded(parsed Parsed) bool {
+	for _, f := range parsed.Filters {
+		if f.Key == FilterKeyTopic {
+			return true
+		}
+	}
+	return parsed.Template != "" && strings.Contains(parsed.Template, "Topics")
 }
 
 func finalizeRepositories(repos []githubapi.Repository, parsed Parsed) []githubapi.Repository {
@@ -777,11 +792,13 @@ func compareRepositories(
 	return strings.Compare(left.URL, right.URL), false
 }
 
-func directListOptions(parsed Parsed) githubapi.ListOptions {
+func directListOptions(parsed Parsed, withTopics bool) githubapi.ListOptions {
+	opts := githubapi.ListOptions{WithTopics: withTopics}
 	if parsed.Limit == 0 || len(parsed.Filters) > 0 || parsed.Search != "" || len(parsed.SortKeys) > 0 {
-		return githubapi.ListOptions{}
+		return opts
 	}
-	return githubapi.ListOptions{Limit: parsed.Limit}
+	opts.Limit = parsed.Limit
+	return opts
 }
 
 func writeFailure(stderr io.Writer, err error) int {

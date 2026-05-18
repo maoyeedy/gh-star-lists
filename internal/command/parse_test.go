@@ -5,10 +5,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/command"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 )
+
+func ptrDuration(d time.Duration) *time.Duration { return &d }
 
 func TestParse(t *testing.T) {
 	t.Parallel()
@@ -158,9 +161,14 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "cache flag",
-			argv: []string{"list", "--cache"},
-			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, Cache: true},
+			name: "cache-ttl flag",
+			argv: []string{"list", "--cache-ttl", "10m"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, CacheTTL: ptrDuration(10 * time.Minute)},
+		},
+		{
+			name: "cache-ttl zero disables",
+			argv: []string{"list", "--cache-ttl", "0"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, CacheTTL: ptrDuration(0)},
 		},
 		{
 			name: "limit with sort",

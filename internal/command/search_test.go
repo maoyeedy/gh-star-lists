@@ -164,7 +164,8 @@ func TestRepositorySearchScore(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := repositorySearchScore(tt.repo, tt.terms, tt.phrase)
+			var editPrev, editCurr []int
+			got := repositorySearchScore(tt.repo, tt.terms, tt.phrase, make(map[string][]string), &editPrev, &editCurr)
 			if tt.wantZero && got != 0 {
 				t.Fatalf("want 0, got %d", got)
 			}
@@ -188,10 +189,12 @@ func TestRepositorySearchScoreFieldWeights(t *testing.T) {
 	terms := []string{"alpha"}
 	phrase := "alpha"
 
-	nameScore := repositorySearchScore(nameRepo, terms, phrase)
-	ownerScore := repositorySearchScore(ownerRepo, terms, phrase)
-	descScore := repositorySearchScore(descRepo, terms, phrase)
-	langScore := repositorySearchScore(langRepo, terms, phrase)
+	var editPrev, editCurr []int
+	tokenCache := make(map[string][]string)
+	nameScore := repositorySearchScore(nameRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
+	ownerScore := repositorySearchScore(ownerRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
+	descScore := repositorySearchScore(descRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
+	langScore := repositorySearchScore(langRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
 
 	if !(nameScore > ownerScore) {
 		t.Errorf("name match should outscore owner match: name=%d owner=%d", nameScore, ownerScore)
@@ -228,7 +231,8 @@ func TestBoundedEditDistance(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			dist, ok := boundedEditDistance(tt.a, tt.b, tt.limit)
+			var editPrev, editCurr []int
+			dist, ok := boundedEditDistance(tt.a, tt.b, tt.limit, &editPrev, &editCurr)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v (dist=%d)", ok, tt.wantOK, dist)
 			}

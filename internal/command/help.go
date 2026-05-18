@@ -11,8 +11,8 @@ const helpText = `gh star-lists
 Query and manage GitHub Star Lists through the GitHub CLI authentication context.
 
 Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]
@@ -68,7 +68,7 @@ Filtering:
   --search <STR>   Fuzzy-match repositories by name, description, and language.
 
 Caching:
-  --cache           Cache API responses in memory (TTL: 5 min).
+  --cache-ttl <DURATION>  Override the in-memory cache TTL (default: 5m). Pass 0 to disable.
 
 Examples:
   gh star-lists
@@ -128,8 +128,8 @@ func boldAnsi(s string) string {
 
 func UsageText() string {
 	return `Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]

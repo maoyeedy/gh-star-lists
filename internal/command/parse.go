@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 )
@@ -72,7 +73,7 @@ type Parsed struct {
 	SortDesc     bool
 	NoColor      bool
 	Limit        int
-	Cache        bool
+	CacheTTL     *time.Duration
 	Filters      []Filter
 	Search       string
 	OutputPath   string
@@ -106,7 +107,7 @@ func Parse(argv []string) (Parsed, error) {
 		rawSortTerms     []string
 		sortDesc         bool
 		limit            int
-		cacheFlag        bool
+		cacheTTL         *time.Duration
 		noColorFlag      bool
 		filters          []Filter
 		searchValue      string
@@ -156,8 +157,19 @@ func Parse(argv []string) (Parsed, error) {
 			rawSortTerms = append(rawSortTerms, strings.Split(raw, ",")...)
 		case "--desc":
 			sortDesc = true
-		case "--cache":
-			cacheFlag = true
+		case "--cache-ttl":
+			if i+1 >= len(argv) {
+				return Parsed{}, usage("missing value for --cache-ttl")
+			}
+			i++
+			d, err := time.ParseDuration(argv[i])
+			if err != nil {
+				return Parsed{}, usage("invalid value for --cache-ttl: %v", err)
+			}
+			if d < 0 {
+				return Parsed{}, usage("--cache-ttl must not be negative")
+			}
+			cacheTTL = &d
 		case "--no-color":
 			noColorFlag = true
 		case "--host":
@@ -373,7 +385,7 @@ func Parse(argv []string) (Parsed, error) {
 				NoColor:    noColorFlag,
 				Filters:    filters,
 				Search:     searchValue,
-				Cache:      cacheFlag,
+				CacheTTL:   cacheTTL,
 				OutputPath: outputPath,
 				Template:   templateStr,
 				JQ:         jqValue,
@@ -528,7 +540,7 @@ func Parse(argv []string) (Parsed, error) {
 		Limit:      limit,
 		NoColor:    noColorFlag,
 		Filters:    filters,
-		Cache:      cacheFlag,
+		CacheTTL:   cacheTTL,
 		OutputPath: outputPath,
 		Template:   templateStr,
 		JQ:         jqValue,
@@ -565,13 +577,15 @@ func HostFromArgs(argv []string) string {
 	return ""
 }
 
-func CacheFromArgs(argv []string) bool {
-	for _, arg := range argv {
-		if arg == "--cache" {
-			return true
+func CacheTTLFromArgs(argv []string) time.Duration {
+	for i, arg := range argv {
+		if arg == "--cache-ttl" && i+1 < len(argv) {
+			if d, err := time.ParseDuration(argv[i+1]); err == nil {
+				return d
+			}
 		}
 	}
-	return false
+	return 5 * time.Minute
 }
 
 func parseSortTerms(rawTerms []string, globalDesc bool) ([]string, []SortTerm, error) {

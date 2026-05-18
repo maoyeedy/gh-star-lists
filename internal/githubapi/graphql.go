@@ -30,45 +30,10 @@ const listStarListsQuery = `query($endCursor: String, $first: Int!) {
   }
 }`
 
-const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!) {
-  viewer {
-    starredRepositories(first: $first, after: $endCursor, orderBy: {field: STARRED_AT, direction: DESC}) {
-      edges {
-        starredAt
-        node {
-          id
-          nameWithOwner
-          description
-          url
-          isFork
-          isArchived
-          stargazerCount
-          pushedAt
-          licenseInfo {
-            key
-          }
-          repositoryTopics(first: 20) {
-            nodes {
-              topic {
-                name
-              }
-            }
-          }
-          primaryLanguage {
-            name
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-    }
-  }
-}`
-
-const getRepositoryQuery = `query($owner: String!, $name: String!) {
-  repository(owner: $owner, name: $name) {
+// repositoryFieldsFragment is the shared set of repository fields fetched by all three
+// repository queries. Embedded via Go const concatenation; GraphQL is whitespace-insensitive.
+// repositoryTopics uses @include(if: $withTopics); callers must declare $withTopics: Boolean!.
+const repositoryFieldsFragment = `
     id
     nameWithOwner
     description
@@ -80,7 +45,7 @@ const getRepositoryQuery = `query($owner: String!, $name: String!) {
     licenseInfo {
       key
     }
-    repositoryTopics(first: 20) {
+    repositoryTopics(first: 20) @include(if: $withTopics) {
       nodes {
         topic {
           name
@@ -89,7 +54,26 @@ const getRepositoryQuery = `query($owner: String!, $name: String!) {
     }
     primaryLanguage {
       name
+    }`
+
+const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!, $withTopics: Boolean!) {
+  viewer {
+    starredRepositories(first: $first, after: $endCursor, orderBy: {field: STARRED_AT, direction: DESC}) {
+      edges {
+        starredAt
+        node {` + repositoryFieldsFragment + `
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
     }
+  }
+}`
+
+const getRepositoryQuery = `query($owner: String!, $name: String!, $withTopics: Boolean!) {
+  repository(owner: $owner, name: $name) {` + repositoryFieldsFragment + `
   }
 }`
 
@@ -166,7 +150,7 @@ const removeStarMutation = `mutation($starrableID: ID!) {
   }
 }`
 
-const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!) {
+const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!, $withTopics: Boolean!) {
   node(id: $id) {
     __typename
     ... on UserList {
@@ -174,28 +158,7 @@ const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!)
       items(first: $first, after: $endCursor) {
         nodes {
           __typename
-          ... on Repository {
-            id
-            nameWithOwner
-            description
-            url
-            isFork
-            isArchived
-            stargazerCount
-            pushedAt
-            licenseInfo {
-              key
-            }
-            repositoryTopics(first: 20) {
-              nodes {
-                topic {
-                  name
-                }
-              }
-            }
-            primaryLanguage {
-              name
-            }
+          ... on Repository {` + repositoryFieldsFragment + `
           }
         }
         pageInfo {
@@ -270,6 +233,7 @@ func (s *graphQLService) ListRepositories(
 	options ...ListOptions,
 ) ([]Repository, error) {
 	limit := limitFromOptions(options)
+	withTopics := withTopicsFromOptions(options)
 	repositories := make([]Repository, 0, s.pageSize)
 	var endCursor any
 
@@ -279,7 +243,12 @@ func (s *graphQLService) ListRepositories(
 		}
 
 		var result listRepositoriesResponse
-		variables := map[string]any{"id": listID, "endCursor": endCursor, "first": pageFirst(s.pageSize, limit, len(repositories))}
+		variables := map[string]any{
+			"id":         listID,
+			"endCursor":  endCursor,
+			"first":      pageFirst(s.pageSize, limit, len(repositories)),
+			"withTopics": withTopics,
+		}
 		if err := s.client.DoWithContext(ctx, listRepositoriesQuery, variables, &result); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}
@@ -456,6 +425,7 @@ func (s *graphQLService) ListStarredRepositories(
 	options ...ListOptions,
 ) ([]Repository, error) {
 	limit := limitFromOptions(options)
+	withTopics := withTopicsFromOptions(options)
 	repositories := make([]Repository, 0, s.pageSize)
 	var endCursor any
 
@@ -465,7 +435,11 @@ func (s *graphQLService) ListStarredRepositories(
 		}
 
 		var result listStarredRepositoriesResponse
-		variables := map[string]any{"endCursor": endCursor, "first": pageFirst(s.pageSize, limit, len(repositories))}
+		variables := map[string]any{
+			"endCursor":  endCursor,
+			"first":      pageFirst(s.pageSize, limit, len(repositories)),
+			"withTopics": withTopics,
+		}
 		if err := s.client.DoWithContext(
 			ctx,
 			listStarredRepositoriesQuery,
@@ -562,7 +536,7 @@ func (s *graphQLService) GetRepository(
 		return Repository{}, fmt.Errorf("invalid repository %q: expected owner/name", nameWithOwner)
 	}
 	var result getRepositoryResponse
-	variables := map[string]any{"owner": owner, "name": name}
+	variables := map[string]any{"owner": owner, "name": name, "withTopics": true}
 	if err := s.client.DoWithContext(ctx, getRepositoryQuery, variables, &result); err != nil {
 		return Repository{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 	}
@@ -708,6 +682,13 @@ func limitFromOptions(options []ListOptions) int {
 		return 0
 	}
 	return options[0].Limit
+}
+
+func withTopicsFromOptions(options []ListOptions) bool {
+	if len(options) == 0 {
+		return false
+	}
+	return options[0].WithTopics
 }
 
 func pageFirst(pageSize, limit, current int) int {

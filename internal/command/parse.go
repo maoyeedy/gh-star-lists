@@ -47,6 +47,25 @@ const (
 	FilterKeyTopic    = "topic"
 )
 
+var commandAliases = map[string]string{
+	"ls": "list",
+	"rm": "remove",
+	"mv": "move",
+	"cp": "copy",
+}
+
+func canonicalCommand(token string) string {
+	if c, ok := commandAliases[token]; ok {
+		return c
+	}
+	switch token {
+	case "list", "repos", "create", "edit", "delete",
+		"add", "remove", "move", "copy", "merge", "unstar":
+		return token
+	}
+	return ""
+}
+
 type Filter struct {
 	Key   string
 	Value string
@@ -58,34 +77,37 @@ type SortTerm struct {
 }
 
 type Parsed struct {
-	Action       Action
-	ListID       string
-	FromListID   string
-	ToListID     string
-	RepoName     string
-	Name         string
-	Description  string
-	Private      bool
-	PrivateSet   bool
-	Mode         format.OutputMode
-	SortKeys     []string
-	SortTerms    []SortTerm
-	SortDesc     bool
-	NoColor      bool
-	Limit        int
-	CacheTTL     *time.Duration
-	Filters      []Filter
-	Search       string
-	OutputPath   string
-	Template     string
-	JQ           string
-	Host         string
-	Web          bool
-	Unlisted     bool
-	All          bool
-	Yes          bool
-	DryRun       bool
-	DeleteSource bool
+	Action         Action
+	HelpTopic      string
+	FullHelp       bool
+	ListID         string
+	FromListID     string
+	ToListID       string
+	RepoName       string
+	Name           string
+	Description    string
+	DescriptionSet bool
+	Private        bool
+	PrivateSet     bool
+	Mode           format.OutputMode
+	SortKeys       []string
+	SortTerms      []SortTerm
+	SortDesc       bool
+	NoColor        bool
+	Limit          int
+	CacheTTL       *time.Duration
+	Filters        []Filter
+	Search         string
+	OutputPath     string
+	Template       string
+	JQ             string
+	Host           string
+	Web            bool
+	Unlisted       bool
+	All            bool
+	Yes            bool
+	DryRun         bool
+	DeleteSource   bool
 }
 
 type UsageError struct {
@@ -96,9 +118,19 @@ func (e *UsageError) Error() string {
 	return e.Message
 }
 
+type UnknownCommandError struct {
+	Command string
+}
+
+func (e *UnknownCommandError) Error() string {
+	return fmt.Sprintf("unknown command %q for \"gh star-lists\"", e.Command)
+}
+
 func Parse(argv []string) (Parsed, error) {
 	var (
 		positionals      []string
+		helpFlag         bool
+		fullFlag         bool
 		jsonFlag         bool
 		tsvFlag          bool
 		plainFlag        bool
@@ -125,6 +157,7 @@ func Parse(argv []string) (Parsed, error) {
 		fromValue        string
 		nameValue        string
 		descriptionValue string
+		descriptionSet   bool
 		privateFlag      bool
 		publicFlag       bool
 	)
@@ -135,27 +168,29 @@ func Parse(argv []string) (Parsed, error) {
 		case "":
 			return Parsed{}, usage("empty argument")
 		case "--help", "-h":
-			return Parsed{Action: ActionHelp, Mode: format.OutputHuman}, nil
+			helpFlag = true
+		case "--full":
+			fullFlag = true
 		case "--json":
 			jsonFlag = true
 		case "--tsv":
 			tsvFlag = true
 		case "--plain":
 			plainFlag = true
-		case "--sort":
+		case "--sort", "-s":
 			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --sort")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			i++
 			raw := argv[i]
 			if raw == "" {
-				return Parsed{}, usage("empty value for --sort")
+				return Parsed{}, usage("empty value for %s", arg)
 			}
 			if strings.HasPrefix(raw, "-") {
-				return Parsed{}, usage("missing value for --sort")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			rawSortTerms = append(rawSortTerms, strings.Split(raw, ",")...)
-		case "--desc":
+		case "--desc", "-d":
 			sortDesc = true
 		case "--cache-ttl":
 			if i+1 >= len(argv) {
@@ -184,7 +219,7 @@ func Parse(argv []string) (Parsed, error) {
 			if err := validateHost(hostValue); err != nil {
 				return Parsed{}, err
 			}
-		case "--web":
+		case "--web", "-w":
 			webFlag = true
 		case "--unlisted":
 			unlistedFlag = true
@@ -218,37 +253,38 @@ func Parse(argv []string) (Parsed, error) {
 			if fromValue == "" {
 				return Parsed{}, usage("empty value for --from")
 			}
-		case "--name":
+		case "--name", "-n":
 			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --name")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			i++
 			nameValue = argv[i]
 			if nameValue == "" {
-				return Parsed{}, usage("empty value for --name")
+				return Parsed{}, usage("empty value for %s", arg)
 			}
-		case "--description":
+		case "--description", "-D":
 			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --description")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			i++
 			descriptionValue = argv[i]
-		case "--limit":
+			descriptionSet = true
+		case "--limit", "-l":
 			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --limit")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			i++
 			v, err := strconv.Atoi(argv[i])
 			if err != nil {
-				return Parsed{}, usage("invalid value for --limit: %s", argv[i])
+				return Parsed{}, usage("invalid value for %s: %s", arg, argv[i])
 			}
 			if v <= 0 {
-				return Parsed{}, usage("invalid value for --limit: must be positive")
+				return Parsed{}, usage("invalid value for %s: must be positive", arg)
 			}
 			limit = v
-		case "--filter":
+		case "--filter", "-f":
 			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --filter")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			i++
 			raw := argv[i]
@@ -260,9 +296,9 @@ func Parse(argv []string) (Parsed, error) {
 				filters,
 				Filter{Key: strings.ToLower(key), Value: strings.ToLower(value)},
 			)
-		case "--search":
+		case "--search", "-S":
 			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --search")
+				return Parsed{}, usage("missing value for %s", arg)
 			}
 			i++
 			searchValue = strings.TrimSpace(argv[i])
@@ -330,8 +366,20 @@ func Parse(argv []string) (Parsed, error) {
 	privateSet := privateFlag || publicFlag
 	privateValue := privateFlag
 
+	if helpFlag || fullFlag {
+		topic := ""
+		if len(positionals) > 0 {
+			topic = canonicalCommand(positionals[0])
+		}
+		return Parsed{Action: ActionHelp, HelpTopic: topic, FullHelp: fullFlag, Mode: format.OutputHuman}, nil
+	}
+
 	if len(positionals) > 0 {
-		switch positionals[0] {
+		cmd := positionals[0]
+		if c, ok := commandAliases[cmd]; ok {
+			cmd = c
+		}
+		switch cmd {
 		case "list":
 			if len(positionals) > 1 {
 				return Parsed{}, usage(
@@ -341,9 +389,7 @@ func Parse(argv []string) (Parsed, error) {
 			}
 		case "repos":
 			if len(positionals) == 1 {
-				if !unlistedFlag && !allFlag {
-					return Parsed{}, usage("missing list id for repos")
-				}
+				// Run prompts for the list in a TTY. Non-TTY callers get a usage error there.
 			}
 			if allFlag && unlistedFlag {
 				return Parsed{}, usage("cannot combine --all and --unlisted")
@@ -396,8 +442,8 @@ func Parse(argv []string) (Parsed, error) {
 				Yes:        yesFlag,
 			}, nil
 		case "create":
-			if len(positionals) != 2 {
-				return Parsed{}, usage("create requires exactly one list name")
+			if len(positionals) > 2 {
+				return Parsed{}, usage("create accepts at most one list name")
 			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err
@@ -405,21 +451,22 @@ func Parse(argv []string) (Parsed, error) {
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionCreate, Name: positionals[1], Description: descriptionValue, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+			name := ""
+			if len(positionals) == 2 {
+				name = positionals[1]
+			}
+			return Parsed{Action: ActionCreate, Name: name, Description: descriptionValue, DescriptionSet: descriptionSet, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
 		case "edit":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("edit requires exactly one list id or name")
 			}
-			if nameValue == "" && descriptionValue == "" && !privateSet {
-				return Parsed{}, usage("edit requires --name, --description, --private, or --public")
-			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionEdit, ListID: positionals[1], Name: nameValue, Description: descriptionValue, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{Action: ActionEdit, ListID: positionals[1], Name: nameValue, Description: descriptionValue, DescriptionSet: descriptionSet, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
 		case "delete":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("delete requires exactly one list id or name")
@@ -435,9 +482,6 @@ func Parse(argv []string) (Parsed, error) {
 			if len(positionals) != 2 {
 				return Parsed{}, usage("add requires exactly one repository owner/name")
 			}
-			if toValue == "" {
-				return Parsed{}, usage("add requires --to <LIST_ID_OR_NAME>")
-			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err
 			}
@@ -448,9 +492,6 @@ func Parse(argv []string) (Parsed, error) {
 		case "remove":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("remove requires exactly one repository owner/name")
-			}
-			if fromValue == "" {
-				return Parsed{}, usage("remove requires --from <LIST_ID_OR_NAME>")
 			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err
@@ -463,10 +504,8 @@ func Parse(argv []string) (Parsed, error) {
 			if len(positionals) != 2 {
 				return Parsed{}, usage("move requires exactly one repository owner/name")
 			}
-			if fromValue == "" || toValue == "" {
-				return Parsed{}, usage("move requires --from and --to")
-			}
-			if strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
+			if fromValue != "" && toValue != "" &&
+				strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
 				return Parsed{}, usage("move requires distinct --from and --to")
 			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
@@ -478,13 +517,11 @@ func Parse(argv []string) (Parsed, error) {
 			return Parsed{Action: ActionMove, RepoName: positionals[1], FromListID: fromValue, ToListID: toValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
 		case "copy", "merge":
 			if len(positionals) != 1 {
-				return Parsed{}, usage("%s does not accept positional arguments", positionals[0])
+				return Parsed{}, usage("%s does not accept positional arguments", cmd)
 			}
-			if fromValue == "" || toValue == "" {
-				return Parsed{}, usage("%s requires --from and --to", positionals[0])
-			}
-			if strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
-				return Parsed{}, usage("%s requires distinct --from and --to", positionals[0])
+			if fromValue != "" && toValue != "" &&
+				strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
+				return Parsed{}, usage("%s requires distinct --from and --to", cmd)
 			}
 			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
 				return Parsed{}, err
@@ -493,7 +530,7 @@ func Parse(argv []string) (Parsed, error) {
 				return Parsed{}, err
 			}
 			action := ActionCopy
-			if positionals[0] == "merge" {
+			if cmd == "merge" {
 				action = ActionMerge
 			}
 			return Parsed{Action: action, FromListID: fromValue, ToListID: toValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, DeleteSource: deleteSourceFlag, Host: hostValue}, nil
@@ -509,7 +546,7 @@ func Parse(argv []string) (Parsed, error) {
 			}
 			return Parsed{Action: ActionUnstar, RepoName: positionals[1], Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
 		default:
-			return Parsed{}, usage("unknown command %q", positionals[0])
+			return Parsed{}, &UnknownCommandError{Command: positionals[0]}
 		}
 	}
 

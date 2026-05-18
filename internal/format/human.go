@@ -20,8 +20,13 @@ func ansiStyle(enabled bool, code string) func(string) string {
 	}
 }
 
-func Bold(enabled bool) func(string) string  { return ansiStyle(enabled, "1") }
-func faint(enabled bool) func(string) string { return ansiStyle(enabled, "2") }
+func Bold(enabled bool) func(string) string      { return ansiStyle(enabled, "1") }
+func Underline(enabled bool) func(string) string { return ansiStyle(enabled, "4") }
+func Red(enabled bool) func(string) string       { return ansiStyle(enabled, "31") }
+func Green(enabled bool) func(string) string     { return ansiStyle(enabled, "32") }
+func Yellow(enabled bool) func(string) string    { return ansiStyle(enabled, "33") }
+func Cyan(enabled bool) func(string) string      { return ansiStyle(enabled, "36") }
+func faint(enabled bool) func(string) string     { return ansiStyle(enabled, "2") }
 
 func writeJSONSliceWithOptions[T any](w io.Writer, options Options, data []T) error {
 	if options.JQ == "" {

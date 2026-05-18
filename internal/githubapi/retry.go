@@ -104,7 +104,7 @@ func backoffWithJitter(base time.Duration, attempt int) time.Duration {
 	if delay > cap {
 		delay = cap
 	}
-	// ±20% jitter
+	// +/-20% jitter
 	jitter := float64(delay) * (0.8 + 0.4*rand.Float64())
 	return time.Duration(jitter)
 }

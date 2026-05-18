@@ -41,14 +41,149 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "repos without list parses for interactive run",
+			argv: []string{"repos"},
+			want: command.Parsed{
+				Action: command.ActionRepos,
+				Mode:   format.OutputHuman,
+			},
+		},
+		{
+			name: "short repo flags",
+			argv: []string{"repos", "UL_1", "-s", "stars", "-d", "-l", "5", "-f", "language:Go", "-S", "cli", "-w"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				ListID:   "UL_1",
+				Mode:     format.OutputHuman,
+				SortKeys: []string{"stars"},
+				SortDesc: true,
+				Limit:    5,
+				Filters:  []command.Filter{{Key: "language", Value: "go"}},
+				Search:   "cli",
+				Web:      true,
+			},
+		},
+		{
 			name: "long help short circuits",
 			argv: []string{"--help"},
 			want: command.Parsed{Action: command.ActionHelp, Mode: format.OutputHuman},
 		},
 		{
-			name: "short help short circuits before missing repos id",
+			name: "help with command sets topic",
 			argv: []string{"repos", "-h"},
+			want: command.Parsed{Action: command.ActionHelp, HelpTopic: "repos", Mode: format.OutputHuman},
+		},
+		{
+			name: "help with alias sets canonical topic",
+			argv: []string{"ls", "--help"},
+			want: command.Parsed{Action: command.ActionHelp, HelpTopic: "list", Mode: format.OutputHuman},
+		},
+		{
+			name: "help with unknown command gives top-level",
+			argv: []string{"bogus", "--help"},
 			want: command.Parsed{Action: command.ActionHelp, Mode: format.OutputHuman},
+		},
+		{
+			name: "--full alone shows full help",
+			argv: []string{"--full"},
+			want: command.Parsed{Action: command.ActionHelp, FullHelp: true, Mode: format.OutputHuman},
+		},
+		{
+			name: "--help --full shows full help",
+			argv: []string{"--help", "--full"},
+			want: command.Parsed{Action: command.ActionHelp, FullHelp: true, Mode: format.OutputHuman},
+		},
+		{
+			name: "ls alias resolves to list",
+			argv: []string{"ls"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman},
+		},
+		{
+			name: "rm alias resolves to remove with flags",
+			argv: []string{"rm", "owner/repo", "--from", "My List", "--yes"},
+			want: command.Parsed{
+				Action:     command.ActionRemove,
+				RepoName:   "owner/repo",
+				FromListID: "My List",
+				Yes:        true,
+				Mode:       format.OutputHuman,
+			},
+		},
+		{
+			name: "mv alias resolves to move",
+			argv: []string{"mv", "owner/repo", "--from", "A", "--to", "B"},
+			want: command.Parsed{
+				Action:     command.ActionMove,
+				RepoName:   "owner/repo",
+				FromListID: "A",
+				ToListID:   "B",
+				Mode:       format.OutputHuman,
+			},
+		},
+		{
+			name: "cp alias resolves to copy",
+			argv: []string{"cp", "--from", "A", "--to", "B"},
+			want: command.Parsed{
+				Action:     command.ActionCopy,
+				FromListID: "A",
+				ToListID:   "B",
+				Mode:       format.OutputHuman,
+			},
+		},
+		{
+			name: "short edit flags",
+			argv: []string{"edit", "UL_1", "-n", "New Name", "-D", ""},
+			want: command.Parsed{
+				Action:         command.ActionEdit,
+				ListID:         "UL_1",
+				Name:           "New Name",
+				Description:    "",
+				DescriptionSet: true,
+				Mode:           format.OutputHuman,
+			},
+		},
+		{
+			name: "add without --to parses cleanly",
+			argv: []string{"add", "owner/repo"},
+			want: command.Parsed{
+				Action:   command.ActionAdd,
+				RepoName: "owner/repo",
+				Mode:     format.OutputHuman,
+			},
+		},
+		{
+			name: "remove without --from parses cleanly",
+			argv: []string{"remove", "owner/repo"},
+			want: command.Parsed{
+				Action:   command.ActionRemove,
+				RepoName: "owner/repo",
+				Mode:     format.OutputHuman,
+			},
+		},
+		{
+			name: "move without flags parses cleanly",
+			argv: []string{"move", "owner/repo"},
+			want: command.Parsed{
+				Action:   command.ActionMove,
+				RepoName: "owner/repo",
+				Mode:     format.OutputHuman,
+			},
+		},
+		{
+			name: "copy without flags parses cleanly",
+			argv: []string{"copy"},
+			want: command.Parsed{
+				Action: command.ActionCopy,
+				Mode:   format.OutputHuman,
+			},
+		},
+		{
+			name: "merge without flags parses cleanly",
+			argv: []string{"merge"},
+			want: command.Parsed{
+				Action: command.ActionMerge,
+				Mode:   format.OutputHuman,
+			},
 		},
 		{
 			name: "json before subcommand",
@@ -389,8 +524,6 @@ func TestParseUsageErrors(t *testing.T) {
 		argv        []string
 		wantMessage string
 	}{
-		{name: "unknown command", argv: []string{"stars"}, wantMessage: "unknown command"},
-		{name: "repos missing id", argv: []string{"repos"}, wantMessage: "missing list id"},
 		{
 			name:        "list extra arg",
 			argv:        []string{"list", "extra"},
@@ -400,6 +533,11 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "repos extra arg",
 			argv:        []string{"repos", "id", "extra"},
 			wantMessage: "too many arguments",
+		},
+		{
+			name:        "version flag is not supported",
+			argv:        []string{"-V"},
+			wantMessage: "unknown flag",
 		},
 		{
 			name:        "conflicting output flags",

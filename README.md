@@ -32,6 +32,7 @@ gh star-lists                                      # human table (default)
 gh star-lists --sort name --desc --limit 10
 gh star-lists list --sort repos --desc             # sort by repo count
 gh star-lists repos "Game Dev"                     # by name (case-insensitive)
+gh star-lists repos                                # interactive list picker in a TTY
 gh star-lists repos UL_kwDOExample --sort stars --desc
 gh star-lists repos UL_kwDOExample --search "github cli"
 gh star-lists repos UL_kwDOExample --filter name:go --filter fork:false
@@ -42,8 +43,11 @@ gh star-lists repos --all --sort starred --desc    # all starred repos
 gh star-lists repos --unlisted --sort starred      # starred not in any list
 gh star-lists --host ghe.example.com               # use a specific gh-authenticated host
 gh star-lists create "Go Tools" --description "Useful Go repos"
+gh star-lists create                               # interactive create wizard in a TTY
 gh star-lists add cli/cli --to "CLI Tools"
+gh star-lists add cli/cli                          # interactive target list picker in a TTY
 gh star-lists move cli/cli --from Inbox --to "CLI Tools" --yes
+gh star-lists mv cli/cli --from Inbox --to "CLI Tools" --yes
 gh star-lists copy --from Inbox --to Archive
 gh star-lists delete Inbox --yes
 ```
@@ -70,8 +74,8 @@ Naxela/The_Lightmapper              797    Python  no    23d ago  https://github
 
 **Sort**
 
-- `--sort <KEY[:asc|desc]>` — comma-separated for multi-key; repeatable
-- `--desc` — descending order for sort keys without an explicit direction
+- `-s`, `--sort <KEY[:asc|desc]>` — comma-separated for multi-key; repeatable
+- `-d`, `--desc` — descending order for sort keys without an explicit direction
 
 | Context | Keys |
 |---------|------|
@@ -80,8 +84,8 @@ Naxela/The_Lightmapper              797    Python  no    23d ago  https://github
 
 **Filter**
 
-- `--filter <KEY:VALUE>` — repeatable; all keys except `name` are repos-only
-- `--search <QUERY>` — repos-only fuzzy ranking across repository name, description, and language
+- `-f`, `--filter <KEY:VALUE>` — repeatable; all keys except `name` are repos-only
+- `-S`, `--search <QUERY>` — repos-only fuzzy ranking across repository name, description, and language
 
 | Key | Accepts |
 |-----|---------|
@@ -105,17 +109,17 @@ Naxela/The_Lightmapper              797    Python  no    23d ago  https://github
 
 **Other**
 
-- `--limit <N>` — max results
+- `-l`, `--limit <N>` — max results
 - `--cache` — cache API responses 5 min; recommended with `--unlisted`
-- `--web` — open in browser
+- `-w`, `--web` — open in browser
 - `--all` — all starred repositories
 - `--unlisted` — starred repos not in any list
 - `--host <HOST>` — use a specific GitHub host from `gh auth`
 
 **Write commands**
 
-- `create <NAME> [--description <TEXT>] [--private]`
-- `edit <LIST> [--name <NAME>] [--description <TEXT>] [--private|--public]`
+- `create <NAME> [-D, --description <TEXT>] [--private]`; omit `<NAME>` in a TTY for prompts
+- `edit <LIST> [-n, --name <NAME>] [-D, --description <TEXT>] [--private|--public]`; omit edit flags in a TTY for prompts
 - `delete <LIST> --yes`
 - `add <OWNER/REPO> --to <LIST>`
 - `remove <OWNER/REPO> --from <LIST> --yes`
@@ -124,6 +128,8 @@ Naxela/The_Lightmapper              797    Python  no    23d ago  https://github
 - `merge --from <LIST> --to <LIST> --yes [--delete-source]`
 - `unstar <OWNER/REPO> --yes`
 - `--dry-run` previews write commands without mutating GitHub
+
+Aliases: `ls=list`, `rm=remove`, `mv=move`, `cp=copy`.
 
 GitHub currently limits accounts to 20 Star Lists; `create` surfaces GitHub's API rejection if the account is already at the limit.
 

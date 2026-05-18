@@ -568,26 +568,6 @@ func validateWriteSearchFlag(searchValue string) error {
 	return nil
 }
 
-func HostFromArgs(argv []string) string {
-	for i := 0; i < len(argv); i++ {
-		if argv[i] == "--host" && i+1 < len(argv) {
-			return strings.TrimSpace(argv[i+1])
-		}
-	}
-	return ""
-}
-
-func CacheTTLFromArgs(argv []string) time.Duration {
-	for i, arg := range argv {
-		if arg == "--cache-ttl" && i+1 < len(argv) {
-			if d, err := time.ParseDuration(argv[i+1]); err == nil {
-				return d
-			}
-		}
-	}
-	return 5 * time.Minute
-}
-
 func parseSortTerms(rawTerms []string, globalDesc bool) ([]string, []SortTerm, error) {
 	keys := make([]string, 0, len(rawTerms))
 	terms := make([]SortTerm, 0, len(rawTerms))

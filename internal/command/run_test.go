@@ -1983,8 +1983,8 @@ func TestRunPromptCancelledExitsCleanly(t *testing.T) {
 	if svc.updateRepoListCalls != 0 {
 		t.Fatalf("updateRepoListCalls = %d, want 0 (no mutation on cancel)", svc.updateRepoListCalls)
 	}
-	if !strings.Contains(stderr.String(), "cancelled") {
-		t.Fatalf("stderr = %q, want 'cancelled' message", stderr.String())
+	if !strings.Contains(stderr.String(), "No changes made") {
+		t.Fatalf("stderr = %q, want 'No changes made' message", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty on cancellation", stdout.String())
@@ -2042,6 +2042,51 @@ func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
 	}
 	if len(toChoices) != 2 {
 		t.Fatalf("to choices = %v, want 2 options (List B + List C)", toChoices)
+	}
+}
+
+func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
+			{Name: "Go Tools", ID: "UL_2", RepoCount: 1},
+			{Name: "Rust Libs", ID: "UL_3", RepoCount: 2},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var capturedChoices []string
+	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
+		capturedChoices = choices
+		return 0, nil
+	})
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"add", "cli/cli"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+
+	if len(capturedChoices) != 3 {
+		t.Fatalf("prompt choices = %v, want 3 choices", capturedChoices)
+	}
+
+	// "Go Tools" is duplicated, so labels should include IDs
+	for _, c := range capturedChoices[:2] {
+		if !strings.Contains(c, "UL_") {
+			t.Fatalf("duplicate name choice %q should contain list ID", c)
+		}
+	}
+
+	// "Rust Libs" is unique, label should be compact without ID
+	if strings.Contains(capturedChoices[2], "UL_") {
+		t.Fatalf("unique name choice %q should not contain list ID", capturedChoices[2])
 	}
 }
 
@@ -2117,6 +2162,36 @@ func TestRunPromptForCreateInputs(t *testing.T) {
 	}
 }
 
+func TestRunEditNoSelectionShowsNoChanges(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptMulti := command.PromptMultiSelectForTest(func(label string, defaults, choices []string) ([]int, error) {
+		return []int{}, nil
+	})
+	defer command.PromptMultiSelectForTest(prevPromptMulti)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"edit", "Go Tools"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.updateCalls != 0 {
+		t.Fatalf("updateCalls = %d, want 0 (no mutation on no selection)", svc.updateCalls)
+	}
+	if !strings.Contains(stderr.String(), "No changes made.") {
+		t.Fatalf("stderr = %q, want 'No changes made.'", stderr.String())
+	}
+}
+
 func TestRunPromptForEditFields(t *testing.T) {
 	svc := fixtureService()
 
@@ -2161,6 +2236,39 @@ func TestRunPromptForEditFields(t *testing.T) {
 	}
 	if svc.updatedInput.Description != "" {
 		t.Fatalf("updated description = %q, want untouched empty value", svc.updatedInput.Description)
+	}
+}
+
+func TestRunNoColorDisablesColor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+	}{
+		{name: "usage error no color", argv: []string{"list", "--bad", "--no-color"}},
+		{name: "repos usage no color", argv: []string{"repos", "--no-color"}},
+	}
+
+	noColorOptions := func(mode format.OutputMode) format.Options {
+		return format.Options{Mode: mode, Width: 120, Color: false}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr strings.Builder
+			code := command.RunWithOptions(context.Background(), tt.argv, &stdout, &stderr, fixtureService(), noColorOptions)
+
+			if code != command.ExitUsage {
+				t.Fatalf("exit = %d, want ExitUsage", code)
+			}
+			got := stderr.String()
+			if strings.Contains(got, "\x1b[") {
+				t.Fatalf("stderr with --no-color contains ANSI escape:\n%s", got)
+			}
+		})
 	}
 }
 

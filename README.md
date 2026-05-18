@@ -50,6 +50,17 @@ gh star-lists move cli/cli --from Inbox --to "CLI Tools" --yes
 gh star-lists mv cli/cli --from Inbox --to "CLI Tools" --yes
 gh star-lists copy --from Inbox --to Archive
 gh star-lists delete Inbox --yes
+
+## Interactive Use
+
+Omit optional inputs in a TTY for interactive prompts:
+
+```
+gh star-lists repos                  # pick a list interactively
+gh star-lists create                 # prompted: name → description → visibility
+gh star-lists edit <LIST>            # multi-select fields to update
+gh star-lists add <REPO>             # pick target list
+gh star-lists move <REPO>            # pick source and target lists
 ```
 
 ## Default Output

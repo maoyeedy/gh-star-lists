@@ -248,8 +248,8 @@ Usage:
   gh star-lists delete <LIST_ID_OR_NAME> [flags]
 
 Flags:
-  --yes       Skip confirmation prompt (required in non-interactive environments).
-  --dry-run   Print what would happen without making changes.
+  -y, --yes    Skip confirmation prompt (required in non-interactive environments).
+  --dry-run    Print what would happen without making changes.
 
 Safety: requires --yes, --dry-run, or interactive confirmation.
 
@@ -285,7 +285,7 @@ Usage:
 
 Flags:
   --from <LIST>   Source Star List (name or ID). Prompts when omitted in a TTY.
-  --yes           Skip confirmation prompt.
+  -y, --yes       Skip confirmation prompt.
   --dry-run       Print what would happen without making changes.
 
 Safety: requires --yes, --dry-run, or interactive confirmation.
@@ -306,7 +306,7 @@ Usage:
 Flags:
   --from <LIST>   Source Star List (name or ID). Prompts when omitted in a TTY.
   --to <LIST>     Target Star List (name or ID). Prompts when omitted in a TTY.
-  --yes           Skip confirmation prompt.
+  -y, --yes       Skip confirmation prompt.
   --dry-run       Print what would happen without making changes.
 
 Safety: requires --yes, --dry-run, or interactive confirmation.
@@ -328,7 +328,7 @@ Flags:
   --from <LIST>     Source Star List (name or ID). Prompts when omitted in a TTY.
   --to <LIST>       Target Star List (name or ID). Prompts when omitted in a TTY.
   --delete-source   Delete the source list after copying (use merge instead).
-  --yes             Skip confirmation prompt (required when using --delete-source).
+  -y, --yes         Skip confirmation prompt (required when using --delete-source).
   --dry-run         Print what would happen without making changes.
 
 Examples:
@@ -347,7 +347,7 @@ Usage:
 Flags:
   --from <LIST>   Source Star List to merge from (name or ID). Prompts when omitted in a TTY.
   --to <LIST>     Target Star List to merge into (name or ID). Prompts when omitted in a TTY.
-  --yes           Skip confirmation prompt.
+  -y, --yes       Skip confirmation prompt.
   --dry-run       Print what would happen without making changes.
 
 Safety: requires --yes, --dry-run, or interactive confirmation. Source list is deleted.
@@ -365,8 +365,8 @@ Usage:
   gh star-lists unstar <REPO> [flags]
 
 Flags:
-  --yes       Skip confirmation prompt.
-  --dry-run   Print what would happen without making changes.
+  -y, --yes    Skip confirmation prompt.
+  --dry-run    Print what would happen without making changes.
 
 Safety: requires --yes, --dry-run, or interactive confirmation.
 

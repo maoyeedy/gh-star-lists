@@ -185,7 +185,7 @@ func RunWithOptions(
 	if parsed.Action == ActionRepos {
 		if err := ensureReposListSelector(ctx, service, &parsed); err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "cancelled: no changes made\n")
+				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
 				return ExitSuccess
 			}
 			var ue *UsageError
@@ -266,7 +266,7 @@ func RunWithOptions(
 	case ActionCreate:
 		if err := ensureCreateInputs(&parsed); err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "cancelled: no changes made\n")
+				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
 				return ExitSuccess
 			}
 			return writeUsageFailure(stderr, err, diagnosticOptions)
@@ -287,7 +287,7 @@ func RunWithOptions(
 	case ActionEdit:
 		if err := ensureEditInputs(&parsed); err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "cancelled: no changes made\n")
+				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
 				return ExitSuccess
 			}
 			return writeUsageFailure(stderr, err, diagnosticOptions)
@@ -322,19 +322,23 @@ func RunWithOptions(
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
 		}
+		listName := rl.Name
+		if listName == "" {
+			listName = parsed.ListID
+		}
 		if parsed.DryRun {
-			_, _ = fmt.Fprintf(stdout, "Would delete Star List %q.\n", parsed.ListID)
+			_, _ = fmt.Fprintf(stdout, "Would delete Star List %q.\n", listName)
 			return ExitSuccess
 		}
 		if err := service.DeleteStarList(ctx, rl.ID); err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
 		}
-		_, _ = fmt.Fprintln(stdout, styleText(format.Yellow, outputOptions.Color, fmt.Sprintf("Deleted Star List %q.", parsed.ListID)))
+		_, _ = fmt.Fprintln(stdout, styleText(format.Yellow, outputOptions.Color, fmt.Sprintf("Deleted Star List %q.", listName)))
 	case ActionAdd, ActionRemove, ActionMove:
 		fetchedLists, err := ensureListSelectors(ctx, service, &parsed)
 		if err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "cancelled: no changes made\n")
+				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
 				return ExitSuccess
 			}
 			var ue *UsageError
@@ -353,7 +357,7 @@ func RunWithOptions(
 		fetchedLists, err := ensureListSelectors(ctx, service, &parsed)
 		if err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "cancelled: no changes made\n")
+				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
 				return ExitSuccess
 			}
 			var ue *UsageError
@@ -664,6 +668,9 @@ func copySummary(parsed Parsed, changed int64, total int, fromList, toList githu
 	if parsed.Action == ActionMerge {
 		verb = "Merged"
 	}
+	if total == 0 {
+		return fmt.Sprintf("Source list %q is empty, nothing to %s.", from, strings.ToLower(verb))
+	}
 	summary := fmt.Sprintf("%s %d of %d repositories from %q to %q.", verb, changed, total, from, to)
 	if parsed.DeleteSource || parsed.Action == ActionMerge {
 		summary += fmt.Sprintf(" Source %q deleted.", from)
@@ -774,23 +781,34 @@ func actionNeedsTo(a Action) bool {
 func missingSelectorError(a Action, needFrom, needTo bool) error {
 	switch {
 	case needFrom && needTo:
-		return usage("%s requires --from and --to", a)
+		return usage("%s requires --from and --to (or run in a TTY to choose interactively)", a)
 	case needFrom:
-		return usage("%s requires --from <LIST_ID_OR_NAME>", a)
+		return usage("%s requires --from <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)", a)
 	default:
-		return usage("%s requires --to <LIST_ID_OR_NAME>", a)
+		return usage("%s requires --to <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)", a)
 	}
 }
 
 func pickList(lists []githubapi.StarList, label, excludeID string) (string, error) {
 	var filtered []githubapi.StarList
 	var choices []string
+	nameCount := make(map[string]int)
+	for _, l := range lists {
+		if l.ID == excludeID {
+			continue
+		}
+		nameCount[l.Name]++
+	}
 	for _, l := range lists {
 		if l.ID == excludeID {
 			continue
 		}
 		filtered = append(filtered, l)
-		choices = append(choices, fmt.Sprintf("%s (%d repos)", l.Name, l.RepoCount))
+		if nameCount[l.Name] > 1 {
+			choices = append(choices, fmt.Sprintf("%s (%s, %d repos)", l.Name, l.ID, l.RepoCount))
+		} else {
+			choices = append(choices, fmt.Sprintf("%s (%d repos)", l.Name, l.RepoCount))
+		}
 	}
 	if len(choices) == 0 {
 		return "", fmt.Errorf("no eligible Star Lists to select")
@@ -847,7 +865,7 @@ func ensureReposListSelector(ctx context.Context, service githubapi.Service, par
 		return nil
 	}
 	if !canPrompt() {
-		return usage("repos requires <LIST_ID_OR_NAME>, --all, or --unlisted")
+		return usage("repos requires <LIST_ID_OR_NAME>, --all, or --unlisted (or run in a TTY to choose a list interactively)")
 	}
 	lists, err := service.ListStarLists(ctx)
 	if err != nil {
@@ -869,7 +887,7 @@ func ensureCreateInputs(parsed *Parsed) error {
 		return nil
 	}
 	if !canPrompt() {
-		return usage("create requires a list name")
+		return usage("create requires a list name (or run in a TTY to be prompted)")
 	}
 	name, err := promptRequiredInput("List name:", "")
 	if err != nil {
@@ -903,7 +921,7 @@ func ensureEditInputs(parsed *Parsed) error {
 		return nil
 	}
 	if !canPrompt() {
-		return usage("edit requires --name, --description, --private, or --public")
+		return usage("edit requires --name, --description, --private, or --public (or run in a TTY to be prompted)")
 	}
 	choices := []string{"Name", "Description", "Visibility"}
 	selected, err := promptMultiSelect("Select fields to update:", nil, choices)
@@ -911,7 +929,7 @@ func ensureEditInputs(parsed *Parsed) error {
 		return err
 	}
 	if len(selected) == 0 {
-		return usage("edit was not changed")
+		return ErrPromptCancelled
 	}
 	for _, idx := range selected {
 		if idx < 0 || idx >= len(choices) {
@@ -972,7 +990,7 @@ func requireYes(parsed Parsed, action string) error {
 		}
 		return usage("%s was not confirmed", action)
 	}
-	return usage("%s requires --yes or --dry-run", action)
+	return usage("%s requires --yes or --dry-run (or run interactively in a TTY)", action)
 }
 
 func writeUsageFailure(stderr io.Writer, err error, options ...format.Options) int {
@@ -998,8 +1016,9 @@ func pastTense(action Action) string {
 }
 
 type resolvedList struct {
-	ID  string
-	URL string
+	ID   string
+	URL  string
+	Name string
 }
 
 func resolveList(ctx context.Context, service githubapi.Service, raw string) (resolvedList, error) {
@@ -1012,7 +1031,7 @@ func resolveList(ctx context.Context, service githubapi.Service, raw string) (re
 	}
 	for _, l := range lists {
 		if strings.EqualFold(l.Name, raw) || l.ID == raw {
-			return resolvedList{ID: l.ID, URL: l.URL}, nil
+			return resolvedList{ID: l.ID, URL: l.URL, Name: l.Name}, nil
 		}
 	}
 	return resolvedList{ID: raw}, nil

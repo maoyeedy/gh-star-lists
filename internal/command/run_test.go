@@ -1363,6 +1363,297 @@ func TestRunFilterAndSortByLanguage(t *testing.T) {
 	}
 }
 
+func TestRunWebErrors(t *testing.T) {
+	t.Run("list API error", func(t *testing.T) {
+		svc := fixtureService()
+		svc.listErr = errors.New("GitHub GraphQL request failed: forbidden")
+		orig := command.OpenBrowserForTest(func(string) error { return nil })
+		defer command.OpenBrowserForTest(orig)
+
+		var stdout, stderr strings.Builder
+		code := runCommand(context.Background(), []string{"repos", "Go Tools", "--web"}, &stdout, &stderr, svc)
+
+		if code != command.ExitFailure {
+			t.Fatalf("exit = %d, want ExitFailure; stderr=%q", code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "GitHub GraphQL request failed") {
+			t.Fatalf("stderr = %q, want GraphQL error", stderr.String())
+		}
+	})
+
+	t.Run("open browser error", func(t *testing.T) {
+		svc := fixtureService()
+		orig := command.OpenBrowserForTest(func(string) error {
+			return errors.New("browse failed")
+		})
+		defer command.OpenBrowserForTest(orig)
+
+		var stdout, stderr strings.Builder
+		code := runCommand(context.Background(), []string{"repos", "Go Tools", "--web"}, &stdout, &stderr, svc)
+
+		if code != command.ExitFailure {
+			t.Fatalf("exit = %d, want ExitFailure; stderr=%q", code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "failed to open browser") {
+			t.Fatalf("stderr = %q, want browser failure diagnostic", stderr.String())
+		}
+	})
+}
+
+func TestRunAllStarredRepos(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	svc.starred = []githubapi.Repository{
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+		},
+	}
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"repos", "--all", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d, want 1", svc.starredCalls)
+	}
+	if svc.reposCalls != 0 {
+		t.Fatalf("reposCalls = %d, want 0 (--all skips list repos)", svc.reposCalls)
+	}
+	if !strings.Contains(stdout.String(), "cli/cli") {
+		t.Fatalf("stdout = %q, want cli/cli", stdout.String())
+	}
+}
+
+func TestRunJQ(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		argv    []string
+		wantOut string
+	}{
+		{
+			name:    "list name field",
+			argv:    []string{"list", "--jq", ".[].name"},
+			wantOut: "Go Tools\n",
+		},
+		{
+			name:    "repos nameWithOwner field",
+			argv:    []string{"repos", "UL_1", "--jq", ".[].nameWithOwner"},
+			wantOut: "cli/cli\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := fixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			if got := stdout.String(); got != tt.wantOut {
+				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestRunOutputFileError(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	outPath := t.TempDir() + "/missing/out.txt"
+	var stderr strings.Builder
+
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath},
+		io.Discard,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitFailure {
+		t.Fatalf("exit = %d, want ExitFailure", code)
+	}
+	if !strings.Contains(stderr.String(), "failed to open output file") {
+		t.Fatalf("stderr = %q, want output file error diagnostic", stderr.String())
+	}
+}
+
+func TestRunDryRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		mkSvc    func() *fakeService
+		argv     []string
+		wantOut  string
+		wantOut2 string
+		checkFn  func(*testing.T, *fakeService)
+	}{
+		{
+			name:    "create",
+			mkSvc:   fixtureService,
+			argv:    []string{"create", "newlist", "--dry-run"},
+			wantOut: `Would create Star List "newlist".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.createCalls != 0 {
+					t.Fatalf("createCalls = %d, want 0", svc.createCalls)
+				}
+			},
+		},
+		{
+			name:    "edit",
+			mkSvc:   fixtureService,
+			argv:    []string{"edit", "Go Tools", "--name", "x", "--dry-run"},
+			wantOut: `Would update Star List "Go Tools".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateCalls != 0 {
+					t.Fatalf("updateCalls = %d, want 0", svc.updateCalls)
+				}
+			},
+		},
+		{
+			name:    "delete",
+			mkSvc:   fixtureService,
+			argv:    []string{"delete", "Go Tools", "--dry-run"},
+			wantOut: `Would delete Star List "Go Tools".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.deleteCalls != 0 {
+					t.Fatalf("deleteCalls = %d, want 0", svc.deleteCalls)
+				}
+			},
+		},
+		{
+			name:    "add",
+			mkSvc:   fixtureService,
+			argv:    []string{"add", "cli/cli", "--to", "Go Tools", "--dry-run"},
+			wantOut: "Would add cli/cli.",
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:    "remove",
+			mkSvc:   fixtureService,
+			argv:    []string{"remove", "cli/cli", "--from", "Go Tools", "--dry-run"},
+			wantOut: "Would remove cli/cli.",
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:    "move",
+			mkSvc:   sortableFixtureService,
+			argv:    []string{"move", "cli/cli", "--from", "zeta", "--to", "Alpha", "--dry-run"},
+			wantOut: "Would move cli/cli.",
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:    "copy",
+			mkSvc:   sortableFixtureService,
+			argv:    []string{"copy", "--from", "zeta", "--to", "Alpha", "--dry-run"},
+			wantOut: `Would copy 3 repositories from "zeta" to "Alpha".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:     "merge",
+			mkSvc:    sortableFixtureService,
+			argv:     []string{"merge", "--from", "zeta", "--to", "Alpha", "--dry-run"},
+			wantOut:  `Would copy 3 repositories from "zeta" to "Alpha".`,
+			wantOut2: `Would delete source Star List "zeta".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.deleteCalls != 0 {
+					t.Fatalf("deleteCalls = %d, want 0", svc.deleteCalls)
+				}
+			},
+		},
+		{
+			name:    "unstar",
+			mkSvc:   fixtureService,
+			argv:    []string{"unstar", "cli/cli", "--dry-run"},
+			wantOut: "Would unstar cli/cli.",
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.removeStarCalls != 0 {
+					t.Fatalf("removeStarCalls = %d, want 0", svc.removeStarCalls)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := tt.mkSvc()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			got := stdout.String()
+			if !strings.Contains(got, tt.wantOut) {
+				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
+			}
+			if tt.wantOut2 != "" && !strings.Contains(got, tt.wantOut2) {
+				t.Fatalf("stdout = %q, want %q", got, tt.wantOut2)
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, svc)
+			}
+		})
+	}
+}
+
+func TestRunUnlistedEmpty(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	svc.starred = []githubapi.Repository{
+		{NameWithOwner: "cli/cli", URL: "https://github.com/cli/cli"},
+	}
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"repos", "--unlisted", "--tsv"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d, want 1", svc.starredCalls)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty (all starred repos already in lists)", stdout.String())
+	}
+}
+
 func TestRunWriteFailuresReturnFailure(t *testing.T) {
 	t.Parallel()
 

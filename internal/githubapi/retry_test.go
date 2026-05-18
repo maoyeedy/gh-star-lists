@@ -15,7 +15,12 @@ type fakeRetryExecutor struct {
 	calls     int
 }
 
-func (f *fakeRetryExecutor) DoWithContext(_ context.Context, _ string, _ map[string]any, _ any) error {
+func (f *fakeRetryExecutor) DoWithContext(
+	_ context.Context,
+	_ string,
+	_ map[string]any,
+	_ any,
+) error {
 	idx := f.calls
 	if idx >= len(f.responses) {
 		idx = len(f.responses) - 1
@@ -156,7 +161,9 @@ func TestIsTransientGraphQLError(t *testing.T) {
 		},
 		{
 			"GraphQLError rate limit",
-			&api.GraphQLError{Errors: []api.GraphQLErrorItem{{Message: "secondary rate limit exceeded"}}},
+			&api.GraphQLError{
+				Errors: []api.GraphQLErrorItem{{Message: "secondary rate limit exceeded"}},
+			},
 			true,
 		},
 		{

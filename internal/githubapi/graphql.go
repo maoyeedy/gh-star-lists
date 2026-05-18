@@ -198,7 +198,10 @@ func (s *graphQLService) ListStarLists(
 		}
 
 		var result listStarListsResponse
-		variables := map[string]any{"endCursor": endCursor, "first": pageFirst(s.pageSize, limit, len(lists))}
+		variables := map[string]any{
+			"endCursor": endCursor,
+			"first":     pageFirst(s.pageSize, limit, len(lists)),
+		}
 		if err := s.client.DoWithContext(ctx, listStarListsQuery, variables, &result); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}
@@ -249,7 +252,12 @@ func (s *graphQLService) ListRepositories(
 			"first":      pageFirst(s.pageSize, limit, len(repositories)),
 			"withTopics": withTopics,
 		}
-		if err := s.client.DoWithContext(ctx, listRepositoriesQuery, variables, &result); err != nil {
+		if err := s.client.DoWithContext(
+			ctx,
+			listRepositoriesQuery,
+			variables,
+			&result,
+		); err != nil {
 			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 		}
 		if result.Node == nil || result.Node.Typename != "UserList" || result.Node.Items == nil {
@@ -571,7 +579,12 @@ func (s *graphQLService) GetRepositoryMemberships(
 	}
 	var result repositoryMembershipsResponse
 	variables := map[string]any{"owner": owner, "name": name}
-	if err := s.client.DoWithContext(ctx, getRepositoryWithListsQuery, variables, &result); err != nil {
+	if err := s.client.DoWithContext(
+		ctx,
+		getRepositoryWithListsQuery,
+		variables,
+		&result,
+	); err != nil {
 		return "", nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
 	}
 	if result.Repository == nil || result.Repository.ID == "" {
@@ -587,7 +600,10 @@ func (s *graphQLService) GetRepositoryMemberships(
 	return result.Repository.ID, listIDs, nil
 }
 
-func (s *graphQLService) CreateStarList(ctx context.Context, input StarListInput) (StarList, error) {
+func (s *graphQLService) CreateStarList(
+	ctx context.Context,
+	input StarListInput,
+) (StarList, error) {
 	if err := ctx.Err(); err != nil {
 		return StarList{}, err
 	}

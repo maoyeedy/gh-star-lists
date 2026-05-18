@@ -60,7 +60,10 @@ func NewCacheServiceWithOptions(inner Service, opts CacheOptions) Service {
 	return svc
 }
 
-func (s *cacheService) ListStarLists(ctx context.Context, options ...ListOptions) ([]StarList, error) {
+func (s *cacheService) ListStarLists(
+	ctx context.Context,
+	options ...ListOptions,
+) ([]StarList, error) {
 	limit := limitFromOptions(options)
 	s.mu.RLock()
 	if s.listsEntry != nil && time.Now().Before(s.listsEntry.expiry) {
@@ -141,7 +144,10 @@ func (s *cacheService) ListStarredRepositories(
 	return applyLimit(repos, limit), nil
 }
 
-func (s *cacheService) GetRepository(ctx context.Context, nameWithOwner string) (Repository, error) {
+func (s *cacheService) GetRepository(
+	ctx context.Context,
+	nameWithOwner string,
+) (Repository, error) {
 	s.mu.RLock()
 	if entry, ok := s.repoEntry[nameWithOwner]; ok && time.Now().Before(entry.expiry) {
 		data := entry.data
@@ -180,7 +186,10 @@ func (s *cacheService) CreateStarList(ctx context.Context, input StarListInput) 
 	return list, nil
 }
 
-func (s *cacheService) UpdateStarList(ctx context.Context, input UpdateStarListInput) (StarList, error) {
+func (s *cacheService) UpdateStarList(
+	ctx context.Context,
+	input UpdateStarListInput,
+) (StarList, error) {
 	list, err := s.inner.UpdateStarList(ctx, input)
 	if err != nil {
 		return StarList{}, err

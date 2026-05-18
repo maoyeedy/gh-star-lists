@@ -42,7 +42,13 @@ func searchRepositories(repos []githubapi.Repository, query string) []githubapi.
 		if matches[i].repo.StargazerCount != matches[j].repo.StargazerCount {
 			return matches[i].repo.StargazerCount > matches[j].repo.StargazerCount
 		}
-		cmp, _ := compareRepositories(matches[i].repo, matches[j].repo, []string{SortKeyName}, nil, false)
+		cmp, _ := compareRepositories(
+			matches[i].repo,
+			matches[j].repo,
+			[]string{SortKeyName},
+			nil,
+			false,
+		)
 		return cmp < 0
 	})
 
@@ -53,7 +59,13 @@ func searchRepositories(repos []githubapi.Repository, query string) []githubapi.
 	return out
 }
 
-func repositorySearchScore(repo githubapi.Repository, terms []string, phrase string, tokenCache map[string][]string, editPrev, editCurr *[]int) int {
+func repositorySearchScore(
+	repo githubapi.Repository,
+	terms []string,
+	phrase string,
+	tokenCache map[string][]string,
+	editPrev, editCurr *[]int,
+) int {
 	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
 	rawFields := []searchField{
 		{text: name, weight: 120},
@@ -129,7 +141,13 @@ func (f preparedField) scoreTerm(term string, editPrev, editCurr *[]int) int {
 			best = max(best, f.weight+20)
 		}
 
-		if distance, ok := boundedEditDistance(term, token, maxSearchDistance(term), editPrev, editCurr); ok {
+		if distance, ok := boundedEditDistance(
+			term,
+			token,
+			maxSearchDistance(term),
+			editPrev,
+			editCurr,
+		); ok {
 			best = max(best, f.weight+35-(distance*10))
 		}
 	}

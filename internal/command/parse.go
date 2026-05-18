@@ -371,7 +371,12 @@ func Parse(argv []string) (Parsed, error) {
 		if len(positionals) > 0 {
 			topic = canonicalCommand(positionals[0])
 		}
-		return Parsed{Action: ActionHelp, HelpTopic: topic, FullHelp: fullFlag, Mode: format.OutputHuman}, nil
+		return Parsed{
+			Action:    ActionHelp,
+			HelpTopic: topic,
+			FullHelp:  fullFlag,
+			Mode:      format.OutputHuman,
+		}, nil
 	}
 
 	if len(positionals) > 0 {
@@ -388,9 +393,6 @@ func Parse(argv []string) (Parsed, error) {
 				)
 			}
 		case "repos":
-			if len(positionals) == 1 {
-				// Run prompts for the list in a TTY. Non-TTY callers get a usage error there.
-			}
 			if allFlag && unlistedFlag {
 				return Parsed{}, usage("cannot combine --all and --unlisted")
 			}
@@ -445,7 +447,14 @@ func Parse(argv []string) (Parsed, error) {
 			if len(positionals) > 2 {
 				return Parsed{}, usage("create accepts at most one list name")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
@@ -455,51 +464,122 @@ func Parse(argv []string) (Parsed, error) {
 			if len(positionals) == 2 {
 				name = positionals[1]
 			}
-			return Parsed{Action: ActionCreate, Name: name, Description: descriptionValue, DescriptionSet: descriptionSet, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:         ActionCreate,
+				Name:           name,
+				Description:    descriptionValue,
+				DescriptionSet: descriptionSet,
+				Private:        privateValue,
+				PrivateSet:     privateSet,
+				Mode:           mode,
+				DryRun:         dryRunFlag,
+				Host:           hostValue,
+			}, nil
 		case "edit":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("edit requires exactly one list id or name")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionEdit, ListID: positionals[1], Name: nameValue, Description: descriptionValue, DescriptionSet: descriptionSet, Private: privateValue, PrivateSet: privateSet, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:         ActionEdit,
+				ListID:         positionals[1],
+				Name:           nameValue,
+				Description:    descriptionValue,
+				DescriptionSet: descriptionSet,
+				Private:        privateValue,
+				PrivateSet:     privateSet,
+				Mode:           mode,
+				DryRun:         dryRunFlag,
+				Host:           hostValue,
+			}, nil
 		case "delete":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("delete requires exactly one list id or name")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionDelete, ListID: positionals[1], Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action: ActionDelete,
+				ListID: positionals[1],
+				Mode:   mode,
+				Yes:    yesFlag,
+				DryRun: dryRunFlag,
+				Host:   hostValue,
+			}, nil
 		case "add":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("add requires exactly one repository owner/name")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionAdd, RepoName: positionals[1], ToListID: toValue, Mode: mode, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:   ActionAdd,
+				RepoName: positionals[1],
+				ToListID: toValue,
+				Mode:     mode,
+				DryRun:   dryRunFlag,
+				Host:     hostValue,
+			}, nil
 		case "remove":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("remove requires exactly one repository owner/name")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionRemove, RepoName: positionals[1], FromListID: fromValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:     ActionRemove,
+				RepoName:   positionals[1],
+				FromListID: fromValue,
+				Mode:       mode,
+				Yes:        yesFlag,
+				DryRun:     dryRunFlag,
+				Host:       hostValue,
+			}, nil
 		case "move":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("move requires exactly one repository owner/name")
@@ -508,13 +588,29 @@ func Parse(argv []string) (Parsed, error) {
 				strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
 				return Parsed{}, usage("move requires distinct --from and --to")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionMove, RepoName: positionals[1], FromListID: fromValue, ToListID: toValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:     ActionMove,
+				RepoName:   positionals[1],
+				FromListID: fromValue,
+				ToListID:   toValue,
+				Mode:       mode,
+				Yes:        yesFlag,
+				DryRun:     dryRunFlag,
+				Host:       hostValue,
+			}, nil
 		case "copy", "merge":
 			if len(positionals) != 1 {
 				return Parsed{}, usage("%s does not accept positional arguments", cmd)
@@ -523,7 +619,14 @@ func Parse(argv []string) (Parsed, error) {
 				strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
 				return Parsed{}, usage("%s requires distinct --from and --to", cmd)
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
@@ -533,18 +636,41 @@ func Parse(argv []string) (Parsed, error) {
 			if cmd == "merge" {
 				action = ActionMerge
 			}
-			return Parsed{Action: action, FromListID: fromValue, ToListID: toValue, Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, DeleteSource: deleteSourceFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:       action,
+				FromListID:   fromValue,
+				ToListID:     toValue,
+				Mode:         mode,
+				Yes:          yesFlag,
+				DryRun:       dryRunFlag,
+				DeleteSource: deleteSourceFlag,
+				Host:         hostValue,
+			}, nil
 		case "unstar":
 			if len(positionals) != 2 {
 				return Parsed{}, usage("unstar requires exactly one repository owner/name")
 			}
-			if err := validateWriteOutputFlags(jsonFlag, tsvFlag, plainFlag, templateStr, outputPath, jqValue); err != nil {
+			if err := validateWriteOutputFlags(
+				jsonFlag,
+				tsvFlag,
+				plainFlag,
+				templateStr,
+				outputPath,
+				jqValue,
+			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			return Parsed{Action: ActionUnstar, RepoName: positionals[1], Mode: mode, Yes: yesFlag, DryRun: dryRunFlag, Host: hostValue}, nil
+			return Parsed{
+				Action:   ActionUnstar,
+				RepoName: positionals[1],
+				Mode:     mode,
+				Yes:      yesFlag,
+				DryRun:   dryRunFlag,
+				Host:     hostValue,
+			}, nil
 		default:
 			return Parsed{}, &UnknownCommandError{Command: positionals[0]}
 		}
@@ -628,7 +754,11 @@ func parseSortTerms(rawTerms []string, globalDesc bool) ([]string, []SortTerm, e
 			case "desc":
 				desc = true
 			default:
-				return nil, nil, usage("invalid sort direction %q for %q: expected asc or desc", direction, key)
+				return nil, nil, usage(
+					"invalid sort direction %q for %q: expected asc or desc",
+					direction,
+					key,
+				)
 			}
 		}
 		keys = append(keys, key)
@@ -668,7 +798,9 @@ func validateFilters(action Action, filters []Filter) error {
 		switch f.Key {
 		case FilterKeyTopic:
 			if strings.Contains(f.Value, ",") {
-				return usage("invalid filter value for topic: only one topic per --filter; repeat the flag for AND semantics")
+				return usage(
+					"invalid filter value for topic: only one topic per --filter; repeat the flag for AND semantics",
+				)
 			}
 		case FilterKeyName, FilterKeyLanguage, FilterKeyLicense:
 		case FilterKeyFork, FilterKeyArchived:
@@ -681,13 +813,20 @@ func validateFilters(action Action, filters []Filter) error {
 		case FilterKeyMinStars, FilterKeyMaxStars:
 			n, err := strconv.Atoi(f.Value)
 			if err != nil {
-				return usage("invalid filter value for %s: expected integer, got %q", f.Key, f.Value)
+				return usage(
+					"invalid filter value for %s: expected integer, got %q",
+					f.Key,
+					f.Value,
+				)
 			}
 			if n < 0 {
 				filters[i].Value = "0"
 			}
 		default:
-			return usage("unknown filter key %q; supported keys: name, fork, language, archived, license, min-stars, max-stars, topic", f.Key)
+			return usage(
+				"unknown filter key %q; supported keys: name, fork, language, archived, license, min-stars, max-stars, topic",
+				f.Key,
+			)
 		}
 	}
 	return nil

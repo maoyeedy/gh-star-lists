@@ -27,7 +27,12 @@ func newRetryDoer(inner graphQLDoer, maxAttempts int, baseDelay time.Duration) *
 	}
 }
 
-func (r *retryDoer) DoWithContext(ctx context.Context, query string, variables map[string]any, response any) error {
+func (r *retryDoer) DoWithContext(
+	ctx context.Context,
+	query string,
+	variables map[string]any,
+	response any,
+) error {
 	var lastErr error
 	for attempt := 0; attempt < r.maxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {

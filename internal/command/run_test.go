@@ -52,7 +52,10 @@ type fakeService struct {
 	removeStarErr       error
 }
 
-func (f *fakeService) ListStarLists(context.Context, ...githubapi.ListOptions) ([]githubapi.StarList, error) {
+func (f *fakeService) ListStarLists(
+	context.Context,
+	...githubapi.ListOptions,
+) ([]githubapi.StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
@@ -78,7 +81,10 @@ func (f *fakeService) ListStarredRepositories(
 	return f.starred, f.starredErr
 }
 
-func (f *fakeService) GetRepository(_ context.Context, nameWithOwner string) (githubapi.Repository, error) {
+func (f *fakeService) GetRepository(
+	_ context.Context,
+	nameWithOwner string,
+) (githubapi.Repository, error) {
 	f.getRepoCalls++
 	if f.getRepoErr != nil {
 		return githubapi.Repository{}, f.getRepoErr
@@ -115,7 +121,10 @@ func (f *fakeService) GetRepositoryMemberships(
 	return repoID, listIDs, nil
 }
 
-func (f *fakeService) CreateStarList(_ context.Context, input githubapi.StarListInput) (githubapi.StarList, error) {
+func (f *fakeService) CreateStarList(
+	_ context.Context,
+	input githubapi.StarListInput,
+) (githubapi.StarList, error) {
 	f.createCalls++
 	f.createdInput = input
 	if f.createErr != nil {
@@ -127,7 +136,10 @@ func (f *fakeService) CreateStarList(_ context.Context, input githubapi.StarList
 	return githubapi.StarList{Name: input.Name, ID: "UL_new"}, nil
 }
 
-func (f *fakeService) UpdateStarList(_ context.Context, input githubapi.UpdateStarListInput) (githubapi.StarList, error) {
+func (f *fakeService) UpdateStarList(
+	_ context.Context,
+	input githubapi.UpdateStarListInput,
+) (githubapi.StarList, error) {
 	f.updateCalls++
 	f.updatedInput = input
 	if f.updateErr != nil {
@@ -145,7 +157,11 @@ func (f *fakeService) DeleteStarList(_ context.Context, listID string) error {
 	return f.deleteErr
 }
 
-func (f *fakeService) UpdateRepositoryLists(_ context.Context, repoID string, listIDs []string) error {
+func (f *fakeService) UpdateRepositoryLists(
+	_ context.Context,
+	repoID string,
+	listIDs []string,
+) error {
 	f.updateRepoListCalls++
 	f.updatedRepoID = repoID
 	f.updatedListIDs = append([]string(nil), listIDs...)
@@ -429,6 +445,7 @@ func TestRunWritesListOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			svc := fixtureService()
 			var stdout, stderr strings.Builder
 
@@ -967,7 +984,8 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 				t.Fatalf("usage stdout = %q, want empty", stdout.String())
 			}
 			gotErr := stderr.String()
-			if !strings.Contains(gotErr, tt.wantErr) || (tt.wantUsage && !strings.Contains(gotErr, "Usage:")) {
+			if !strings.Contains(gotErr, tt.wantErr) ||
+				(tt.wantUsage && !strings.Contains(gotErr, "Usage:")) {
 				t.Fatalf("usage stderr missing diagnostic/help:\n%s", gotErr)
 			}
 			if svc.listCalls != 0 || svc.reposCalls != 0 {
@@ -1378,7 +1396,13 @@ func TestRunWebErrors(t *testing.T) {
 		defer command.OpenBrowserForTest(orig)
 
 		var stdout, stderr strings.Builder
-		code := runCommand(context.Background(), []string{"repos", "Go Tools", "--web"}, &stdout, &stderr, svc)
+		code := runCommand(
+			context.Background(),
+			[]string{"repos", "Go Tools", "--web"},
+			&stdout,
+			&stderr,
+			svc,
+		)
 
 		if code != command.ExitFailure {
 			t.Fatalf("exit = %d, want ExitFailure; stderr=%q", code, stderr.String())
@@ -1396,7 +1420,13 @@ func TestRunWebErrors(t *testing.T) {
 		defer command.OpenBrowserForTest(orig)
 
 		var stdout, stderr strings.Builder
-		code := runCommand(context.Background(), []string{"repos", "Go Tools", "--web"}, &stdout, &stderr, svc)
+		code := runCommand(
+			context.Background(),
+			[]string{"repos", "Go Tools", "--web"},
+			&stdout,
+			&stderr,
+			svc,
+		)
 
 		if code != command.ExitFailure {
 			t.Fatalf("exit = %d, want ExitFailure; stderr=%q", code, stderr.String())
@@ -1422,7 +1452,13 @@ func TestRunAllStarredRepos(t *testing.T) {
 	}
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"repos", "--all", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--all", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
@@ -1715,7 +1751,13 @@ func TestRunUnlistedEmpty(t *testing.T) {
 	}
 	var stdout, stderr strings.Builder
 
-	code := runCommand(context.Background(), []string{"repos", "--unlisted", "--tsv"}, &stdout, &stderr, svc)
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--unlisted", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
 
 	if code != command.ExitSuccess {
 		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
@@ -1937,11 +1979,13 @@ func TestRunPromptForListOnAdd(t *testing.T) {
 	defer command.CanPromptForTest(prevCanPrompt)
 	var promptedLabel string
 	var promptedChoices []string
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		promptedLabel = label
-		promptedChoices = choices
-		return 1, nil // pick "Rust Libs"
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			promptedLabel = label
+			promptedChoices = choices
+			return 1, nil // pick "Rust Libs"
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	var stdout, stderr strings.Builder
@@ -1969,9 +2013,11 @@ func TestRunPromptCancelledExitsCleanly(t *testing.T) {
 
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		return 0, command.ErrPromptCancelled
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			return 0, command.ErrPromptCancelled
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	var stdout, stderr strings.Builder
@@ -1981,7 +2027,10 @@ func TestRunPromptCancelledExitsCleanly(t *testing.T) {
 		t.Fatalf("exit = %d, want ExitSuccess on cancellation; stderr=%q", code, stderr.String())
 	}
 	if svc.updateRepoListCalls != 0 {
-		t.Fatalf("updateRepoListCalls = %d, want 0 (no mutation on cancel)", svc.updateRepoListCalls)
+		t.Fatalf(
+			"updateRepoListCalls = %d, want 0 (no mutation on cancel)",
+			svc.updateRepoListCalls,
+		)
 	}
 	if !strings.Contains(stderr.String(), "No changes made") {
 		t.Fatalf("stderr = %q, want 'No changes made' message", stderr.String())
@@ -2008,16 +2057,18 @@ func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
 
 	var toChoices []string
 	callCount := 0
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		callCount++
-		if callCount == 1 {
-			// --from prompt: return index 0 = "List A (UL_1)"
-			return 0, nil
-		}
-		// --to prompt: choices should not include List A
-		toChoices = choices
-		return 0, nil // pick "List B"
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			callCount++
+			if callCount == 1 {
+				// --from prompt: return index 0 = "List A (UL_1)"
+				return 0, nil
+			}
+			// --to prompt: choices should not include List A
+			toChoices = choices
+			return 0, nil // pick "List B"
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	prevConfirmAction := command.ConfirmActionForTest(func(prompt string) (bool, error) {
@@ -2060,10 +2111,12 @@ func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
 	defer command.CanPromptForTest(prevCanPrompt)
 
 	var capturedChoices []string
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		capturedChoices = choices
-		return 0, nil
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			capturedChoices = choices
+			return 0, nil
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	var stdout, stderr strings.Builder
@@ -2103,12 +2156,14 @@ func TestRunPromptForReposList(t *testing.T) {
 
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		if !strings.Contains(label, "Star List") {
-			t.Fatalf("prompt label = %q, want Star List", label)
-		}
-		return 1, nil
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			if !strings.Contains(label, "Star List") {
+				t.Fatalf("prompt label = %q, want Star List", label)
+			}
+			return 1, nil
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	var stdout, stderr strings.Builder
@@ -2140,12 +2195,14 @@ func TestRunPromptForCreateInputs(t *testing.T) {
 		return value, nil
 	})
 	defer command.PromptInputForTest(prevPromptInput)
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		if label != "Visibility:" {
-			t.Fatalf("visibility prompt label = %q", label)
-		}
-		return 1, nil
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			if label != "Visibility:" {
+				t.Fatalf("visibility prompt label = %q", label)
+			}
+			return 1, nil
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	var stdout, stderr strings.Builder
@@ -2157,7 +2214,9 @@ func TestRunPromptForCreateInputs(t *testing.T) {
 	if svc.createCalls != 1 {
 		t.Fatalf("createCalls = %d, want 1", svc.createCalls)
 	}
-	if svc.createdInput.Name != "New List" || svc.createdInput.Description != "Prompted description" || !svc.createdInput.Private {
+	if svc.createdInput.Name != "New List" ||
+		svc.createdInput.Description != "Prompted description" ||
+		!svc.createdInput.Private {
 		t.Fatalf("createdInput = %+v, want prompted private list", svc.createdInput)
 	}
 }
@@ -2173,9 +2232,11 @@ func TestRunEditNoSelectionShowsNoChanges(t *testing.T) {
 
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
-	prevPromptMulti := command.PromptMultiSelectForTest(func(label string, defaults, choices []string) ([]int, error) {
-		return []int{}, nil
-	})
+	prevPromptMulti := command.PromptMultiSelectForTest(
+		func(label string, defaults, choices []string) ([]int, error) {
+			return []int{}, nil
+		},
+	)
 	defer command.PromptMultiSelectForTest(prevPromptMulti)
 
 	var stdout, stderr strings.Builder
@@ -2197,12 +2258,14 @@ func TestRunPromptForEditFields(t *testing.T) {
 
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
-	prevPromptMulti := command.PromptMultiSelectForTest(func(label string, defaults, choices []string) ([]int, error) {
-		if !strings.Contains(label, "fields") {
-			t.Fatalf("multi prompt label = %q, want fields", label)
-		}
-		return []int{0, 2}, nil
-	})
+	prevPromptMulti := command.PromptMultiSelectForTest(
+		func(label string, defaults, choices []string) ([]int, error) {
+			if !strings.Contains(label, "fields") {
+				t.Fatalf("multi prompt label = %q, want fields", label)
+			}
+			return []int{0, 2}, nil
+		},
+	)
 	defer command.PromptMultiSelectForTest(prevPromptMulti)
 	prevPromptInput := command.PromptInputForTest(func(label, defaultValue string) (string, error) {
 		if label != "New name:" {
@@ -2211,12 +2274,14 @@ func TestRunPromptForEditFields(t *testing.T) {
 		return "Renamed", nil
 	})
 	defer command.PromptInputForTest(prevPromptInput)
-	prevPromptForList := command.PromptForListForTest(func(label string, choices []string) (int, error) {
-		if label != "Visibility:" {
-			t.Fatalf("visibility prompt label = %q", label)
-		}
-		return 0, nil
-	})
+	prevPromptForList := command.PromptForListForTest(
+		func(label string, choices []string) (int, error) {
+			if label != "Visibility:" {
+				t.Fatalf("visibility prompt label = %q", label)
+			}
+			return 0, nil
+		},
+	)
 	defer command.PromptForListForTest(prevPromptForList)
 
 	var stdout, stderr strings.Builder
@@ -2235,7 +2300,10 @@ func TestRunPromptForEditFields(t *testing.T) {
 		t.Fatalf("updated private = %v, want false pointer", svc.updatedInput.Private)
 	}
 	if svc.updatedInput.Description != "" {
-		t.Fatalf("updated description = %q, want untouched empty value", svc.updatedInput.Description)
+		t.Fatalf(
+			"updated description = %q, want untouched empty value",
+			svc.updatedInput.Description,
+		)
 	}
 }
 
@@ -2259,7 +2327,14 @@ func TestRunNoColorDisablesColor(t *testing.T) {
 			t.Parallel()
 
 			var stdout, stderr strings.Builder
-			code := command.RunWithOptions(context.Background(), tt.argv, &stdout, &stderr, fixtureService(), noColorOptions)
+			code := command.RunWithOptions(
+				context.Background(),
+				tt.argv,
+				&stdout,
+				&stderr,
+				fixtureService(),
+				noColorOptions,
+			)
 
 			if code != command.ExitUsage {
 				t.Fatalf("exit = %d, want ExitUsage", code)
@@ -2278,7 +2353,14 @@ func TestRunColorizesHumanDiagnostics(t *testing.T) {
 	}
 	var stdout, stderr strings.Builder
 
-	code := command.RunWithOptions(context.Background(), []string{"list", "--bad"}, &stdout, &stderr, fixtureService(), colorOptions)
+	code := command.RunWithOptions(
+		context.Background(),
+		[]string{"list", "--bad"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+		colorOptions,
+	)
 
 	if code != command.ExitUsage {
 		t.Fatalf("exit = %d, want ExitUsage", code)

@@ -32,7 +32,12 @@ func TestSearchRepositories(t *testing.T) {
 
 	gin := makeRepo("gin-gonic/gin", "HTTP web framework written in Go", "Go", 70000)
 	echo := makeRepo("labstack/echo", "High performance HTTP framework", "Go", 28000)
-	react := makeRepo("facebook/react", "A declarative library for building user interfaces", "JavaScript", 220000)
+	react := makeRepo(
+		"facebook/react",
+		"A declarative library for building user interfaces",
+		"JavaScript",
+		220000,
+	)
 	rails := makeRepo("rails/rails", "Ruby on Rails web framework", "Ruby", 55000)
 	all := []githubapi.Repository{gin, echo, react, rails}
 
@@ -75,8 +80,10 @@ func TestSearchRepositories(t *testing.T) {
 		{
 			name:  "plural folding matches library/libraries",
 			query: "library",
-			repos: []githubapi.Repository{makeRepo("a/lib", "Reusable libraries for parsing", "Go", 100)},
-			want:  []string{"a/lib"},
+			repos: []githubapi.Repository{
+				makeRepo("a/lib", "Reusable libraries for parsing", "Go", 100),
+			},
+			want: []string{"a/lib"},
 		},
 	}
 
@@ -165,7 +172,14 @@ func TestRepositorySearchScore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var editPrev, editCurr []int
-			got := repositorySearchScore(tt.repo, tt.terms, tt.phrase, make(map[string][]string), &editPrev, &editCurr)
+			got := repositorySearchScore(
+				tt.repo,
+				tt.terms,
+				tt.phrase,
+				make(map[string][]string),
+				&editPrev,
+				&editCurr,
+			)
 			if tt.wantZero && got != 0 {
 				t.Fatalf("want 0, got %d", got)
 			}
@@ -196,13 +210,13 @@ func TestRepositorySearchScoreFieldWeights(t *testing.T) {
 	descScore := repositorySearchScore(descRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
 	langScore := repositorySearchScore(langRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
 
-	if !(nameScore > ownerScore) {
+	if nameScore <= ownerScore {
 		t.Errorf("name match should outscore owner match: name=%d owner=%d", nameScore, ownerScore)
 	}
-	if !(ownerScore > descScore) {
+	if ownerScore <= descScore {
 		t.Errorf("owner match should outscore description: owner=%d desc=%d", ownerScore, descScore)
 	}
-	if !(descScore > langScore) {
+	if descScore <= langScore {
 		t.Errorf("description should outscore language: desc=%d lang=%d", descScore, langScore)
 	}
 }
@@ -217,14 +231,33 @@ func TestBoundedEditDistance(t *testing.T) {
 		wantDist int
 		wantOK   bool
 	}{
-		{name: "identical strings distance zero", a: "kube", b: "kube", limit: 2, wantDist: 0, wantOK: true},
+		{
+			name:     "identical strings distance zero",
+			a:        "kube",
+			b:        "kube",
+			limit:    2,
+			wantDist: 0,
+			wantOK:   true,
+		},
 		{name: "single substitution", a: "kube", b: "kubo", limit: 2, wantDist: 1, wantOK: true},
 		{name: "single deletion", a: "kube", b: "kub", limit: 2, wantDist: 1, wantOK: true},
 		{name: "over limit returns false", a: "abcdef", b: "zzzzzz", limit: 2, wantOK: false},
 		{name: "empty a returns false", a: "", b: "abc", limit: 2, wantOK: false},
 		{name: "empty b returns false", a: "abc", b: "", limit: 2, wantOK: false},
-		{name: "length diff over limit short circuits", a: "a", b: "abcdef", limit: 2, wantOK: false},
-		{name: "row min pruning long mismatched", a: "aaaaaaaaaa", b: "zzzzzzzzzz", limit: 2, wantOK: false},
+		{
+			name:   "length diff over limit short circuits",
+			a:      "a",
+			b:      "abcdef",
+			limit:  2,
+			wantOK: false,
+		},
+		{
+			name:   "row min pruning long mismatched",
+			a:      "aaaaaaaaaa",
+			b:      "zzzzzzzzzz",
+			limit:  2,
+			wantOK: false,
+		},
 	}
 
 	for _, tt := range tests {

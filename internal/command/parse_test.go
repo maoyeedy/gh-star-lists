@@ -50,7 +50,20 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "short repo flags",
-			argv: []string{"repos", "UL_1", "-s", "stars", "-d", "-l", "5", "-f", "language:Go", "-S", "cli", "-w"},
+			argv: []string{
+				"repos",
+				"UL_1",
+				"-s",
+				"stars",
+				"-d",
+				"-l",
+				"5",
+				"-f",
+				"language:Go",
+				"-S",
+				"cli",
+				"-w",
+			},
 			want: command.Parsed{
 				Action:   command.ActionRepos,
 				ListID:   "UL_1",
@@ -71,12 +84,20 @@ func TestParse(t *testing.T) {
 		{
 			name: "help with command sets topic",
 			argv: []string{"repos", "-h"},
-			want: command.Parsed{Action: command.ActionHelp, HelpTopic: "repos", Mode: format.OutputHuman},
+			want: command.Parsed{
+				Action:    command.ActionHelp,
+				HelpTopic: "repos",
+				Mode:      format.OutputHuman,
+			},
 		},
 		{
 			name: "help with alias sets canonical topic",
 			argv: []string{"ls", "--help"},
-			want: command.Parsed{Action: command.ActionHelp, HelpTopic: "list", Mode: format.OutputHuman},
+			want: command.Parsed{
+				Action:    command.ActionHelp,
+				HelpTopic: "list",
+				Mode:      format.OutputHuman,
+			},
 		},
 		{
 			name: "help with unknown command gives top-level",
@@ -86,12 +107,20 @@ func TestParse(t *testing.T) {
 		{
 			name: "--full alone shows full help",
 			argv: []string{"--full"},
-			want: command.Parsed{Action: command.ActionHelp, FullHelp: true, Mode: format.OutputHuman},
+			want: command.Parsed{
+				Action:   command.ActionHelp,
+				FullHelp: true,
+				Mode:     format.OutputHuman,
+			},
 		},
 		{
 			name: "--help --full shows full help",
 			argv: []string{"--help", "--full"},
-			want: command.Parsed{Action: command.ActionHelp, FullHelp: true, Mode: format.OutputHuman},
+			want: command.Parsed{
+				Action:   command.ActionHelp,
+				FullHelp: true,
+				Mode:     format.OutputHuman,
+			},
 		},
 		{
 			name: "ls alias resolves to list",
@@ -298,12 +327,20 @@ func TestParse(t *testing.T) {
 		{
 			name: "cache-ttl flag",
 			argv: []string{"list", "--cache-ttl", "10m"},
-			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, CacheTTL: ptrDuration(10 * time.Minute)},
+			want: command.Parsed{
+				Action:   command.ActionList,
+				Mode:     format.OutputHuman,
+				CacheTTL: ptrDuration(10 * time.Minute),
+			},
 		},
 		{
 			name: "cache-ttl zero disables",
 			argv: []string{"list", "--cache-ttl", "0"},
-			want: command.Parsed{Action: command.ActionList, Mode: format.OutputHuman, CacheTTL: ptrDuration(0)},
+			want: command.Parsed{
+				Action:   command.ActionList,
+				Mode:     format.OutputHuman,
+				CacheTTL: ptrDuration(0),
+			},
 		},
 		{
 			name: "limit with sort",
@@ -492,10 +529,13 @@ func TestParse(t *testing.T) {
 			name: "filter topic repeated flags AND",
 			argv: []string{"repos", "UL_1", "--filter", "topic:go", "--filter", "topic:rust"},
 			want: command.Parsed{
-				Action:  command.ActionRepos,
-				ListID:  "UL_1",
-				Mode:    format.OutputHuman,
-				Filters: []command.Filter{{Key: "topic", Value: "go"}, {Key: "topic", Value: "rust"}},
+				Action: command.ActionRepos,
+				ListID: "UL_1",
+				Mode:   format.OutputHuman,
+				Filters: []command.Filter{
+					{Key: "topic", Value: "go"},
+					{Key: "topic", Value: "rust"},
+				},
 			},
 		},
 	}
@@ -762,8 +802,17 @@ func TestParseUsageErrors(t *testing.T) {
 			wantMessage: "--search is only supported for repos",
 		},
 		{
-			name:        "search on move rejected",
-			argv:        []string{"move", "owner/repo", "--from", "A", "--to", "B", "--search", "foo"},
+			name: "search on move rejected",
+			argv: []string{
+				"move",
+				"owner/repo",
+				"--from",
+				"A",
+				"--to",
+				"B",
+				"--search",
+				"foo",
+			},
 			wantMessage: "--search is only supported for repos",
 		},
 		{

@@ -40,12 +40,18 @@ func (f *fakeCacheInner) ListRepositories(
 	return f.repos[listID], nil
 }
 
-func (f *fakeCacheInner) ListStarredRepositories(_ context.Context, _ ...ListOptions) ([]Repository, error) {
+func (f *fakeCacheInner) ListStarredRepositories(
+	_ context.Context,
+	_ ...ListOptions,
+) ([]Repository, error) {
 	f.starredCalls++
 	return f.starred, nil
 }
 
-func (f *fakeCacheInner) GetRepository(_ context.Context, nameWithOwner string) (Repository, error) {
+func (f *fakeCacheInner) GetRepository(
+	_ context.Context,
+	nameWithOwner string,
+) (Repository, error) {
 	f.getRepoCalls++
 	if f.gotRepo.NameWithOwner != "" {
 		return f.gotRepo, nil
@@ -53,7 +59,10 @@ func (f *fakeCacheInner) GetRepository(_ context.Context, nameWithOwner string) 
 	return Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
 }
 
-func (f *fakeCacheInner) GetRepositoryMemberships(context.Context, string) (string, []string, error) {
+func (f *fakeCacheInner) GetRepositoryMemberships(
+	context.Context,
+	string,
+) (string, []string, error) {
 	return "R_1", nil, nil
 }
 
@@ -61,7 +70,10 @@ func (f *fakeCacheInner) CreateStarList(_ context.Context, input StarListInput) 
 	return StarList{Name: input.Name, ID: "UL_new"}, nil
 }
 
-func (f *fakeCacheInner) UpdateStarList(_ context.Context, input UpdateStarListInput) (StarList, error) {
+func (f *fakeCacheInner) UpdateStarList(
+	_ context.Context,
+	input UpdateStarListInput,
+) (StarList, error) {
 	return StarList{Name: input.Name, ID: input.ID}, nil
 }
 
@@ -318,7 +330,10 @@ func TestCacheServiceGetRepositoryCaches(t *testing.T) {
 		t.Fatalf("different repo: %v", err)
 	}
 	if inner.getRepoCalls != 2 {
-		t.Fatalf("inner calls for different key = %d, want 2 (different key must miss cache)", inner.getRepoCalls)
+		t.Fatalf(
+			"inner calls for different key = %d, want 2 (different key must miss cache)",
+			inner.getRepoCalls,
+		)
 	}
 }
 

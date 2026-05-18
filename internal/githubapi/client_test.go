@@ -17,11 +17,18 @@ func (f *lazyFakeService) ListStarLists(context.Context, ...ListOptions) ([]Star
 	}, nil
 }
 
-func (f *lazyFakeService) ListRepositories(context.Context, string, ...ListOptions) ([]Repository, error) {
+func (f *lazyFakeService) ListRepositories(
+	context.Context,
+	string,
+	...ListOptions,
+) ([]Repository, error) {
 	return nil, nil
 }
 
-func (f *lazyFakeService) ListStarredRepositories(context.Context, ...ListOptions) ([]Repository, error) {
+func (f *lazyFakeService) ListStarredRepositories(
+	context.Context,
+	...ListOptions,
+) ([]Repository, error) {
 	return nil, nil
 }
 
@@ -29,7 +36,10 @@ func (f *lazyFakeService) GetRepository(context.Context, string) (Repository, er
 	return Repository{}, nil
 }
 
-func (f *lazyFakeService) GetRepositoryMemberships(context.Context, string) (string, []string, error) {
+func (f *lazyFakeService) GetRepositoryMemberships(
+	context.Context,
+	string,
+) (string, []string, error) {
 	return "", nil, nil
 }
 

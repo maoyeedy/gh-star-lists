@@ -15,7 +15,11 @@ var ErrInaccessibleList = errors.New("GitHub Star List is inaccessible or is not
 
 type Service interface {
 	ListStarLists(ctx context.Context, options ...ListOptions) ([]StarList, error)
-	ListRepositories(ctx context.Context, listID string, options ...ListOptions) ([]Repository, error)
+	ListRepositories(
+		ctx context.Context,
+		listID string,
+		options ...ListOptions,
+	) ([]Repository, error)
 	ListStarredRepositories(ctx context.Context, options ...ListOptions) ([]Repository, error)
 	GetRepository(ctx context.Context, nameWithOwner string) (Repository, error)
 	GetRepositoryMemberships(ctx context.Context, nameWithOwner string) (string, []string, error)
@@ -82,7 +86,10 @@ func newLazyService(constructor serviceConstructor) *lazyService {
 	return &lazyService{constructor: constructor}
 }
 
-func (s *lazyService) ListStarLists(ctx context.Context, options ...ListOptions) ([]StarList, error) {
+func (s *lazyService) ListStarLists(
+	ctx context.Context,
+	options ...ListOptions,
+) ([]StarList, error) {
 	service, err := s.init(ctx)
 	if err != nil {
 		return nil, err
@@ -140,7 +147,10 @@ func (s *lazyService) CreateStarList(ctx context.Context, input StarListInput) (
 	return service.CreateStarList(ctx, input)
 }
 
-func (s *lazyService) UpdateStarList(ctx context.Context, input UpdateStarListInput) (StarList, error) {
+func (s *lazyService) UpdateStarList(
+	ctx context.Context,
+	input UpdateStarListInput,
+) (StarList, error) {
 	service, err := s.init(ctx)
 	if err != nil {
 		return StarList{}, err

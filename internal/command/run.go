@@ -53,7 +53,8 @@ var promptInput = func(label, defaultValue string) (string, error) {
 }
 
 var promptMultiSelect = func(label string, defaults, choices []string) ([]int, error) {
-	values, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).MultiSelect(label, defaults, choices)
+	values, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).
+		MultiSelect(label, defaults, choices)
 	return values, normalizePromptError(err)
 }
 
@@ -90,19 +91,25 @@ func CanPromptForTest(fn func() bool) func() bool {
 	return prev
 }
 
-func PromptForListForTest(fn func(string, []string) (int, error)) func(string, []string) (int, error) {
+func PromptForListForTest(
+	fn func(string, []string) (int, error),
+) func(string, []string) (int, error) {
 	prev := promptForList
 	promptForList = fn
 	return prev
 }
 
-func PromptInputForTest(fn func(string, string) (string, error)) func(string, string) (string, error) {
+func PromptInputForTest(
+	fn func(string, string) (string, error),
+) func(string, string) (string, error) {
 	prev := promptInput
 	promptInput = fn
 	return prev
 }
 
-func PromptMultiSelectForTest(fn func(string, []string, []string) ([]int, error)) func(string, []string, []string) ([]int, error) {
+func PromptMultiSelectForTest(
+	fn func(string, []string, []string) ([]int, error),
+) func(string, []string, []string) ([]int, error) {
 	prev := promptMultiSelect
 	promptMultiSelect = fn
 	return prev
@@ -143,12 +150,23 @@ func RunWithOptions(
 		var unknownErr *UnknownCommandError
 		if errors.As(err, &unknownErr) {
 			_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%s\n", unknownErr.Error())
-			_ = writeHintDiagnostic(stderr, diagnosticOptions, "Run 'gh star-lists --help' for usage.\n")
+			_ = writeHintDiagnostic(
+				stderr,
+				diagnosticOptions,
+				"Run 'gh star-lists --help' for usage.\n",
+			)
 			return ExitUsage
 		}
 		var usageErr *UsageError
 		if errors.As(err, &usageErr) {
-			_ = writeStyledDiagnostic(stderr, diagnosticOptions, format.Yellow, "error: %s\n\n%s", usageErr.Message, UsageText())
+			_ = writeStyledDiagnostic(
+				stderr,
+				diagnosticOptions,
+				format.Yellow,
+				"error: %s\n\n%s",
+				usageErr.Message,
+				UsageText(),
+			)
 			return ExitUsage
 		}
 		return writeFailure(stderr, err, diagnosticOptions)
@@ -156,7 +174,10 @@ func RunWithOptions(
 
 	if parsed.Action == ActionHelp {
 		helpOptions := outputOptionsForMode(format.OutputHuman)
-		if _, err := io.WriteString(stdout, HelpTextFor(Action(parsed.HelpTopic), parsed.FullHelp, helpOptions)); err != nil {
+		if _, err := io.WriteString(
+			stdout,
+			HelpTextFor(Action(parsed.HelpTopic), parsed.FullHelp, helpOptions),
+		); err != nil {
 			_ = writeDiagnostic(stderr, "error: failed to write help: %v\n", err)
 			return ExitFailure
 		}
@@ -180,7 +201,10 @@ func RunWithOptions(
 		cacheTTL = *parsed.CacheTTL
 	}
 	if cacheTTL > 0 {
-		service = githubapi.NewCacheServiceWithOptions(service, githubapi.CacheOptions{TTL: cacheTTL})
+		service = githubapi.NewCacheServiceWithOptions(
+			service,
+			githubapi.CacheOptions{TTL: cacheTTL},
+		)
 	}
 	if parsed.Action == ActionRepos {
 		if err := ensureReposListSelector(ctx, service, &parsed); err != nil {
@@ -208,7 +232,11 @@ func RunWithOptions(
 						return ExitFailure
 					}
 				} else {
-					_ = writeDiagnostic(stderr, "error: --output target %s already exists; pass --yes to overwrite\n", parsed.OutputPath)
+					_ = writeDiagnostic(
+						stderr,
+						"error: --output target %s already exists; pass --yes to overwrite\n",
+						parsed.OutputPath,
+					)
 					return ExitFailure
 				}
 			}
@@ -244,14 +272,24 @@ func RunWithOptions(
 		if parsed.Web {
 			rl, err := resolveList(ctx, service, parsed.ListID)
 			if err != nil {
-				return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err, diagnosticOptions)
+				return writeRuntimeFailure(
+					stderr,
+					ActionRepos,
+					parsed.ListID,
+					err,
+					diagnosticOptions,
+				)
 			}
 			listURL := rl.URL
 			if listURL == "" {
 				listURL = rl.ID
 			}
 			if err := openBrowser(listURL); err != nil {
-				return writeFailure(stderr, fmt.Errorf("failed to open browser: %w", err), diagnosticOptions)
+				return writeFailure(
+					stderr,
+					fmt.Errorf("failed to open browser: %w", err),
+					diagnosticOptions,
+				)
 			}
 			return ExitSuccess
 		}
@@ -261,7 +299,11 @@ func RunWithOptions(
 		}
 		repos = finalizeRepositories(repos, parsed)
 		if err := format.WriteRepositoriesWithOptions(stdout, outputOptions, repos); err != nil {
-			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err), diagnosticOptions)
+			return writeFailure(
+				stderr,
+				fmt.Errorf("failed to write output: %w", err),
+				diagnosticOptions,
+			)
 		}
 	case ActionCreate:
 		if err := ensureCreateInputs(&parsed); err != nil {
@@ -283,7 +325,14 @@ func RunWithOptions(
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.Name, err, diagnosticOptions)
 		}
-		_, _ = fmt.Fprintln(stdout, styleText(format.Green, outputOptions.Color, fmt.Sprintf("Created Star List %q (%s).", list.Name, list.ID)))
+		_, _ = fmt.Fprintln(
+			stdout,
+			styleText(
+				format.Green,
+				outputOptions.Color,
+				fmt.Sprintf("Created Star List %q (%s).", list.Name, list.ID),
+			),
+		)
 	case ActionEdit:
 		if err := ensureEditInputs(&parsed); err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
@@ -313,7 +362,14 @@ func RunWithOptions(
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
 		}
-		_, _ = fmt.Fprintln(stdout, styleText(format.Green, outputOptions.Color, fmt.Sprintf("Updated Star List %q (%s).", list.Name, list.ID)))
+		_, _ = fmt.Fprintln(
+			stdout,
+			styleText(
+				format.Green,
+				outputOptions.Color,
+				fmt.Sprintf("Updated Star List %q (%s).", list.Name, list.ID),
+			),
+		)
 	case ActionDelete:
 		if err := requireYes(parsed, "delete a Star List"); err != nil {
 			return writeUsageFailure(stderr, err, diagnosticOptions)
@@ -333,7 +389,14 @@ func RunWithOptions(
 		if err := service.DeleteStarList(ctx, rl.ID); err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
 		}
-		_, _ = fmt.Fprintln(stdout, styleText(format.Yellow, outputOptions.Color, fmt.Sprintf("Deleted Star List %q.", listName)))
+		_, _ = fmt.Fprintln(
+			stdout,
+			styleText(
+				format.Yellow,
+				outputOptions.Color,
+				fmt.Sprintf("Deleted Star List %q.", listName),
+			),
+		)
 	case ActionAdd, ActionRemove, ActionMove:
 		fetchedLists, err := ensureListSelectors(ctx, service, &parsed)
 		if err != nil {
@@ -345,14 +408,28 @@ func RunWithOptions(
 			if errors.As(err, &ue) {
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err, diagnosticOptions)
+			return writeRuntimeFailure(
+				stderr,
+				parsed.Action,
+				parsed.RepoName,
+				err,
+				diagnosticOptions,
+			)
 		}
 		if parsed.Action != ActionAdd {
 			if err := requireYes(parsed, string(parsed.Action)+" a repository"); err != nil {
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
 		}
-		return runRepoListMutation(ctx, stdout, stderr, service, parsed, fetchedLists, outputOptions)
+		return runRepoListMutation(
+			ctx,
+			stdout,
+			stderr,
+			service,
+			parsed,
+			fetchedLists,
+			outputOptions,
+		)
 	case ActionCopy, ActionMerge:
 		fetchedLists, err := ensureListSelectors(ctx, service, &parsed)
 		if err != nil {
@@ -364,7 +441,13 @@ func RunWithOptions(
 			if errors.As(err, &ue) {
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err, diagnosticOptions)
+			return writeRuntimeFailure(
+				stderr,
+				parsed.Action,
+				parsed.FromListID,
+				err,
+				diagnosticOptions,
+			)
 		}
 		if parsed.Action == ActionMerge || parsed.DeleteSource {
 			if err := requireYes(parsed, string(parsed.Action)+" Star List contents"); err != nil {
@@ -378,16 +461,35 @@ func RunWithOptions(
 		}
 		repo, err := service.GetRepository(ctx, parsed.RepoName)
 		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err, diagnosticOptions)
+			return writeRuntimeFailure(
+				stderr,
+				parsed.Action,
+				parsed.RepoName,
+				err,
+				diagnosticOptions,
+			)
 		}
 		if parsed.DryRun {
 			_, _ = fmt.Fprintf(stdout, "Would unstar %s.\n", repo.NameWithOwner)
 			return ExitSuccess
 		}
 		if err := service.RemoveStar(ctx, repo.ID); err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err, diagnosticOptions)
+			return writeRuntimeFailure(
+				stderr,
+				parsed.Action,
+				parsed.RepoName,
+				err,
+				diagnosticOptions,
+			)
 		}
-		_, _ = fmt.Fprintln(stdout, styleText(format.Yellow, outputOptions.Color, fmt.Sprintf("Unstarred %s.", repo.NameWithOwner)))
+		_, _ = fmt.Fprintln(
+			stdout,
+			styleText(
+				format.Yellow,
+				outputOptions.Color,
+				fmt.Sprintf("Unstarred %s.", repo.NameWithOwner),
+			),
+		)
 	default:
 		panic(fmt.Sprintf("unhandled action %q - this is a bug in Parse", parsed.Action))
 	}
@@ -473,14 +575,14 @@ func runRepoListMutation(
 		var ok bool
 		from, ok = listByRaw(lists, parsed.FromListID)
 		if !ok {
-			return writeFailure(stderr, fmt.Errorf("Star List %q not found", parsed.FromListID))
+			return writeFailure(stderr, fmt.Errorf("star list %q not found", parsed.FromListID))
 		}
 	}
 	if parsed.ToListID != "" {
 		var ok bool
 		to, ok = listByRaw(lists, parsed.ToListID)
 		if !ok {
-			return writeFailure(stderr, fmt.Errorf("Star List %q not found", parsed.ToListID))
+			return writeFailure(stderr, fmt.Errorf("star list %q not found", parsed.ToListID))
 		}
 	}
 	if parsed.Action == ActionMove && from.ID == to.ID {
@@ -515,7 +617,10 @@ func runRepoListMutation(
 	if err := service.UpdateRepositoryLists(ctx, repoID, listIDs); err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err)
 	}
-	_, _ = fmt.Fprintln(stdout, styleText(format.Green, outputOptions.Color, mutationSummary(parsed, from, to)+"."))
+	_, _ = fmt.Fprintln(
+		stdout,
+		styleText(format.Green, outputOptions.Color, mutationSummary(parsed, from, to)+"."),
+	)
 	return ExitSuccess
 }
 
@@ -560,9 +665,20 @@ func runListCopy(
 		}
 	}
 	if parsed.DryRun {
-		_, _ = fmt.Fprintf(stdout, "Would %s %d repositories from %q to %q.\n", copyVerb(parsed), len(repos), displayListName(fromList, parsed.FromListID), displayListName(toList, parsed.ToListID))
+		_, _ = fmt.Fprintf(
+			stdout,
+			"Would %s %d repositories from %q to %q.\n",
+			copyVerb(parsed),
+			len(repos),
+			displayListName(fromList, parsed.FromListID),
+			displayListName(toList, parsed.ToListID),
+		)
 		if parsed.DeleteSource || parsed.Action == ActionMerge {
-			_, _ = fmt.Fprintf(stdout, "Would delete source Star List %q.\n", displayListName(fromList, parsed.FromListID))
+			_, _ = fmt.Fprintf(
+				stdout,
+				"Would delete source Star List %q.\n",
+				displayListName(fromList, parsed.FromListID),
+			)
 		}
 		return ExitSuccess
 	}
@@ -572,7 +688,11 @@ func runListCopy(
 	for _, repo := range repos {
 		repo := repo
 		group.Go(func() error {
-			repoID, memberships, err := index.repositoryMemberships(groupCtx, service, repo.NameWithOwner)
+			repoID, memberships, err := index.repositoryMemberships(
+				groupCtx,
+				service,
+				repo.NameWithOwner,
+			)
 			if err != nil {
 				return fmt.Errorf("%s: %w", repo.NameWithOwner, err)
 			}
@@ -580,7 +700,11 @@ func runListCopy(
 				return nil
 			}
 			memberships[to] = struct{}{}
-			if err := service.UpdateRepositoryLists(groupCtx, repoID, slices.Sorted(maps.Keys(memberships))); err != nil {
+			if err := service.UpdateRepositoryLists(
+				groupCtx,
+				repoID,
+				slices.Sorted(maps.Keys(memberships)),
+			); err != nil {
 				return fmt.Errorf("%s: %w", repo.NameWithOwner, err)
 			}
 			changed.Add(1)
@@ -622,9 +746,18 @@ func mutationSummary(parsed Parsed, from, to githubapi.StarList) string {
 	case ActionAdd:
 		return fmt.Sprintf("Added %s to %q", parsed.RepoName, displayListName(to, parsed.ToListID))
 	case ActionRemove:
-		return fmt.Sprintf("Removed %s from %q", parsed.RepoName, displayListName(from, parsed.FromListID))
+		return fmt.Sprintf(
+			"Removed %s from %q",
+			parsed.RepoName,
+			displayListName(from, parsed.FromListID),
+		)
 	case ActionMove:
-		return fmt.Sprintf("Moved %s from %q to %q", parsed.RepoName, displayListName(from, parsed.FromListID), displayListName(to, parsed.ToListID))
+		return fmt.Sprintf(
+			"Moved %s from %q to %q",
+			parsed.RepoName,
+			displayListName(from, parsed.FromListID),
+			displayListName(to, parsed.ToListID),
+		)
 	default:
 		return fmt.Sprintf("%s %s", pastTense(parsed.Action), parsed.RepoName)
 	}
@@ -635,9 +768,18 @@ func mutationPlanSummary(parsed Parsed, from, to githubapi.StarList) string {
 	case ActionAdd:
 		return fmt.Sprintf("add %s to %q", parsed.RepoName, displayListName(to, parsed.ToListID))
 	case ActionRemove:
-		return fmt.Sprintf("remove %s from %q", parsed.RepoName, displayListName(from, parsed.FromListID))
+		return fmt.Sprintf(
+			"remove %s from %q",
+			parsed.RepoName,
+			displayListName(from, parsed.FromListID),
+		)
 	case ActionMove:
-		return fmt.Sprintf("move %s from %q to %q", parsed.RepoName, displayListName(from, parsed.FromListID), displayListName(to, parsed.ToListID))
+		return fmt.Sprintf(
+			"move %s from %q to %q",
+			parsed.RepoName,
+			displayListName(from, parsed.FromListID),
+			displayListName(to, parsed.ToListID),
+		)
 	default:
 		return fmt.Sprintf("%s %s", parsed.Action, parsed.RepoName)
 	}
@@ -646,11 +788,22 @@ func mutationPlanSummary(parsed Parsed, from, to githubapi.StarList) string {
 func noChangeMessage(parsed Parsed, from, to githubapi.StarList) string {
 	switch parsed.Action {
 	case ActionAdd:
-		return fmt.Sprintf("No changes: %s is already in %q.", parsed.RepoName, displayListName(to, parsed.ToListID))
+		return fmt.Sprintf(
+			"No changes: %s is already in %q.",
+			parsed.RepoName,
+			displayListName(to, parsed.ToListID),
+		)
 	case ActionRemove:
-		return fmt.Sprintf("No changes: %s is not in %q.", parsed.RepoName, displayListName(from, parsed.FromListID))
+		return fmt.Sprintf(
+			"No changes: %s is not in %q.",
+			parsed.RepoName,
+			displayListName(from, parsed.FromListID),
+		)
 	default:
-		return fmt.Sprintf("No changes: %s already has the requested Star List membership.", parsed.RepoName)
+		return fmt.Sprintf(
+			"No changes: %s already has the requested Star List membership.",
+			parsed.RepoName,
+		)
 	}
 }
 
@@ -661,7 +814,12 @@ func copyVerb(parsed Parsed) string {
 	return "copy"
 }
 
-func copySummary(parsed Parsed, changed int64, total int, fromList, toList githubapi.StarList) string {
+func copySummary(
+	parsed Parsed,
+	changed int64,
+	total int,
+	fromList, toList githubapi.StarList,
+) string {
 	from := displayListName(fromList, parsed.FromListID)
 	to := displayListName(toList, parsed.ToListID)
 	verb := "Copied"
@@ -671,11 +829,23 @@ func copySummary(parsed Parsed, changed int64, total int, fromList, toList githu
 	if total == 0 {
 		return fmt.Sprintf("Source list %q is empty, nothing to %s.", from, strings.ToLower(verb))
 	}
-	summary := fmt.Sprintf("%s %d of %d repositories from %q to %q.", verb, changed, total, from, to)
+	summary := fmt.Sprintf(
+		"%s %d of %d repositories from %q to %q.",
+		verb,
+		changed,
+		total,
+		from,
+		to,
+	)
 	if parsed.DeleteSource || parsed.Action == ActionMerge {
 		summary += fmt.Sprintf(" Source %q deleted.", from)
 	} else if changed == 0 {
-		summary = fmt.Sprintf("No changes: all %d repositories from %q were already in %q.", total, from, to)
+		summary = fmt.Sprintf(
+			"No changes: all %d repositories from %q were already in %q.",
+			total,
+			from,
+			to,
+		)
 	}
 	return summary
 }
@@ -783,9 +953,15 @@ func missingSelectorError(a Action, needFrom, needTo bool) error {
 	case needFrom && needTo:
 		return usage("%s requires --from and --to (or run in a TTY to choose interactively)", a)
 	case needFrom:
-		return usage("%s requires --from <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)", a)
+		return usage(
+			"%s requires --from <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)",
+			a,
+		)
 	default:
-		return usage("%s requires --to <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)", a)
+		return usage(
+			"%s requires --to <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)",
+			a,
+		)
 	}
 }
 
@@ -823,7 +999,11 @@ func pickList(lists []githubapi.StarList, label, excludeID string) (string, erro
 	return filtered[idx].ID, nil
 }
 
-func ensureListSelectors(ctx context.Context, service githubapi.Service, parsed *Parsed) ([]githubapi.StarList, error) {
+func ensureListSelectors(
+	ctx context.Context,
+	service githubapi.Service,
+	parsed *Parsed,
+) ([]githubapi.StarList, error) {
 	needFrom := actionNeedsFrom(parsed.Action) && parsed.FromListID == ""
 	needTo := actionNeedsTo(parsed.Action) && parsed.ToListID == ""
 	if !needFrom && !needTo {
@@ -865,7 +1045,9 @@ func ensureReposListSelector(ctx context.Context, service githubapi.Service, par
 		return nil
 	}
 	if !canPrompt() {
-		return usage("repos requires <LIST_ID_OR_NAME>, --all, or --unlisted (or run in a TTY to choose a list interactively)")
+		return usage(
+			"repos requires <LIST_ID_OR_NAME>, --all, or --unlisted (or run in a TTY to choose a list interactively)",
+		)
 	}
 	lists, err := service.ListStarLists(ctx)
 	if err != nil {
@@ -921,7 +1103,9 @@ func ensureEditInputs(parsed *Parsed) error {
 		return nil
 	}
 	if !canPrompt() {
-		return usage("edit requires --name, --description, --private, or --public (or run in a TTY to be prompted)")
+		return usage(
+			"edit requires --name, --description, --private, or --public (or run in a TTY to be prompted)",
+		)
 	}
 	choices := []string{"Name", "Description", "Visibility"}
 	selected, err := promptMultiSelect("Select fields to update:", nil, choices)
@@ -996,7 +1180,14 @@ func requireYes(parsed Parsed, action string) error {
 func writeUsageFailure(stderr io.Writer, err error, options ...format.Options) int {
 	var usageErr *UsageError
 	if errors.As(err, &usageErr) {
-		_ = writeStyledDiagnostic(stderr, firstOptions(options), format.Yellow, "error: %s\n\n%s", usageErr.Message, UsageText())
+		_ = writeStyledDiagnostic(
+			stderr,
+			firstOptions(options),
+			format.Yellow,
+			"error: %s\n\n%s",
+			usageErr.Message,
+			UsageText(),
+		)
 		return ExitUsage
 	}
 	return writeFailure(stderr, err, options...)
@@ -1179,7 +1370,12 @@ func compareStarLists(
 	return strings.Compare(left.ID, right.ID), false
 }
 
-func sortRepositories(repos []githubapi.Repository, sortKeys []string, sortTerms []SortTerm, desc bool) {
+func sortRepositories(
+	repos []githubapi.Repository,
+	sortKeys []string,
+	sortTerms []SortTerm,
+	desc bool,
+) {
 	if len(sortKeys) == 0 {
 		return
 	}
@@ -1238,7 +1434,8 @@ func compareRepositories(
 
 func directListOptions(parsed Parsed, withTopics bool) githubapi.ListOptions {
 	opts := githubapi.ListOptions{WithTopics: withTopics}
-	if parsed.Limit == 0 || len(parsed.Filters) > 0 || parsed.Search != "" || len(parsed.SortKeys) > 0 {
+	if parsed.Limit == 0 || len(parsed.Filters) > 0 || parsed.Search != "" ||
+		len(parsed.SortKeys) > 0 {
 		return opts
 	}
 	opts.Limit = parsed.Limit
@@ -1250,9 +1447,21 @@ func writeFailure(stderr io.Writer, err error, options ...format.Options) int {
 	return ExitFailure
 }
 
-func writeRuntimeFailure(stderr io.Writer, action Action, listID string, err error, options ...format.Options) int {
+func writeRuntimeFailure(
+	stderr io.Writer,
+	action Action,
+	listID string,
+	err error,
+	options ...format.Options,
+) int {
 	diagnosticOptions := firstOptions(options)
-	_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%s: %v\n", commandContext(action, listID), err)
+	_ = writeErrorDiagnostic(
+		stderr,
+		diagnosticOptions,
+		"%s: %v\n",
+		commandContext(action, listID),
+		err,
+	)
 	if errors.Is(err, githubapi.ErrInaccessibleList) {
 		_ = writeHintDiagnostic(
 			stderr,
@@ -1330,7 +1539,13 @@ func writeHintDiagnostic(stderr io.Writer, options format.Options, msg string, a
 	return writeStyledDiagnostic(stderr, options, format.Cyan, msg, args...)
 }
 
-func writeStyledDiagnostic(stderr io.Writer, options format.Options, styler func(bool) func(string) string, msg string, args ...any) error {
+func writeStyledDiagnostic(
+	stderr io.Writer,
+	options format.Options,
+	styler func(bool) func(string) string,
+	msg string,
+	args ...any,
+) error {
 	text := fmt.Sprintf(msg, args...)
 	text = styleText(styler, options.Color, text)
 	_, err := io.WriteString(stderr, text)

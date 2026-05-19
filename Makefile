@@ -16,6 +16,7 @@ build:
 
 lint:
 	go vet ./...
+	golangci-lint run --fix
 
 ascii-check:
 	@if LC_ALL=C grep -Pn '[^\x00-\x7F]' --include='*.go' -r . 2>/dev/null; then \

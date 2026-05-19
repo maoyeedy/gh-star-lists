@@ -67,6 +67,9 @@ func repositorySearchScore(
 	editPrev, editCurr *[]int,
 ) int {
 	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
+	normNameWithOwner := normalizeSearchText(repo.NameWithOwner)
+	normDescription := normalizeSearchText(repo.Description)
+	normLanguage := normalizeSearchText(repo.Language)
 	rawFields := []searchField{
 		{text: name, weight: 120},
 		{text: repo.NameWithOwner, weight: 100},
@@ -88,11 +91,7 @@ func repositorySearchScore(
 	}
 
 	score := 0
-	allText := normalizeSearchText(strings.Join([]string{
-		repo.NameWithOwner,
-		repo.Description,
-		repo.Language,
-	}, " "))
+	allText := strings.Join([]string{normNameWithOwner, normDescription, normLanguage}, " ")
 	if phrase != "" && strings.Contains(allText, phrase) {
 		score += 120
 	}

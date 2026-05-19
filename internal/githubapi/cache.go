@@ -233,6 +233,11 @@ func (s *cacheService) RemoveStar(ctx context.Context, repoID string) error {
 	return nil
 }
 
+// Invalidate clears all cached entries. Used by the TUI for manual refresh.
+func (s *cacheService) Invalidate() {
+	s.invalidateAll()
+}
+
 func (s *cacheService) invalidateLists() {
 	s.mu.Lock()
 	s.listsEntry = nil

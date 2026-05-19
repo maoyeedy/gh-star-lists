@@ -52,7 +52,8 @@ func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
 
 func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarList) error {
 	if len(lists) == 0 {
-		_, err := fmt.Fprintln(w, "No Star Lists found.")
+		_, _ = fmt.Fprintln(w, "No Star Lists found.")
+		_, err := fmt.Fprintln(w, "Create one with `gh star-lists create <NAME>`.")
 		return err
 	}
 	boldFn := Bold(options.Color)

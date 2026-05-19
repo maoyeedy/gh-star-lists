@@ -58,7 +58,8 @@ func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 
 func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repository) error {
 	if len(repos) == 0 {
-		_, err := fmt.Fprintln(w, "No repositories found.")
+		_, _ = fmt.Fprintln(w, "No repositories found.")
+		_, err := fmt.Fprintln(w, "Try a different filter, --search, or --all.")
 		return err
 	}
 	boldFn := Bold(options.Color)

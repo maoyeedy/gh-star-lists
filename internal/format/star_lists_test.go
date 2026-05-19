@@ -85,7 +85,11 @@ func TestWriteStarListsEmptyOutputs(t *testing.T) {
 	}{
 		{name: "json", mode: format.OutputJSON, want: "[]\n"},
 		{name: "tsv", mode: format.OutputTSV, want: ""},
-		{name: "human", mode: format.OutputHuman, want: "No Star Lists found.\n"},
+		{
+			name: "human",
+			mode: format.OutputHuman,
+			want: "No Star Lists found.\nCreate one with `gh star-lists create <NAME>`.\n",
+		},
 		{name: "plain", mode: format.OutputPlain, want: "No Star Lists found.\n"},
 	}
 

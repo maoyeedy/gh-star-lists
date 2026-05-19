@@ -80,7 +80,11 @@ func TestWriteRepositoriesEmptyOutputs(t *testing.T) {
 	}{
 		{name: "json", mode: format.OutputJSON, want: "[]\n"},
 		{name: "tsv", mode: format.OutputTSV, want: ""},
-		{name: "human", mode: format.OutputHuman, want: "No repositories found.\n"},
+		{
+			name: "human",
+			mode: format.OutputHuman,
+			want: "No repositories found.\nTry a different filter, --search, or --all.\n",
+		},
 		{name: "plain", mode: format.OutputPlain, want: "No repositories found.\n"},
 	}
 

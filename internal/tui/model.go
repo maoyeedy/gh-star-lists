@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -76,6 +78,8 @@ type model struct {
 	searchQuery    string
 	displayedLists []githubapi.StarList
 	displayedRepos []githubapi.Repository
+
+	selected map[string]struct{} // NameWithOwner of checked repos
 }
 
 func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
@@ -129,6 +133,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
+		// Drop selected keys that no longer exist in the refreshed repo list.
+		if len(m.selected) > 0 {
+			existing := make(map[string]struct{}, len(m.repos))
+			for _, r := range m.repos {
+				existing[r.NameWithOwner] = struct{}{}
+			}
+			for nwo := range m.selected {
+				if _, ok := existing[nwo]; !ok {
+					delete(m.selected, nwo)
+				}
+			}
+		}
 		return m, nil
 
 	case errMsg:
@@ -143,6 +159,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.statusMsg = "Done."
+		m.statusExpiry = time.Now().Add(2 * time.Second)
+		m.loading = true
+		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
+		if m.active == paneRepo && m.focusedList != nil {
+			cmds = append(cmds, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview))
+		}
+		return m, tea.Batch(cmds...)
+
+	case bulkDoneMsg:
+		m.modal = nil
+		m.selected = nil
+		if msg.failed > 0 && msg.succeeded == 0 {
+			m.err = fmt.Errorf("%d repos failed to %s", msg.failed, msg.verb)
+			return m, nil
+		}
+		if msg.failed > 0 {
+			m.statusMsg = fmt.Sprintf(
+				"%d repos %s, %d failed.", msg.succeeded, msg.verb, msg.failed,
+			)
+		} else {
+			m.statusMsg = fmt.Sprintf("%d repos %s.", msg.succeeded, msg.verb)
+		}
 		m.statusExpiry = time.Now().Add(2 * time.Second)
 		m.loading = true
 		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
@@ -176,6 +214,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, keys.Back):
+		// Clear selection first if any; second Esc then navigates back / quits.
+		if len(m.selected) > 0 {
+			m.selected = nil
+			return m, nil
+		}
 		if m.active == paneRepo {
 			m.active = paneList
 			m.repos = nil
@@ -278,16 +321,23 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.active != paneRepo || len(m.displayedRepos) == 0 || len(m.lists) == 0 {
 			return m, nil
 		}
-		repo := m.displayedRepos[m.repoCursor]
-		m.modal = newAddRepoModal(m.ctx, m.svc, repo, m.lists)
+		if len(m.selected) > 0 {
+			m.modal = newBulkAddModal(m.ctx, m.svc, m.selectedNWOs(), m.lists)
+		} else {
+			m.modal = newAddRepoModal(m.ctx, m.svc, m.displayedRepos[m.repoCursor], m.lists)
+		}
 		return m, nil
 
 	case key.Matches(msg, keys.RemoveRepo):
 		if m.active != paneRepo || len(m.displayedRepos) == 0 || m.focusedList == nil {
 			return m, nil
 		}
-		repo := m.displayedRepos[m.repoCursor]
-		m.modal = newRemoveRepoModal(m.ctx, m.svc, repo, m.focusedList.ID)
+		if len(m.selected) > 0 {
+			m.modal = newBulkRemoveModal(m.ctx, m.svc, m.selectedNWOs(), m.focusedList.ID)
+		} else {
+			repo := m.displayedRepos[m.repoCursor]
+			m.modal = newRemoveRepoModal(m.ctx, m.svc, repo, m.focusedList.ID)
+		}
 		return m, nil
 
 	case key.Matches(msg, keys.MoveRepo):
@@ -295,8 +345,12 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.focusedList == nil || len(m.lists) < 2 {
 			return m, nil
 		}
-		repo := m.displayedRepos[m.repoCursor]
-		m.modal = newMoveRepoModal(m.ctx, m.svc, repo, m.lists, m.focusedList.ID)
+		if len(m.selected) > 0 {
+			m.modal = newBulkMoveModal(m.ctx, m.svc, m.selectedNWOs(), m.lists, m.focusedList.ID)
+		} else {
+			repo := m.displayedRepos[m.repoCursor]
+			m.modal = newMoveRepoModal(m.ctx, m.svc, repo, m.lists, m.focusedList.ID)
+		}
 		return m, nil
 
 	case key.Matches(msg, keys.UnstarRepo):
@@ -342,9 +396,29 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.repoOffset = 0
 		m = m.rebuildDisplayed()
 		return m, nil
+
+	case key.Matches(msg, keys.Select):
+		if m.active != paneRepo || len(m.displayedRepos) == 0 {
+			return m, nil
+		}
+		nwo := m.displayedRepos[m.repoCursor].NameWithOwner
+		if m.selected == nil {
+			m.selected = make(map[string]struct{})
+		}
+		if _, ok := m.selected[nwo]; ok {
+			delete(m.selected, nwo)
+		} else {
+			m.selected[nwo] = struct{}{}
+		}
+		return m, nil
 	}
 
 	return m, nil
+}
+
+// selectedNWOs returns sorted NameWithOwner strings from the selection set.
+func (m model) selectedNWOs() []string {
+	return slices.Sorted(maps.Keys(m.selected))
 }
 
 func (m model) moveCursor(delta int) model {
@@ -710,7 +784,12 @@ func (m model) renderFooter() string {
 	}
 	var hints string
 	if m.active == paneRepo {
-		hints = "/:search  a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  pg/g/G:scroll  ?:help  q:quit"
+		selHint := ""
+		if len(m.selected) > 0 {
+			selHint = fmt.Sprintf("  [%d selected]", len(m.selected))
+		}
+		hints = "/:search  space:select" + selHint +
+			"  a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  pg/g/G:scroll  ?:help  q:quit"
 	} else {
 		hints = "/:search  n:new  e:edit  d:del  c:copy  C:merge  enter:select  o:open  s:sort  ctrl+r:refresh  pg/g/G:scroll  ?:help  q:quit"
 	}
@@ -796,12 +875,21 @@ func (m model) renderRepoPane(w, h int) string {
 		return strings.Join(out, "\n")
 	}
 
+	hasSel := len(m.selected) > 0
 	start := m.repoOffset
 	end := min(start+h, len(m.displayedRepos))
 	for i := start; i < end; i++ {
 		r := m.displayedRepos[i]
 		cursor := "  "
 		name := r.NameWithOwner
+		_, checked := m.selected[r.NameWithOwner]
+		if hasSel {
+			if checked {
+				name = styleChecked.Render("[x] " + name)
+			} else {
+				name = "[ ] " + name
+			}
+		}
 		if i == m.repoCursor {
 			cursor = "> "
 			name = styleSelected.Render(name)

@@ -54,6 +54,12 @@ type mutationDoneMsg struct {
 	err  error
 }
 
+type bulkDoneMsg struct {
+	verb      string // "added", "removed", "moved"
+	succeeded int
+	failed    int
+}
+
 type statusExpiredMsg struct{}
 
 func statusClearCmd(expiry time.Time) tea.Cmd {
@@ -206,5 +212,105 @@ func unstarRepoCmd(ctx context.Context, svc githubapi.Service, nameWithOwner str
 		}
 		err = svc.RemoveStar(ctx, repoID)
 		return mutationDoneMsg{kind: modalConfirmText, err: err}
+	}
+}
+
+func bulkAddReposCmd(
+	ctx context.Context,
+	svc githubapi.Service,
+	nwos []string,
+	targetListID string,
+) tea.Cmd {
+	return func() tea.Msg {
+		succeeded, failed := 0, 0
+		for _, nwo := range nwos {
+			if ctx.Err() != nil {
+				break
+			}
+			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
+			if err != nil {
+				failed++
+				continue
+			}
+			next := make(map[string]struct{}, len(currentIDs)+1)
+			for _, id := range currentIDs {
+				next[id] = struct{}{}
+			}
+			next[targetListID] = struct{}{}
+			newIDs := slices.Sorted(maps.Keys(next))
+			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
+				failed++
+			} else {
+				succeeded++
+			}
+		}
+		return bulkDoneMsg{verb: "added", succeeded: succeeded, failed: failed}
+	}
+}
+
+func bulkRemoveReposCmd(
+	ctx context.Context,
+	svc githubapi.Service,
+	nwos []string,
+	fromListID string,
+) tea.Cmd {
+	return func() tea.Msg {
+		succeeded, failed := 0, 0
+		for _, nwo := range nwos {
+			if ctx.Err() != nil {
+				break
+			}
+			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
+			if err != nil {
+				failed++
+				continue
+			}
+			next := make(map[string]struct{}, len(currentIDs))
+			for _, id := range currentIDs {
+				next[id] = struct{}{}
+			}
+			delete(next, fromListID)
+			newIDs := slices.Sorted(maps.Keys(next))
+			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
+				failed++
+			} else {
+				succeeded++
+			}
+		}
+		return bulkDoneMsg{verb: "removed", succeeded: succeeded, failed: failed}
+	}
+}
+
+func bulkMoveReposCmd(
+	ctx context.Context,
+	svc githubapi.Service,
+	nwos []string,
+	fromListID, toListID string,
+) tea.Cmd {
+	return func() tea.Msg {
+		succeeded, failed := 0, 0
+		for _, nwo := range nwos {
+			if ctx.Err() != nil {
+				break
+			}
+			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
+			if err != nil {
+				failed++
+				continue
+			}
+			next := make(map[string]struct{}, len(currentIDs))
+			for _, id := range currentIDs {
+				next[id] = struct{}{}
+			}
+			delete(next, fromListID)
+			next[toListID] = struct{}{}
+			newIDs := slices.Sorted(maps.Keys(next))
+			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
+				failed++
+			} else {
+				succeeded++
+			}
+		}
+		return bulkDoneMsg{verb: "moved", succeeded: succeeded, failed: failed}
 	}
 }

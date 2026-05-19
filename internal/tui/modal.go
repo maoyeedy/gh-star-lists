@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -268,6 +269,75 @@ func newMergeListModal(
 		}
 		target := m.choices[m.choiceCursor]
 		return copyListCmd(ctx, svc, fromList.ID, target.ID, true)
+	}
+	return mo
+}
+
+func newBulkAddModal(
+	ctx context.Context,
+	svc githubapi.Service,
+	nwos []string,
+	allLists []githubapi.StarList,
+) *modal {
+	mo := &modal{
+		kind:    modalPickList,
+		title:   fmt.Sprintf("Add %d repos: pick list", len(nwos)),
+		choices: allLists,
+		ctx:     ctx,
+		svc:     svc,
+	}
+	mo.onConfirm = func(m *modal) tea.Cmd {
+		if len(m.choices) == 0 {
+			return nil
+		}
+		return bulkAddReposCmd(ctx, svc, nwos, m.choices[m.choiceCursor].ID)
+	}
+	return mo
+}
+
+func newBulkRemoveModal(
+	ctx context.Context,
+	svc githubapi.Service,
+	nwos []string,
+	fromListID string,
+) *modal {
+	mo := &modal{
+		kind:  modalConfirmYesNo,
+		title: fmt.Sprintf("Remove %d repos from list?", len(nwos)),
+		ctx:   ctx,
+		svc:   svc,
+	}
+	mo.onConfirm = func(m *modal) tea.Cmd {
+		return bulkRemoveReposCmd(ctx, svc, nwos, fromListID)
+	}
+	return mo
+}
+
+func newBulkMoveModal(
+	ctx context.Context,
+	svc githubapi.Service,
+	nwos []string,
+	allLists []githubapi.StarList,
+	fromListID string,
+) *modal {
+	filtered := make([]githubapi.StarList, 0, len(allLists))
+	for _, l := range allLists {
+		if l.ID != fromListID {
+			filtered = append(filtered, l)
+		}
+	}
+	mo := &modal{
+		kind:    modalPickList,
+		title:   fmt.Sprintf("Move %d repos: pick list", len(nwos)),
+		choices: filtered,
+		ctx:     ctx,
+		svc:     svc,
+	}
+	mo.onConfirm = func(m *modal) tea.Cmd {
+		if len(m.choices) == 0 {
+			return nil
+		}
+		return bulkMoveReposCmd(ctx, svc, nwos, fromListID, m.choices[m.choiceCursor].ID)
 	}
 	return mo
 }

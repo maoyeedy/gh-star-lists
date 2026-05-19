@@ -1788,3 +1788,160 @@ func TestSearchNoModalOnSlash(t *testing.T) {
 		t.Error("searchActive should stay false when modal is open")
 	}
 }
+
+// --- Phase 3: multi-select ---
+
+// TestSelectTogglesRepo verifies space marks and unmarks the focused repo.
+func TestSelectTogglesRepo(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.repoCursor = 0 // "owner/b-repo"
+
+	m2 := update(m, keyPress(' '))
+
+	nwo := m2.displayedRepos[0].NameWithOwner
+	if _, ok := m2.selected[nwo]; !ok {
+		t.Errorf("repo %q should be selected after space", nwo)
+	}
+
+	// Second space unmarks.
+	m3 := update(m2, keyPress(' '))
+	if _, ok := m3.selected[nwo]; ok {
+		t.Errorf("repo %q should be unselected after second space", nwo)
+	}
+}
+
+// TestSelectNoOpInListPane verifies space is a no-op in the list pane.
+func TestSelectNoOpInListPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	// active is paneList by default
+
+	m2 := update(m, keyPress(' '))
+
+	if len(m2.selected) != 0 {
+		t.Errorf("selected should be empty in list pane, got %d", len(m2.selected))
+	}
+}
+
+// TestEscClearsSelectionFirst verifies Esc clears selection before navigating back.
+func TestEscClearsSelectionFirst(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m = update(m, keyPress(' ')) // mark one repo
+
+	if len(m.selected) == 0 {
+		t.Fatal("precondition: selected should be non-empty")
+	}
+
+	m2 := update(m, specialKey(tea.KeyEsc))
+
+	if len(m2.selected) != 0 {
+		t.Errorf("selected should be cleared after Esc, got %d", len(m2.selected))
+	}
+	// Should stay in repo pane (not navigate back).
+	if m2.active != paneRepo {
+		t.Errorf("active = %v, want paneRepo (Esc should clear selection, not navigate)", m2.active)
+	}
+}
+
+// TestBulkDoneMsgClearsSelectionAndSetsToast verifies bulkDoneMsg clears selection.
+func TestBulkDoneMsgClearsSelectionAndSetsToast(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.selected = map[string]struct{}{
+		"owner/a-repo": {},
+		"owner/b-repo": {},
+	}
+
+	m2 := update(m, bulkDoneMsg{verb: "added", succeeded: 2, failed: 0})
+
+	if len(m2.selected) != 0 {
+		t.Errorf("selected should be cleared after bulkDoneMsg, got %d", len(m2.selected))
+	}
+	if m2.statusMsg == "" {
+		t.Error("statusMsg should be set after bulkDoneMsg")
+	}
+	if !strings.Contains(m2.statusMsg, "added") {
+		t.Errorf("statusMsg = %q, want to contain 'added'", m2.statusMsg)
+	}
+}
+
+// TestBulkDoneMsgPartialFailureToast verifies toast mentions failed count.
+func TestBulkDoneMsgPartialFailureToast(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	m2 := update(m, bulkDoneMsg{verb: "removed", succeeded: 1, failed: 1})
+
+	if !strings.Contains(m2.statusMsg, "failed") {
+		t.Errorf("statusMsg = %q, want to contain 'failed'", m2.statusMsg)
+	}
+}
+
+// TestBulkAddModalOpenedWithSelection verifies 'a' opens bulk modal when repos selected.
+func TestBulkAddModalOpenedWithSelection(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.selected = map[string]struct{}{"owner/a-repo": {}}
+
+	m2 := update(m, keyPress('a'))
+
+	if m2.modal == nil {
+		t.Fatal("modal should open on 'a' with selection")
+	}
+	if m2.modal.kind != modalPickList {
+		t.Errorf("modal.kind = %v, want modalPickList", m2.modal.kind)
+	}
+	if !strings.Contains(m2.modal.title, "1 repo") {
+		t.Errorf("modal.title = %q, want to contain '1 repo'", m2.modal.title)
+	}
+}
+
+// TestSelectRendersPrefixWhenSelectionNonEmpty verifies [x]/[ ] prefix appears.
+func TestSelectRendersPrefixWhenSelectionNonEmpty(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m.width = 80
+	m.height = 24
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	// Mark the second repo ("owner/a-repo" at index 1).
+	m.selected = map[string]struct{}{"owner/a-repo": {}}
+
+	rendered := m.renderRepoPane(60, 20)
+
+	if !strings.Contains(rendered, "[x]") {
+		t.Errorf("renderRepoPane should contain '[x]' for checked repo, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "[ ]") {
+		t.Errorf("renderRepoPane should contain '[ ]' for unchecked repo, got:\n%s", rendered)
+	}
+}

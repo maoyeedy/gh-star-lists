@@ -11,6 +11,7 @@ var (
 	styleFooter      = lipgloss.NewStyle().Faint(true)
 	styleError       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleSuccess     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	styleChecked     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 	styleModalBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2)
 	styleModalTitle  = lipgloss.NewStyle().Bold(true)
 )

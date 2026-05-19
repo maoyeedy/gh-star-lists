@@ -5,6 +5,10 @@ import "charm.land/bubbles/v2/key"
 type keyMap struct {
 	Up      key.Binding
 	Down    key.Binding
+	PgUp    key.Binding
+	PgDn    key.Binding
+	Home    key.Binding
+	End     key.Binding
 	Enter   key.Binding
 	Back    key.Binding
 	Quit    key.Binding
@@ -28,6 +32,10 @@ type keyMap struct {
 var keys = keyMap{
 	Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "move up")),
 	Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "move down")),
+	PgUp:    key.NewBinding(key.WithKeys("pgup", "ctrl+b"), key.WithHelp("pgup", "page up")),
+	PgDn:    key.NewBinding(key.WithKeys("pgdown", "ctrl+f"), key.WithHelp("pgdn", "page down")),
+	Home:    key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("home/g", "top")),
+	End:     key.NewBinding(key.WithKeys("end", "G"), key.WithHelp("end/G", "bottom")),
 	Enter:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select/open")),
 	Back:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back/quit")),
 	Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),

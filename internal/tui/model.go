@@ -51,7 +51,9 @@ type model struct {
 	focusedList *githubapi.StarList
 
 	listCursor int
+	listOffset int
 	repoCursor int
+	repoOffset int
 
 	sortLists sortListsKey
 	sortRepos sortReposKey
@@ -167,6 +169,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.repos = nil
 			m.focusedList = nil
 			m.repoCursor = 0
+			m.repoOffset = 0
 			return m, nil
 		}
 		return m, tea.Quit
@@ -177,6 +180,48 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Down):
 		m = m.moveCursor(1)
+		return m, nil
+
+	case key.Matches(msg, keys.PgUp):
+		paneH := max(1, m.height-2)
+		if m.active == paneList {
+			m.listCursor = clampInt(m.listCursor-(paneH-1), 0, len(m.lists)-1)
+			m = m.slideListOffset()
+		} else {
+			m.repoCursor = clampInt(m.repoCursor-(paneH-1), 0, len(m.repos)-1)
+			m = m.slideRepoOffset()
+		}
+		return m, nil
+
+	case key.Matches(msg, keys.PgDn):
+		paneH := max(1, m.height-2)
+		if m.active == paneList {
+			m.listCursor = clampInt(m.listCursor+(paneH-1), 0, len(m.lists)-1)
+			m = m.slideListOffset()
+		} else {
+			m.repoCursor = clampInt(m.repoCursor+(paneH-1), 0, len(m.repos)-1)
+			m = m.slideRepoOffset()
+		}
+		return m, nil
+
+	case key.Matches(msg, keys.Home):
+		if m.active == paneList {
+			m.listCursor = 0
+			m.listOffset = 0
+		} else {
+			m.repoCursor = 0
+			m.repoOffset = 0
+		}
+		return m, nil
+
+	case key.Matches(msg, keys.End):
+		if m.active == paneList {
+			m.listCursor = max(0, len(m.lists)-1)
+			m = m.slideListOffset()
+		} else {
+			m.repoCursor = max(0, len(m.repos)-1)
+			m = m.slideRepoOffset()
+		}
 		return m, nil
 
 	case key.Matches(msg, keys.Enter):
@@ -279,9 +324,33 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m model) moveCursor(delta int) model {
 	if m.active == paneList {
 		m.listCursor = clampInt(m.listCursor+delta, 0, len(m.lists)-1)
+		m = m.slideListOffset()
 	} else {
 		m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.repos)-1)
+		m = m.slideRepoOffset()
 	}
+	return m
+}
+
+func (m model) slideListOffset() model {
+	paneH := max(1, m.height-2)
+	if m.listCursor < m.listOffset {
+		m.listOffset = m.listCursor
+	} else if m.listCursor >= m.listOffset+paneH {
+		m.listOffset = m.listCursor - paneH + 1
+	}
+	m.listOffset = clampInt(m.listOffset, 0, max(0, len(m.lists)-paneH))
+	return m
+}
+
+func (m model) slideRepoOffset() model {
+	paneH := max(1, m.height-2)
+	if m.repoCursor < m.repoOffset {
+		m.repoOffset = m.repoCursor
+	} else if m.repoCursor >= m.repoOffset+paneH {
+		m.repoOffset = m.repoCursor - paneH + 1
+	}
+	m.repoOffset = clampInt(m.repoOffset, 0, max(0, len(m.repos)-paneH))
 	return m
 }
 
@@ -308,6 +377,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		m.active = paneRepo
 		m.repos = nil
 		m.repoCursor = 0
+		m.repoOffset = 0
 		m.loading = true
 		return m, loadReposCmd(m.ctx, m.svc, focused.ID, m.showPreview)
 	}
@@ -345,10 +415,12 @@ func (m model) cycleSort() model {
 		m.sortLists = (m.sortLists + 1) % 4
 		sortStarLists(m.lists, m.sortLists)
 		m.listCursor = 0
+		m.listOffset = 0
 	} else {
 		m.sortRepos = (m.sortRepos + 1) % 6
 		sortRepos(m.repos, m.sortRepos)
 		m.repoCursor = 0
+		m.repoOffset = 0
 	}
 	return m
 }
@@ -367,7 +439,9 @@ func (m model) handleRefresh() (tea.Model, tea.Cmd) {
 	m.focusedList = nil
 	m.active = paneList
 	m.listCursor = 0
+	m.listOffset = 0
 	m.repoCursor = 0
+	m.repoOffset = 0
 	return m, loadListsCmd(m.ctx, m.svc)
 }
 
@@ -541,9 +615,9 @@ func (m model) renderFooter() string {
 	}
 	var hints string
 	if m.active == paneRepo {
-		hints = "a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  ?:help  q:quit"
+		hints = "a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  pg/g/G:scroll  ?:help  q:quit"
 	} else {
-		hints = "n:new  e:edit  d:del  c:copy  C:merge  enter:select  o:open  s:sort  ctrl+r:refresh  ?:help  q:quit"
+		hints = "n:new  e:edit  d:del  c:copy  C:merge  enter:select  o:open  s:sort  ctrl+r:refresh  pg/g/G:scroll  ?:help  q:quit"
 	}
 	return styleFooter.Render(hints)
 }
@@ -553,10 +627,10 @@ func (m model) renderListPane(w, h int) string {
 		return lipgloss.NewStyle().Width(w).Height(h).Render("(no lists)")
 	}
 	lines := make([]string, 0, h)
-	for i, l := range m.lists {
-		if len(lines) >= h {
-			break
-		}
+	start := m.listOffset
+	end := min(start+h, len(m.lists))
+	for i := start; i < end; i++ {
+		l := m.lists[i]
 		cursor := "  "
 		name := l.Name
 		if i == m.listCursor {
@@ -591,10 +665,10 @@ func (m model) renderRepoPane(w, h int) string {
 		return lipgloss.NewStyle().Width(w).Height(h).Render("(no repos)")
 	}
 	lines := make([]string, 0, h)
-	for i, r := range m.repos {
-		if len(lines) >= h {
-			break
-		}
+	start := m.repoOffset
+	end := min(start+h, len(m.repos))
+	for i := start; i < end; i++ {
+		r := m.repos[i]
 		cursor := "  "
 		name := r.NameWithOwner
 		if i == m.repoCursor {
@@ -706,6 +780,10 @@ func (m model) renderHelp() string {
 		"",
 		fmt.Sprintf("  %-16s %s", keys.Up.Help().Key, keys.Up.Help().Desc),
 		fmt.Sprintf("  %-16s %s", keys.Down.Help().Key, keys.Down.Help().Desc),
+		fmt.Sprintf("  %-16s %s", keys.PgUp.Help().Key, keys.PgUp.Help().Desc),
+		fmt.Sprintf("  %-16s %s", keys.PgDn.Help().Key, keys.PgDn.Help().Desc),
+		fmt.Sprintf("  %-16s %s", keys.Home.Help().Key, keys.Home.Help().Desc),
+		fmt.Sprintf("  %-16s %s", keys.End.Help().Key, keys.End.Help().Desc),
 		fmt.Sprintf("  %-16s %s", keys.Enter.Help().Key, keys.Enter.Help().Desc),
 		fmt.Sprintf("  %-16s %s", keys.Back.Help().Key, keys.Back.Help().Desc),
 		fmt.Sprintf("  %-16s %s", keys.Open.Help().Key, keys.Open.Help().Desc),

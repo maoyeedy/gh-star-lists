@@ -134,6 +134,7 @@ func Parse(argv []string) (Parsed, error) {
 		jsonFlag         bool
 		tsvFlag          bool
 		plainFlag        bool
+		fzfFlag          bool
 		sortKeys         []string
 		sortTerms        []SortTerm
 		rawSortTerms     []string
@@ -178,6 +179,8 @@ func Parse(argv []string) (Parsed, error) {
 			tsvFlag = true
 		case "--plain":
 			plainFlag = true
+		case "--fzf":
+			fzfFlag = true
 		case "--sort", "-s":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for %s", arg)
@@ -346,7 +349,7 @@ func Parse(argv []string) (Parsed, error) {
 		}
 	}
 
-	mode, err := format.SelectOutputMode(jsonFlag, tsvFlag, plainFlag)
+	mode, err := format.SelectOutputMode(jsonFlag, tsvFlag, plainFlag, fzfFlag)
 	if err != nil {
 		return Parsed{}, usage("%s", err.Error())
 	}
@@ -354,8 +357,10 @@ func Parse(argv []string) (Parsed, error) {
 		mode = format.OutputTemplate
 	}
 	if jqValue != "" {
-		if tsvFlag || plainFlag || templateStr != "" {
-			return Parsed{}, usage("--jq cannot be combined with --plain, --tsv, or --template")
+		if tsvFlag || plainFlag || fzfFlag || templateStr != "" {
+			return Parsed{}, usage(
+				"--jq cannot be combined with --plain, --tsv, --fzf, or --template",
+			)
 		}
 		mode = format.OutputJSON
 	}
@@ -419,7 +424,7 @@ func Parse(argv []string) (Parsed, error) {
 				)
 			}
 			if webFlag &&
-				(jsonFlag || tsvFlag || plainFlag || templateStr != "" || outputPath != "" || jqValue != "") {
+				(jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" || jqValue != "") {
 				return Parsed{}, usage("--web cannot be combined with output flags")
 			}
 			if err := validateFilters(ActionRepos, filters); err != nil {
@@ -461,6 +466,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -493,6 +499,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -522,6 +529,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -547,6 +555,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -572,6 +581,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -602,6 +612,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -633,6 +644,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -664,6 +676,7 @@ func Parse(argv []string) (Parsed, error) {
 				jsonFlag,
 				tsvFlag,
 				plainFlag,
+				fzfFlag,
 				templateStr,
 				outputPath,
 				jqValue,
@@ -723,12 +736,13 @@ func Parse(argv []string) (Parsed, error) {
 }
 
 func validateWriteOutputFlags(
-	jsonFlag, tsvFlag, plainFlag bool,
+	jsonFlag, tsvFlag, plainFlag, fzfFlag bool,
 	templateStr string,
 	outputPath string,
 	jqValue string,
 ) error {
-	if jsonFlag || tsvFlag || plainFlag || templateStr != "" || outputPath != "" || jqValue != "" {
+	if jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" ||
+		jqValue != "" {
 		return usage("output flags are not supported for write commands")
 	}
 	return nil

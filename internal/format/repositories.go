@@ -26,6 +26,8 @@ func WriteRepositoriesWithOptions(
 		return writeJSONSliceWithOptions(w, options, repos)
 	case OutputTSV:
 		return writeRepositoriesTSV(w, repos)
+	case OutputFZF:
+		return writeRepositoriesFZF(w, repos)
 	case OutputPlain:
 		return writeRepositoriesPlain(w, repos)
 	case OutputTemplate:
@@ -49,6 +51,25 @@ func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 			repo.PushedAt,
 			repo.URL,
 			repo.Language,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeRepositoriesFZF(w io.Writer, repos []githubapi.Repository) error {
+	for _, repo := range repos {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			repo.NameWithOwner,
+			repo.StargazerCount,
+			repo.Language,
+			repo.URL,
+			repo.Description,
+			repo.PushedAt,
+			yesNo(repo.IsFork),
 		); err != nil {
 			return err
 		}

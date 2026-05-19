@@ -437,6 +437,11 @@ func TestRunWritesListOutput(t *testing.T) {
 			want: "Go Tools\tCLI helpers\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/go-tools\n",
 		},
 		{
+			name: "fzf",
+			argv: []string{"list", "--fzf"},
+			want: "Go Tools\tUL_1\t3\thttps://github.com/stars/maoyeedy/lists/go-tools\tCLI helpers\t2024-05-01T12:00:00Z\n",
+		},
+		{
 			name: "template",
 			argv: []string{"list", "--template", "{{range .}}{{.name}}\n{{end}}"},
 			want: "Go Tools\n",
@@ -494,6 +499,11 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 			name: "tsv",
 			argv: []string{"repos", "UL_1", "--tsv"},
 			want: "cli/cli\tGitHub CLI\tno\t41000\t2024-05-01T12:00:00Z\thttps://github.com/cli/cli\t\n",
+		},
+		{
+			name: "fzf",
+			argv: []string{"repos", "UL_1", "--fzf"},
+			want: "cli/cli\t41000\t\thttps://github.com/cli/cli\tGitHub CLI\t2024-05-01T12:00:00Z\tno\n",
 		},
 	}
 
@@ -964,7 +974,13 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 		{
 			name:      "conflicting output flags",
 			argv:      []string{"list", "--json", "--tsv"},
-			wantErr:   "cannot combine --plain, --json, and --tsv",
+			wantErr:   "cannot combine --plain, --json, --tsv, and --fzf",
+			wantUsage: true,
+		},
+		{
+			name:      "conflicting fzf and json",
+			argv:      []string{"list", "--fzf", "--json"},
+			wantErr:   "cannot combine --plain, --json, --tsv, and --fzf",
 			wantUsage: true,
 		},
 	}

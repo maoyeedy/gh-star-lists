@@ -9,21 +9,22 @@ const (
 	OutputHuman    OutputMode = "human"
 	OutputPlain    OutputMode = "plain"
 	OutputTSV      OutputMode = "tsv"
+	OutputFZF      OutputMode = "fzf"
 	OutputJSON     OutputMode = "json"
 	OutputTemplate OutputMode = "template"
 )
 
 // SelectOutputMode validates mutually exclusive output flags and returns the
-// corresponding output mode. The zero-value false/false selection is human.
-func SelectOutputMode(jsonFlag, tsvFlag, plainFlag bool) (OutputMode, error) {
+// corresponding output mode. The zero-value false/false/false/false selection is human.
+func SelectOutputMode(jsonFlag, tsvFlag, plainFlag, fzfFlag bool) (OutputMode, error) {
 	selected := 0
-	for _, flag := range []bool{jsonFlag, tsvFlag, plainFlag} {
+	for _, flag := range []bool{jsonFlag, tsvFlag, plainFlag, fzfFlag} {
 		if flag {
 			selected++
 		}
 	}
 	if selected > 1 {
-		return "", fmt.Errorf("cannot combine --plain, --json, and --tsv")
+		return "", fmt.Errorf("cannot combine --plain, --json, --tsv, and --fzf")
 	}
 	if jsonFlag {
 		return OutputJSON, nil
@@ -33,6 +34,9 @@ func SelectOutputMode(jsonFlag, tsvFlag, plainFlag bool) (OutputMode, error) {
 	}
 	if plainFlag {
 		return OutputPlain, nil
+	}
+	if fzfFlag {
+		return OutputFZF, nil
 	}
 	return OutputHuman, nil
 }

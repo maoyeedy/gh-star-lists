@@ -80,6 +80,7 @@ func TestWriteRepositoriesEmptyOutputs(t *testing.T) {
 	}{
 		{name: "json", mode: format.OutputJSON, want: "[]\n"},
 		{name: "tsv", mode: format.OutputTSV, want: ""},
+		{name: "fzf", mode: format.OutputFZF, want: ""},
 		{
 			name: "human",
 			mode: format.OutputHuman,
@@ -201,5 +202,41 @@ func TestWriteRepositoriesReturnsWriterErrors(t *testing.T) {
 	}
 	if err := format.WriteRepositories(errWriter{}, format.OutputPlain, repos); err == nil {
 		t.Fatal("WriteRepositories plain returned nil error for failing writer")
+	}
+	if err := format.WriteRepositories(errWriter{}, format.OutputFZF, repos); err == nil {
+		t.Fatal("WriteRepositories FZF returned nil error for failing writer")
+	}
+}
+
+func TestWriteRepositoriesFZFColumnOrder(t *testing.T) {
+	t.Parallel()
+
+	repos := []githubapi.Repository{
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			IsFork:         false,
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+			Language:       "Go",
+		},
+		{
+			NameWithOwner:  "fork/project",
+			IsFork:         true,
+			StargazerCount: 0,
+			URL:            "https://github.com/fork/project",
+		},
+	}
+
+	var out bytes.Buffer
+	if err := format.WriteRepositories(&out, format.OutputFZF, repos); err != nil {
+		t.Fatalf("WriteRepositories returned unexpected error: %v", err)
+	}
+
+	want := "cli/cli\t41000\tGo\thttps://github.com/cli/cli\tGitHub CLI\t2024-05-01T12:00:00Z\tno\n" +
+		"fork/project\t0\t\thttps://github.com/fork/project\t\t\tyes\n"
+	if got := out.String(); got != want {
+		t.Fatalf("WriteRepositories FZF output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
 }

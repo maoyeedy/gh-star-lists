@@ -21,6 +21,8 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 		return writeJSONSliceWithOptions(w, options, lists)
 	case OutputTSV:
 		return writeStarListsTSV(w, lists)
+	case OutputFZF:
+		return writeStarListsFZF(w, lists)
 	case OutputPlain:
 		return writeStarListsPlain(w, lists)
 	case OutputTemplate:
@@ -43,6 +45,24 @@ func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
 			list.LastAddedAt,
 			list.ID,
 			list.URL,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeStarListsFZF(w io.Writer, lists []githubapi.StarList) error {
+	for _, list := range lists {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\t%d\t%s\t%s\t%s\n",
+			list.Name,
+			list.ID,
+			list.RepoCount,
+			list.URL,
+			list.Description,
+			list.LastAddedAt,
 		); err != nil {
 			return err
 		}

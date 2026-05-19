@@ -252,6 +252,20 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "fzf after subcommand",
+			argv: []string{"list", "--fzf"},
+			want: command.Parsed{Action: command.ActionList, Mode: format.OutputFZF},
+		},
+		{
+			name: "fzf after repos id",
+			argv: []string{"repos", "list-id", "--fzf"},
+			want: command.Parsed{
+				Action: command.ActionRepos,
+				ListID: "list-id",
+				Mode:   format.OutputFZF,
+			},
+		},
+		{
 			name: "sort list by name",
 			argv: []string{"list", "--sort", "name"},
 			want: command.Parsed{
@@ -591,12 +605,17 @@ func TestParseUsageErrors(t *testing.T) {
 		{
 			name:        "conflicting output flags",
 			argv:        []string{"--json", "--tsv"},
-			wantMessage: "cannot combine --plain, --json, and --tsv",
+			wantMessage: "cannot combine --plain, --json, --tsv, and --fzf",
 		},
 		{
 			name:        "conflicting plain output flag",
 			argv:        []string{"--plain", "--json"},
-			wantMessage: "cannot combine --plain, --json, and --tsv",
+			wantMessage: "cannot combine --plain, --json, --tsv, and --fzf",
+		},
+		{
+			name:        "conflicting fzf and json",
+			argv:        []string{"--fzf", "--json"},
+			wantMessage: "cannot combine --plain, --json, --tsv, and --fzf",
 		},
 		{
 			name:        "no-cache and cache-ttl conflict",
@@ -716,6 +735,11 @@ func TestParseUsageErrors(t *testing.T) {
 			wantMessage: "--web cannot be combined with output flags",
 		},
 		{
+			name:        "web combined with fzf",
+			argv:        []string{"repos", "UL_1", "--web", "--fzf"},
+			wantMessage: "--web cannot be combined with output flags",
+		},
+		{
 			name:        "unlisted on list",
 			argv:        []string{"list", "--unlisted"},
 			wantMessage: "--unlisted is only supported for repos",
@@ -789,6 +813,11 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "filter min-stars non-integer rejected",
 			argv:        []string{"repos", "UL_1", "--filter", "min-stars:abc"},
 			wantMessage: "expected integer",
+		},
+		{
+			name:        "fzf on create rejected",
+			argv:        []string{"create", "MyList", "--fzf"},
+			wantMessage: "output flags are not supported for write commands",
 		},
 		{
 			name:        "search on create rejected",

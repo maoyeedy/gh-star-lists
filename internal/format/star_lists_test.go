@@ -85,6 +85,7 @@ func TestWriteStarListsEmptyOutputs(t *testing.T) {
 	}{
 		{name: "json", mode: format.OutputJSON, want: "[]\n"},
 		{name: "tsv", mode: format.OutputTSV, want: ""},
+		{name: "fzf", mode: format.OutputFZF, want: ""},
 		{
 			name: "human",
 			mode: format.OutputHuman,
@@ -246,5 +247,41 @@ func TestWriteStarListsReturnsWriterErrors(t *testing.T) {
 	}
 	if err := format.WriteStarLists(errWriter{}, format.OutputPlain, lists); err == nil {
 		t.Fatal("WriteStarLists plain returned nil error for failing writer")
+	}
+	if err := format.WriteStarLists(errWriter{}, format.OutputFZF, lists); err == nil {
+		t.Fatal("WriteStarLists FZF returned nil error for failing writer")
+	}
+}
+
+func TestWriteStarListsFZFColumnOrder(t *testing.T) {
+	t.Parallel()
+
+	lists := []githubapi.StarList{
+		{
+			Name:        "Go Tools",
+			Description: "CLI helpers",
+			LastAddedAt: "2024-05-01T12:00:00Z",
+			ID:          "UL_1",
+			RepoCount:   5,
+			URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
+		},
+		{
+			Name:        "No Description",
+			LastAddedAt: "2024-05-02T12:00:00Z",
+			ID:          "UL_2",
+			RepoCount:   0,
+			URL:         "https://github.com/stars/maoyeedy/lists/no-description",
+		},
+	}
+
+	var out bytes.Buffer
+	if err := format.WriteStarLists(&out, format.OutputFZF, lists); err != nil {
+		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
+	}
+
+	want := "Go Tools\tUL_1\t5\thttps://github.com/stars/maoyeedy/lists/go-tools\tCLI helpers\t2024-05-01T12:00:00Z\n" +
+		"No Description\tUL_2\t0\thttps://github.com/stars/maoyeedy/lists/no-description\t\t2024-05-02T12:00:00Z\n"
+	if got := out.String(); got != want {
+		t.Fatalf("WriteStarLists FZF output mismatch\ngot:  %q\nwant: %q", got, want)
 	}
 }

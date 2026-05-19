@@ -11,8 +11,8 @@ const helpTextFull = `gh star-lists
 Query and manage GitHub Star Lists through the GitHub CLI authentication context.
 
 Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]
@@ -44,6 +44,7 @@ Output:
   --plain           Detailed plain text output.
   --json            Machine-readable JSON output.
   --tsv             Tab-separated output for scripts.
+  --fzf             Tab-separated output, column order tuned for fzf piping.
   --output <FILE>   Write output to a file instead of stdout. Prompts before overwriting an existing file; pass --yes to skip the prompt.
   --template <STR>  Go template string applied to JSON data (implies --json data model).
   --jq <QUERY>      jq-style query applied to JSON output (implies --json).
@@ -153,6 +154,7 @@ Flags:
   --json                Machine-readable JSON output.
   --tsv                 Tab-separated output.
   --plain               Detailed plain output.
+  --fzf                 Tab-separated output, column order tuned for fzf.
   --no-color            Disable ANSI color.
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
@@ -186,6 +188,7 @@ Flags:
   --json                Machine-readable JSON output.
   --tsv                 Tab-separated output.
   --plain               Detailed plain output.
+  --fzf                 Tab-separated output, column order tuned for fzf.
   -w, --web             Open list in browser (no output flags).
   --unlisted            Show starred repos not in any list (N+1 API calls).
   --all                 Show all starred repos.
@@ -426,8 +429,8 @@ func HelpTextWithOptions(options format.Options) string {
 
 func UsageText() string {
 	return `Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]

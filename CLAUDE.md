@@ -2,8 +2,12 @@
 
 ## Architecture Invariants
 
-- `githubapi.Service` is the single API boundary consumed by `command`. All GitHub data flows through it. Do not call `graphQLService` or `go-gh` API directly from `command` or `format`.
+- `githubapi.Service` is the single API boundary consumed by `command` and `tui`. All GitHub data flows through it. Do not call `graphQLService` or `go-gh` API directly from `command`, `tui`, or `format`.
 - `command.Parse` is pure argument parsing — never imports `githubapi`, never touches GitHub API. Keeps help and usage paths auth-free.
+- `internal/tui` uses `githubapi.Service` only. Never calls GraphQL directly.
+- `internal/tui` does its own row rendering. Never imports `internal/format`.
+- Cache invalidation from TUI: type-assert `svc.(interface{ Invalidate() })`. Non-cache services are no-ops.
+- `Options.OpenBrowser` passed from `command/run.go`; TUI never imports `cli/browser`.
 - JSON field names and TSV column order are scriptable contracts. Machine output changes require coordinated consumer updates.
 - `NewProductionServiceWithOptions` returns a lazy wrapper. `go-gh` GraphQL client constructed on first API call, not at startup.
 - Extension delegates auth entirely to `gh`. Never store, cache, or forward tokens.
@@ -30,6 +34,7 @@
 | `command` | CLI parsing (`Parse`), run orchestration (`Run`), exit codes | GitHub API calls, output rendering |
 | `githubapi` | GraphQL queries, pagination, response mapping, caching, retry | CLI args, formatting |
 | `format` | JSON/TSV/human/plain/template serialization (`--jq`, `--template`) | API calls, CLI state |
+| `tui` | Charm v2 bubbletea two-pane browser, key handling, sort, rendering | GitHub API calls, CLI args, format package |
 
 ## Common Pitfalls
 
@@ -69,13 +74,27 @@
 
 **`membershipIndex` for bulk ops.** `loadMembershipIndex()` fetches all list memberships concurrently (errgroup, limit 5). Used by `unlisted` and `copy`/`merge`.
 
-**Cache invalidation.** Write ops call `invalidateLists()`, `invalidateStarred()`, or `invalidateAll()`. Never in `command` or `format` packages.
+**Cache invalidation.** Write ops call `invalidateLists()`, `invalidateStarred()`, or `invalidateAll()`. Never in `command` or `format` packages. TUI: type-assert `svc.(interface{ Invalidate() })`.
 
 **Search buffer reuse.** Hoist `tokenCache` map and `editPrev`/`editCurr` `[]int` buffers outside the repo loop in `searchRepositories()`. Reused via `growIntSlice` to avoid per-repo DP allocation.
 
 **`Topics` field type.** `Repository.Topics` is `[]string` (`json:"-"`). Not in JSON/TSV. Used for `--filter topic:` and template matching.
 
 **Non-ASCII characters.** Run `make ascii-check` before commit. Watch for em dashes, en dashes, smart quotes, non-breaking spaces.
+
+**TUI Bubbletea v2 API quirks.** `Model.Init()` returns `tea.Cmd` only. `Model.View()` returns `tea.View` struct (set `v.AltScreen = true`). `tea.WithColorProfile(colorprofile.NoTTY)` is the no-color path.
+
+**TUI key binding pattern.** Use `key.NewBinding(key.WithKeys(...), key.WithHelp(...))` from `charm.land/bubbles/v2/key`. Match with `key.Matches(msg, keys.X)`.
+
+**TUI cache invalidation.** Type-assert `m.svc.(invalidatable)` in model — check the `invalidatable` interface. Never assume service has `Invalidate()`.
+
+**TUI sort enum cycle.** Add enum constant in `model.go`, case in `sort.go`, label in `currentSortLabel()`. Cycle count must match number of enum values.
+
+**TUI rendering.** `lipgloss.Width(s)` for visual width, not `len(s)`. Use `lipgloss.NewStyle().Width(w).Height(h)` for empty-state placeholders.
+
+**TUI v1 has no detail pane.** `Repository.Topics` not available in TUI. No `WithTopics: true` guard needed in TUI v1.
+
+**TUI `fakeService` in tests.** Must implement all `githubapi.Service` methods. Add stubs for unused methods returning nil/nil.
 
 ## Code Review Checklist
 
@@ -86,8 +105,13 @@
 - [ ] New output mode? Handle in both `WriteStarListsWithOptions` and `WriteRepositoriesWithOptions`, `SelectOutputMode` validation
 - [ ] New GraphQL query? Paginate with `$endCursor`/`$first`, `HasNextPage`, `ctx.Err()` guard
 - [ ] New service method? Add to `Service` interface, `lazyService`, `cacheService`, all `fakeService` impls
+- [ ] New TUI action? Wire `browse` in `parse.go`, dispatch in `run.go`, add help text, TTY guard
+- [ ] New TUI key binding? Add to `keys.go`, handle in `model.handleKey`, add to help overlay, test
+- [ ] New TUI sort mode? Add enum constant in `model.go`, case in `sort.go`, label in `currentSortLabel()`, test sort + cycle
 - [ ] Test on stdout? Set `Now` in `Options`, use `testOutputOptions` helper in `run_test.go`
 - [ ] Test uses `errWriter`? Duplicate type in `command_test` and `format_test`
+- [ ] TUI model test? Use `update(m, msg)` pattern, check model fields, test all state transitions
+- [ ] TUI test `fakeService`? Must implement all `githubapi.Service` methods, add `Invalidate()` on `fakeInvalidatableService`
 - [ ] Build passes? `make check`
 
 ## Style & Tooling

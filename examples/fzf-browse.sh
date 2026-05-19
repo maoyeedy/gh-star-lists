@@ -61,7 +61,7 @@ gsl_repo_sort_mode() {
   local mode
   mode=$(cat "$REPO_SORT_FILE" 2>/dev/null || true)
   case "$mode" in
-    name|stars|pushed|github) printf '%s' "$mode" ;;
+    name|stars|pushed|language|starred|github) printf '%s' "$mode" ;;
     *) printf 'name' ;;
   esac
 }
@@ -81,6 +81,12 @@ gsl_repos() {
         ;;
       pushed)
         gh star-lists repos "$id" --tsv --sort pushed --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        ;;
+      language)
+        gh star-lists repos "$id" --tsv --sort language >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        ;;
+      starred)
+        gh star-lists repos "$id" --tsv --sort starred --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       github)
         gh star-lists repos "$id" --tsv >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
@@ -166,18 +172,22 @@ gsl_create_list() {
   if [[ "$visibility" == [Yy]* ]]; then
     gh star-lists create "$name" --description "$desc" --private || return 0
   else
-    gh star-lists create "$name" --description "$desc" || return 0
+    gh star-lists create "$name" --description "$desc" --public || return 0
   fi
   gsl_clear_cache
 }
 
 gsl_edit_list() {
-  local id="$1" name desc args
+  local id="$1" name desc vis args
   name=$(gsl_prompt "New list name") || return 0
   printf 'Description (optional): ' >/dev/tty
   IFS= read -r desc </dev/tty || desc=
+  printf 'Private? [y/N]: ' >/dev/tty
+  IFS= read -r vis </dev/tty || vis=
   args=(star-lists edit "$id" --name "$name")
   [[ -n "$desc" ]] && args+=(--description "$desc")
+  [[ "$vis" == [Yy]* ]] && args+=(--private)
+  [[ "$vis" == [Nn]* ]] && args+=(--public)
   gh "${args[@]}" || return 0
   gsl_clear_cache
 }
@@ -227,9 +237,16 @@ gsl_copy_list() {
   gsl_clear_cache
 }
 
+gsl_merge_list() {
+  local from="$1" target
+  target=$(gsl_prompt "Merge contents into") || return 0
+  gh star-lists merge --from "$from" --to "$target" --yes || return 0
+  gsl_clear_cache
+}
+
 # Footer: repo mode shows the active domain sort, not fzf's fuzzy ranking.
 gsl_list_footer() {
-  printf ' Enter: repos | n/e/D: list | c: copy | Ctrl-R: refresh | Alt-S: sort (%s) ' "$(gsl_list_sort_mode)"
+  printf ' Enter: repos | n/e/D: list | c: copy | C: merge | Ctrl-R: refresh | Alt-S: sort (%s) ' "$(gsl_list_sort_mode)"
 }
 
 gsl_repo_footer() {
@@ -259,7 +276,9 @@ gsl_cycle_sort() {
   case "$current" in
     name) next="stars" ;;
     stars) next="pushed" ;;
-    pushed) next="github" ;;
+    pushed) next="language" ;;
+    language) next="starred" ;;
+    starred) next="github" ;;
     *) next="name" ;;
   esac
   printf '%s' "$next" >"$REPO_SORT_FILE"
@@ -331,7 +350,7 @@ gsl_preview_repo() {
 cleanup() { rm -f "$STATE_FILE" "$LIST_SORT_FILE" "$REPO_SORT_FILE"; }
 trap cleanup EXIT
 
-export -f gsl_list_sort_mode gsl_repo_sort_mode gsl_repos gsl_lists gsl_drill gsl_back gsl_open_repo gsl_clear_cache gsl_prompt gsl_confirm gsl_create_list gsl_edit_list gsl_delete_list gsl_add_repo gsl_remove_repo gsl_move_repo gsl_unstar_repo gsl_copy_list gsl_list_footer gsl_repo_footer gsl_cycle_list_sort gsl_cycle_sort gsl_preview_list gsl_preview_repo
+export -f gsl_list_sort_mode gsl_repo_sort_mode gsl_repos gsl_lists gsl_drill gsl_back gsl_open_repo gsl_clear_cache gsl_prompt gsl_confirm gsl_create_list gsl_edit_list gsl_delete_list gsl_add_repo gsl_remove_repo gsl_move_repo gsl_unstar_repo gsl_copy_list gsl_merge_list gsl_list_footer gsl_repo_footer gsl_cycle_list_sort gsl_cycle_sort gsl_preview_list gsl_preview_repo
 
 # --- fzf prompt names -----------------------------------------------------------
 # Trailing space is intentional: fzf includes it in $FZF_PROMPT.
@@ -417,6 +436,12 @@ if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
 fi
 '
 
+LIST_MERGE='
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "execute(gsl_merge_list {5})+reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+fi
+'
+
 REPO_ADD='
 if [[ "$FZF_PROMPT" == "$P_REPO" ]]; then
   id=$(cat "$STATE_FILE" 2>/dev/null)
@@ -484,6 +509,7 @@ fzf \
   --bind="e:transform:$LIST_EDIT" \
   --bind="D:transform:$LIST_DELETE" \
   --bind="c:transform:$LIST_COPY" \
+  --bind="C:transform:$LIST_MERGE" \
   --bind="a:transform:$REPO_ADD" \
   --bind="x:transform:$REPO_REMOVE" \
   --bind="m:transform:$REPO_MOVE" \

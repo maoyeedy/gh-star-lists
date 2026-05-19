@@ -42,8 +42,8 @@ var confirmAction = func(prompt string) (bool, error) {
 	return value, normalizePromptError(err)
 }
 
-var promptForList = func(label string, choices []string) (int, error) {
-	idx, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).Select(label, "", choices)
+var promptForList = func(label, defaultValue string, choices []string) (int, error) {
+	idx, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).Select(label, defaultValue, choices)
 	return idx, normalizePromptError(err)
 }
 
@@ -92,8 +92,8 @@ func CanPromptForTest(fn func() bool) func() bool {
 }
 
 func PromptForListForTest(
-	fn func(string, []string) (int, error),
-) func(string, []string) (int, error) {
+	fn func(string, string, []string) (int, error),
+) func(string, string, []string) (int, error) {
 	prev := promptForList
 	promptForList = fn
 	return prev
@@ -334,19 +334,31 @@ func RunWithOptions(
 			),
 		)
 	case ActionEdit:
-		if err := ensureEditInputs(&parsed); err != nil {
+		// Fetch current list first so ensureEditInputs can seed prompt defaults.
+		lists, err := service.ListStarLists(ctx)
+		if err != nil {
+			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
+		}
+		currentList, found := listByRaw(lists, parsed.ListID)
+		if err := ensureEditInputs(&parsed, currentList); err != nil {
 			if errors.Is(err, ErrPromptCancelled) {
 				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
 				return ExitSuccess
 			}
 			return writeUsageFailure(stderr, err, diagnosticOptions)
 		}
-		resolvedID, err := resolveListID(ctx, service, parsed.ListID)
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
+		var resolvedID string
+		if found {
+			resolvedID = currentList.ID
+		} else {
+			resolvedID = parsed.ListID
 		}
 		if parsed.DryRun {
-			_, _ = fmt.Fprintf(stdout, "Would update Star List %q.\n", parsed.ListID)
+			_, _ = fmt.Fprintf(
+				stdout,
+				"Would update Star List %q.\n",
+				displayListName(currentList, parsed.ListID),
+			)
 			return ExitSuccess
 		}
 		private := (*bool)(nil)
@@ -371,9 +383,7 @@ func RunWithOptions(
 			),
 		)
 	case ActionDelete:
-		if err := requireYes(parsed, "delete a Star List"); err != nil {
-			return writeUsageFailure(stderr, err, diagnosticOptions)
-		}
+		// Resolve first so the confirmation prompt can name the target.
 		rl, err := resolveList(ctx, service, parsed.ListID)
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
@@ -381,6 +391,9 @@ func RunWithOptions(
 		listName := rl.Name
 		if listName == "" {
 			listName = parsed.ListID
+		}
+		if err := requireYes(parsed, fmt.Sprintf("delete Star List %q", listName)); err != nil {
+			return writeUsageFailure(stderr, err, diagnosticOptions)
 		}
 		if parsed.DryRun {
 			_, _ = fmt.Fprintf(stdout, "Would delete Star List %q.\n", listName)
@@ -417,7 +430,27 @@ func RunWithOptions(
 			)
 		}
 		if parsed.Action != ActionAdd {
-			if err := requireYes(parsed, string(parsed.Action)+" a repository"); err != nil {
+			fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
+			toList, _ := listByRaw(fetchedLists, parsed.ToListID)
+			var actionPhrase string
+			switch parsed.Action {
+			case ActionRemove:
+				actionPhrase = fmt.Sprintf(
+					"remove %s from %q",
+					parsed.RepoName,
+					displayListName(fromList, parsed.FromListID),
+				)
+			case ActionMove:
+				actionPhrase = fmt.Sprintf(
+					"move %s from %q to %q",
+					parsed.RepoName,
+					displayListName(fromList, parsed.FromListID),
+					displayListName(toList, parsed.ToListID),
+				)
+			default:
+				actionPhrase = string(parsed.Action) + " a repository"
+			}
+			if err := requireYes(parsed, actionPhrase); err != nil {
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
 		}
@@ -450,15 +483,28 @@ func RunWithOptions(
 			)
 		}
 		if parsed.Action == ActionMerge || parsed.DeleteSource {
-			if err := requireYes(parsed, string(parsed.Action)+" Star List contents"); err != nil {
+			fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
+			toList, _ := listByRaw(fetchedLists, parsed.ToListID)
+			var actionPhrase string
+			if parsed.Action == ActionMerge {
+				actionPhrase = fmt.Sprintf(
+					"merge %q into %q",
+					displayListName(fromList, parsed.FromListID),
+					displayListName(toList, parsed.ToListID),
+				)
+			} else {
+				actionPhrase = fmt.Sprintf(
+					"copy and delete %q",
+					displayListName(fromList, parsed.FromListID),
+				)
+			}
+			if err := requireYes(parsed, actionPhrase); err != nil {
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
 		}
 		return runListCopy(ctx, stdout, stderr, service, parsed, fetchedLists, outputOptions)
 	case ActionUnstar:
-		if err := requireYes(parsed, "unstar a repository"); err != nil {
-			return writeUsageFailure(stderr, err, diagnosticOptions)
-		}
+		// Resolve first so the confirmation prompt can name the target.
 		repo, err := service.GetRepository(ctx, parsed.RepoName)
 		if err != nil {
 			return writeRuntimeFailure(
@@ -468,6 +514,9 @@ func RunWithOptions(
 				err,
 				diagnosticOptions,
 			)
+		}
+		if err := requireYes(parsed, fmt.Sprintf("unstar %s", repo.NameWithOwner)); err != nil {
+			return writeUsageFailure(stderr, err, diagnosticOptions)
 		}
 		if parsed.DryRun {
 			_, _ = fmt.Fprintf(stdout, "Would unstar %s.\n", repo.NameWithOwner)
@@ -989,7 +1038,7 @@ func pickList(lists []githubapi.StarList, label, excludeID string) (string, erro
 	if len(choices) == 0 {
 		return "", fmt.Errorf("no eligible Star Lists to select")
 	}
-	idx, err := promptForList(label, choices)
+	idx, err := promptForList(label, "", choices)
 	if err != nil {
 		return "", err
 	}
@@ -1085,7 +1134,7 @@ func ensureCreateInputs(parsed *Parsed) error {
 		parsed.DescriptionSet = true
 	}
 	if !parsed.PrivateSet {
-		idx, err := promptForList("Visibility:", []string{"Public", "Private"})
+		idx, err := promptForList("Visibility:", "Public", []string{"Public", "Private"})
 		if err != nil {
 			return err
 		}
@@ -1098,7 +1147,7 @@ func ensureCreateInputs(parsed *Parsed) error {
 	return nil
 }
 
-func ensureEditInputs(parsed *Parsed) error {
+func ensureEditInputs(parsed *Parsed, current githubapi.StarList) error {
 	if parsed.Name != "" || parsed.DescriptionSet || parsed.PrivateSet {
 		return nil
 	}
@@ -1121,20 +1170,20 @@ func ensureEditInputs(parsed *Parsed) error {
 		}
 		switch choices[idx] {
 		case "Name":
-			name, err := promptRequiredInput("New name:", "")
+			name, err := promptRequiredInput("New name:", current.Name)
 			if err != nil {
 				return err
 			}
 			parsed.Name = name
 		case "Description":
-			description, err := promptInput("New description:", "")
+			description, err := promptInput("New description:", current.Description)
 			if err != nil {
 				return err
 			}
 			parsed.Description = description
 			parsed.DescriptionSet = true
 		case "Visibility":
-			visibility, err := promptForList("Visibility:", []string{"Public", "Private"})
+			visibility, err := promptForList("Visibility:", "", []string{"Public", "Private"})
 			if err != nil {
 				return err
 			}

@@ -68,7 +68,8 @@ Filtering:
   --search <STR>   Fuzzy-match repositories by name, description, and language.
 
 Caching:
-  --cache-ttl <DURATION>  Override the in-memory cache TTL (default: 5m). Pass 0 to disable.
+  --cache-ttl <DURATION>  Override the in-memory cache TTL (default: 5m).
+  --no-cache              Disable response caching for this invocation.
 
 Examples:
   gh star-lists
@@ -156,7 +157,8 @@ Flags:
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
   --jq <QUERY>          jq-style filter (implies JSON).
-  --cache-ttl <D>       Override cache TTL (default: 5m). Pass 0 to disable.
+  --cache-ttl <D>       Override cache TTL (default: 5m).
+  --no-cache            Disable response caching for this invocation.
 
 Examples:
   gh star-lists
@@ -191,7 +193,8 @@ Flags:
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
   --jq <QUERY>          jq-style filter (implies JSON).
-  --cache-ttl <D>       Override cache TTL (default: 5m). Pass 0 to disable.
+  --cache-ttl <D>       Override cache TTL (default: 5m).
+  --no-cache            Disable response caching for this invocation.
 
 Examples:
   gh star-lists repos "Go Tools"

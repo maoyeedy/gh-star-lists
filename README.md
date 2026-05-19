@@ -121,7 +121,8 @@ Naxela/The_Lightmapper              797    Python  no    23d ago  https://github
 **Other**
 
 - `-l`, `--limit <N>` — max results
-- `--cache` — cache API responses 5 min; recommended with `--unlisted`
+- `--cache-ttl <DURATION>` — override the in-memory cache TTL (default: 5m); pass `0` or use `--no-cache` to disable
+- `--no-cache` — disable response caching for this invocation
 - `-w`, `--web` — open in browser
 - `--all` — all starred repositories
 - `--unlisted` — starred repos not in any list
@@ -164,7 +165,7 @@ gh star-lists --template '{{range .}}{{.name}} {{.id}}\n{{end}}'
 | repos JSON | `nameWithOwner` `description` `isFork` `stargazerCount` `pushedAt` `url` `language` `starredAt` |
 | repos TSV | `nameWithOwner` `description` `isFork` `stargazerCount` `pushedAt` `url` `language` |
 
-`--cache` caches API responses in memory for 5 min. Useful when chaining multiple calls. Recommended with `--unlisted`.
+Responses are cached in memory for 5 minutes by default. Override with `--cache-ttl <DURATION>` or disable with `--no-cache`. Caching is especially useful when chaining multiple calls with `--unlisted`.
 
 ## Recipes
 
@@ -221,7 +222,7 @@ gh star-lists --help
 
 - Authentication errors: refresh `gh` auth with `gh auth login`.
 - Inaccessible list errors: pass a list name from `gh star-lists`, or an ID that starts with `UL_`.
-- Slow `--unlisted` runs: add `--cache` when chaining repeated queries in the same invocation path.
+- Slow `--unlisted` runs: cache is on by default; add `--cache-ttl 10m` to extend it, or avoid `--no-cache` for these queries.
 - Write command uncertainty: add `--dry-run` to preview supported write actions before mutating GitHub.
 
 ## Development

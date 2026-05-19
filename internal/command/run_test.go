@@ -896,7 +896,11 @@ func TestRunEmptyResultsSucceed(t *testing.T) {
 		argv []string
 		want string
 	}{
-		{name: "empty lists human", argv: []string{"list"}, want: "No Star Lists found.\n"},
+		{
+			name: "empty lists human",
+			argv: []string{"list"},
+			want: "No Star Lists found.\nCreate one with `gh star-lists create <NAME>`.\n",
+		},
 		{name: "empty lists json", argv: []string{"list", "--json"}, want: "[]\n"},
 		{name: "empty repos tsv", argv: []string{"repos", "UL_1", "--tsv"}, want: ""},
 	}
@@ -1980,7 +1984,7 @@ func TestRunPromptForListOnAdd(t *testing.T) {
 	var promptedLabel string
 	var promptedChoices []string
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			promptedLabel = label
 			promptedChoices = choices
 			return 1, nil // pick "Rust Libs"
@@ -2014,7 +2018,7 @@ func TestRunPromptCancelledExitsCleanly(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			return 0, command.ErrPromptCancelled
 		},
 	)
@@ -2058,7 +2062,7 @@ func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
 	var toChoices []string
 	callCount := 0
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			callCount++
 			if callCount == 1 {
 				// --from prompt: return index 0 = "List A (UL_1)"
@@ -2112,7 +2116,7 @@ func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
 
 	var capturedChoices []string
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			capturedChoices = choices
 			return 0, nil
 		},
@@ -2157,7 +2161,7 @@ func TestRunPromptForReposList(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			if !strings.Contains(label, "Star List") {
 				t.Fatalf("prompt label = %q, want Star List", label)
 			}
@@ -2196,7 +2200,7 @@ func TestRunPromptForCreateInputs(t *testing.T) {
 	})
 	defer command.PromptInputForTest(prevPromptInput)
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			if label != "Visibility:" {
 				t.Fatalf("visibility prompt label = %q", label)
 			}
@@ -2275,7 +2279,7 @@ func TestRunPromptForEditFields(t *testing.T) {
 	})
 	defer command.PromptInputForTest(prevPromptInput)
 	prevPromptForList := command.PromptForListForTest(
-		func(label string, choices []string) (int, error) {
+		func(label, _ string, choices []string) (int, error) {
 			if label != "Visibility:" {
 				t.Fatalf("visibility prompt label = %q", label)
 			}
@@ -2304,6 +2308,119 @@ func TestRunPromptForEditFields(t *testing.T) {
 			"updated description = %q, want untouched empty value",
 			svc.updatedInput.Description,
 		)
+	}
+}
+
+func TestRunConfirmationPromptNamesTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		argv       []string
+		wantPrompt string
+	}{
+		{
+			name:       "delete names list",
+			argv:       []string{"delete", "Go Tools"},
+			wantPrompt: `"Go Tools"`,
+		},
+		{
+			name:       "unstar names repo",
+			argv:       []string{"unstar", "cli/cli"},
+			wantPrompt: "cli/cli",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := fixtureService()
+			prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+			defer command.CanPromptForTest(prevCanPrompt)
+
+			var capturedPrompt string
+			prevConfirm := command.ConfirmActionForTest(func(prompt string) (bool, error) {
+				capturedPrompt = prompt
+				return true, nil
+			})
+			defer command.ConfirmActionForTest(prevConfirm)
+
+			var stdout, stderr strings.Builder
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			if !strings.Contains(capturedPrompt, tt.wantPrompt) {
+				t.Fatalf(
+					"confirm prompt = %q, want it to contain %q",
+					capturedPrompt,
+					tt.wantPrompt,
+				)
+			}
+		})
+	}
+}
+
+func TestRunEditDefaultsPreloaded(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", Description: "CLI helpers", ID: "UL_1", RepoCount: 3},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptMulti := command.PromptMultiSelectForTest(
+		func(label string, defaults, choices []string) ([]int, error) {
+			return []int{0, 1}, nil // select Name and Description
+		},
+	)
+	defer command.PromptMultiSelectForTest(prevPromptMulti)
+
+	var capturedNameDefault, capturedDescDefault string
+	prevPromptInput := command.PromptInputForTest(func(label, defaultValue string) (string, error) {
+		switch label {
+		case "New name:":
+			capturedNameDefault = defaultValue
+			return "Renamed", nil
+		case "New description:":
+			capturedDescDefault = defaultValue
+			return "Updated desc", nil
+		}
+		return defaultValue, nil
+	})
+	defer command.PromptInputForTest(prevPromptInput)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"edit", "Go Tools"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if capturedNameDefault != "Go Tools" {
+		t.Fatalf("name default = %q, want 'Go Tools'", capturedNameDefault)
+	}
+	if capturedDescDefault != "CLI helpers" {
+		t.Fatalf("description default = %q, want 'CLI helpers'", capturedDescDefault)
+	}
+}
+
+func TestRunNoCacheDisablesCache(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--no-cache"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	// listCalls must be 1: no cache wrapping means direct service hit
+	if svc.listCalls != 1 {
+		t.Fatalf("listCalls = %d, want 1", svc.listCalls)
 	}
 }
 

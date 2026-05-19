@@ -343,6 +343,15 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "no-cache flag",
+			argv: []string{"list", "--no-cache"},
+			want: command.Parsed{
+				Action:   command.ActionList,
+				Mode:     format.OutputHuman,
+				CacheTTL: ptrDuration(0),
+			},
+		},
+		{
 			name: "limit with sort",
 			argv: []string{"list", "--sort", "name", "--limit", "3"},
 			want: command.Parsed{
@@ -588,6 +597,11 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "conflicting plain output flag",
 			argv:        []string{"--plain", "--json"},
 			wantMessage: "cannot combine --plain, --json, and --tsv",
+		},
+		{
+			name:        "no-cache and cache-ttl conflict",
+			argv:        []string{"--no-cache", "--cache-ttl", "5m"},
+			wantMessage: "cannot combine --no-cache and --cache-ttl",
 		},
 		{name: "unknown flag", argv: []string{"--xml"}, wantMessage: "unknown flag"},
 		{

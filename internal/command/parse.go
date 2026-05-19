@@ -140,6 +140,7 @@ func Parse(argv []string) (Parsed, error) {
 		sortDesc         bool
 		limit            int
 		cacheTTL         *time.Duration
+		noCacheFlag      bool
 		noColorFlag      bool
 		filters          []Filter
 		searchValue      string
@@ -205,6 +206,8 @@ func Parse(argv []string) (Parsed, error) {
 				return Parsed{}, usage("--cache-ttl must not be negative")
 			}
 			cacheTTL = &d
+		case "--no-cache":
+			noCacheFlag = true
 		case "--no-color":
 			noColorFlag = true
 		case "--host":
@@ -355,6 +358,13 @@ func Parse(argv []string) (Parsed, error) {
 			return Parsed{}, usage("--jq cannot be combined with --plain, --tsv, or --template")
 		}
 		mode = format.OutputJSON
+	}
+	if noCacheFlag && cacheTTL != nil {
+		return Parsed{}, usage("cannot combine --no-cache and --cache-ttl")
+	}
+	if noCacheFlag {
+		zero := time.Duration(0)
+		cacheTTL = &zero
 	}
 	sortKeys, sortTerms, err = parseSortTerms(rawSortTerms, sortDesc)
 	if err != nil {

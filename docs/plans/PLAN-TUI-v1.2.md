@@ -1,161 +1,89 @@
-# Plan: TUI v1.2 — Power user features
+# TUI v1.2 - Ship Record
 
-## Goal
+**Shipped:** 2026-05-19
 
-Add the three power-user features that make the TUI faster for people who
-manage large star lists: incremental fuzzy search, multi-select bulk ops,
-and optional mouse support.
+## What shipped
 
-**Prerequisite:** TUI v1.1 shipped (mutations, preview, sort parity).
-
-## Scope
-
-| In | Out |
+| Feature | Commits |
 |---|---|
-| Incremental fuzzy search (in-pane, `/` to activate) | YAML config / themes |
-| Multi-select with `space` → bulk add/remove/move | Default bare-command TUI switch |
-| Mouse: click to focus, scroll to navigate | New GitHub API calls |
-| Viewport scrolling for long repo lists | Second TUI command variant |
+| `internal/search/` package extracted | `af6774f` |
+| Viewport scrolling (both panes) | `271b9a0` |
+| Fuzzy search (`/` key, both panes) | `2530976` |
+| Multi-select (`space`, bulk a/x/m) | `2f79896` |
 
-## Fuzzy search
+Mouse support was deferred to v1.3 (keyboard-first is solid; mouse capture
+interferes with terminal text selection).
 
-**Goal:** `/` activates a search bar at the top of the active pane. Typing
-filters rows in real time. Esc clears and deactivates search.
+## Architecture
 
-**Implementation:**
-- Add `searchActive bool` and `searchInput textinput.Model` to the root model.
-- When active, key events route to `searchInput.Update` first; text changes
-  re-filter the display slice.
-- The **display slice** is separate from the backing `lists`/`repos` slices.
-  Filter produces `filteredLists []githubapi.StarList` and
-  `filteredRepos []githubapi.Repository` by running the search token algorithm.
-- Reuse the fuzzy-token algorithm from `internal/command/search.go`. That
-  file's `searchRepositories` and `searchStarLists` functions are unexported.
-  Options:
-  1. **Export** `SearchRepositories` / `SearchStarLists` from `command` —
-     clean but expands the public API.
-  2. **Duplicate** the algorithm into `internal/tui/search.go` — isolates the
-     TUI; the algorithm is ~80 lines.
-  3. **Extract** into a new shared `internal/search/` package that both
-     `command` and `tui` import.
-  Recommendation: **option 3** (new `internal/search/` package). It's the
-  only option that avoids duplication without creating a `tui → command`
-  import cycle. Move `search.go` logic there; update `command` to import it.
-- Search applies **after** sort, on the already-sorted display slice.
-  Clearing search restores the sorted order without re-fetching.
-- Cursor resets to 0 on each keystroke.
-- `/` key is reserved; do not activate search if a modal is open.
+**`internal/search/` extraction (Phase 0)**
 
-**Files:**
-- New `internal/search/` package: `search.go` with exported
-  `FilterRepositories(repos []githubapi.Repository, query string) []githubapi.Repository`
-  and `FilterStarLists(lists []githubapi.StarList, query string) []githubapi.StarList`.
-- Move token-search algorithm from `internal/command/search.go` into the new
-  package; update `command.searchRepositories` / `command.searchStarLists` to
-  delegate to it.
-- `internal/tui/model.go`: add `searchActive`, `searchInput`,
-  `filteredLists`, `filteredRepos`; wire `/` key; re-filter on input change.
-- `internal/tui/keys.go`: add `Search` binding (`/`).
+- Moved the fuzzy search algorithm out of `internal/command/search.go` into
+  a new `internal/search/` package to break a potential `tui -> command` import
+  cycle.
+- Exported: `FilterRepositories`, `FilterStarLists` (new), `Tokens`, `Score`,
+  `Field`.
+- `internal/command/search.go` reduced to a one-line delegation wrapper.
+- `parse.go` uses `search.Tokens` for query validation.
 
-## Multi-select
+**Viewport scrolling (Phase 1)**
 
-**Goal:** `space` marks/unmarks the focused item in the repo pane. Marked
-items are highlighted. When one or more items are marked, mutation keys
-(`a`, `x`, `m`) act on all marked items instead of just the focused one.
+- Added `listOffset int` / `repoOffset int` to model.
+- `slideListOffset()` / `slideRepoOffset()` keep the cursor visible by sliding
+  the window after every cursor move.
+- Keys: `PgUp`/`PgDn` (page by `h-1`), `Home`/`g` (top), `End`/`G` (bottom).
+- Offsets reset on pane switch, Back, Refresh, and cycleSort.
 
-**Implementation:**
-- Add `selected map[int]bool` (or `map[string]bool` keyed by `NameWithOwner`)
-  to the root model.
-- `space` toggles current cursor item in/out of `selected`.
-- When `len(selected) > 0` and a mutation key is pressed, the mutation
-  payload is a slice: e.g., `addReposCmd(svc, []string{...nwos}, targetListID)`.
-- Visual: selected rows get a `*` or `[x]` prefix (ASCII only).
-- Esc clears `selected` (in addition to existing back/quit behavior).
-- Multi-select only in repo pane. List pane has no multi-select in v1.2.
-- After bulk mutation: refresh pane, clear `selected`, set toast with count
-  ("3 repos moved.").
+**Fuzzy search (Phase 2)**
 
-**New service calls pattern:** `UpdateRepositoryLists` is per-repo. Bulk ops
-are a loop of N calls. Wrap in a single command that fans out with context
-cancellation, similar to `command.loadMembershipIndex`:
-```go
-func bulkMutationCmd(ctx context.Context, svc githubapi.Service, items []string, fn func(string) error) tea.Cmd {
-    return func() tea.Msg {
-        var errs []error
-        for _, item := range items {
-            if ctx.Err() != nil { break }
-            if err := fn(item); err != nil { errs = append(errs, err) }
-        }
-        return bulkDoneMsg{succeeded: len(items) - len(errs), failed: len(errs)}
-    }
-}
-```
-No `errgroup` for v1.2 (sequential is safer against rate limits); parallelize
-in v2 if it becomes a bottleneck.
+- `searchActive bool` + `searchQuery string` + `displayedLists`/`displayedRepos`
+  slices on model. No separate index map -- action handlers read `displayedX[cursor]`
+  directly.
+- `/` key activates; `handleSearchKey` routes printable chars to query, Esc
+  clears, Enter deactivates while keeping filter.
+- Navigation keys (Up/Down/PgUp/PgDn/Home/End) pass through `handleSearchKey`
+  to `handleKey` so the list is scrollable during search.
+- Search bar consumes one row from pane height via `totalH`/`h` pattern in
+  renderers; viewport offset math remains correct.
+- `handleEnter` does ID-based lookup into backing `m.lists` to get a stable
+  pointer (required because `displayedLists` may be a filtered sub-slice
+  returned by `search.FilterStarLists`).
 
-**Files:**
-- `internal/tui/model.go`: add `selected`, `space` key handler, bulk mutation path.
-- `internal/tui/messages.go`: add `bulkDoneMsg`.
-- `internal/tui/keys.go`: add `Select` binding (`space`).
+**Multi-select (Phase 3)**
 
-## Mouse support
+- `selected map[string]struct{}` keyed by `NameWithOwner` (stable across
+  sort/refresh).
+- `space` key (`key.WithKeys("space")` -- bubbletea v2 reports `String()="space"`
+  not `" "` for the space key) toggles the focused repo.
+- `[x]`/`[ ]` prefix rendered via `styleChecked` when selection is non-empty.
+- `a`/`x`/`m` dispatch bulk variants (`bulkAddReposCmd`, `bulkRemoveReposCmd`,
+  `bulkMoveReposCmd`) when `len(m.selected) > 0`; single-repo path unchanged.
+- Bulk cmds are sequential with `ctx.Err()` guard between items.
+- `bulkDoneMsg{verb, succeeded, failed}` drives the toast and triggers refresh.
+- Esc clears selection first (single press), then navigates back on second press.
+- Stale keys pruned in `reposLoadedMsg` so toast count is accurate.
 
-**Goal:** click to move cursor; scroll wheel to scroll.
+## Files changed
 
-**Implementation:**
-- Add `tea.WithMouseCellMotion()` to `tea.NewProgram(...)` in `app.go`.
-  Only enable when `!opts.NoMouse` (add `NoMouse bool` to `Options`).
-- Handle `tea.MouseMsg` in `Update`:
-  - `tea.MouseButton1` click: compute which pane and which row was clicked,
-    set cursor. If already focused row is clicked in list pane, drill in.
-  - `tea.MouseWheelUp` / `tea.MouseWheelDown`: equivalent to `up`/`down`.
-- Mouse row hit-testing: `model.listPaneTop` and `model.repoPaneTop` track
-  the Y offset where each pane starts rendering rows (set during `View`).
-  This requires storing layout geometry computed in `renderLayout`.
-- Mouse is additive — all keyboard shortcuts remain unchanged.
-- `--no-mouse` flag in `parse.go` maps to `Options.NoMouse`. Default: enabled
-  on TTY (mouse capture can interfere with terminal selection; document this).
+| File | Change |
+|---|---|
+| `internal/search/search.go` | NEW -- extracted algorithm |
+| `internal/search/search_test.go` | NEW -- primitive + filter tests |
+| `internal/command/search.go` | Reduced to delegation |
+| `internal/command/parse.go` | `search.Tokens` for validation |
+| `internal/tui/keys.go` | PgUp, PgDn, Home, End, Search, Select bindings |
+| `internal/tui/model.go` | Offsets, displayed slices, search, selected |
+| `internal/tui/modal.go` | Bulk modal constructors (newBulkAdd/Remove/Move) |
+| `internal/tui/messages.go` | `bulkDoneMsg`, bulk cmds |
+| `internal/tui/styles.go` | `styleChecked` |
+| `internal/tui/model_test.go` | Viewport, search, multi-select tests |
 
-**Files:**
-- `internal/tui/app.go`: add `NoMouse` to `Options`; conditional mouse option.
-- `internal/tui/model.go`: add `listPaneTop`, `repoPaneTop`; handle
-  `tea.MouseMsg`.
-- `internal/command/parse.go`: add `--no-mouse` flag for `browse`.
-- `internal/command/run.go`: thread `parsed.NoMouse` into `tui.Options`.
+## Deferred to v1.3
 
-## Viewport scrolling
-
-Current v1 renders only the top N rows that fit. For lists with hundreds of
-repos, rows below the visible window are unreachable.
-
-Use `charm.land/bubbles/v2/viewport` to make each pane scrollable:
-- Replace the raw `strings.Join(lines, "\n")` pane renderers with a
-  `viewport.Model` per pane.
-- Viewport handles all scroll commands (`pgup`/`pgdn`, `home`/`end`).
-- Keep the cursor highlight by rendering into the viewport content, not as
-  a separate overlay.
-- `pgup`/`pgdn`/`home`/`end` already in `keys.go` from v1 — hook them
-  into viewport's `Update`.
-
-**Files:**
-- `internal/tui/model.go`: replace manual pane rendering with viewport models
-  `listVP`, `repoVP viewport.Model`; update layout code.
-
-## Test additions
-
-- Search: filter reduces display slice; clear restores; cursor resets.
-- Multi-select: space marks; second space unmarks; mutation uses all marked.
-- Bulk mutation toast shows count.
-- Mouse: click moves cursor to correct row; scroll moves cursor.
-- Viewport: rows beyond visible height are reachable via pgdn.
-
-## Verification
-
-```
-make check
-make ascii-check
-# Search: open browse, press /, type partial name, confirm filter.
-# Multi-select: mark 3 repos, press a, pick a list, confirm 3 moved.
-# Mouse: click a list row, verify it focuses.
-# Scroll: pgdn in a list with 30+ repos, verify bottom rows visible.
-```
+- Mouse support (click-to-focus, scroll; `--mouse` opt-in flag)
+- Search edge cases: multi-byte runes, very long queries, empty-result hint
+- Bulk-mutation partial-failure UX (per-item error toast or summary modal)
+- Search-while-modal-open guard hardening
+- Footer hint truncation on narrow widths
+- Help overlay updates for v1.2 additions
+- Performance: re-bench `FilterRepositories` on lists with 500+ repos

@@ -100,6 +100,12 @@
 - After Go edits: `go tool goimports -w <file>`
 - Final validation: `make check`
 
+## README
+
+- Keep focused on quick-start essentials: install, basic usage, `--help` pointer.
+- Do not duplicate `--help` output or document advanced flags/examples. Defer to `--help`.
+- Limit to ~30 lines. If changes grow beyond that, push detail into `--help` instead.
+
 ## Context7 Library IDs
 
 Pre-resolved. Use `query-docs` directly.

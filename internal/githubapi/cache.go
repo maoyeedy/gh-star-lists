@@ -9,7 +9,7 @@ import (
 const defaultCacheTTL = 5 * time.Minute
 
 type cacheEntry[T any] struct {
-	data   []T
+	data   T
 	expiry time.Time
 }
 
@@ -22,24 +22,19 @@ type cacheService struct {
 	inner Service
 
 	mu           sync.RWMutex
-	listsEntry   *cacheEntry[StarList]
-	reposEntry   map[reposCacheKey]*cacheEntry[Repository]
-	starredEntry map[bool]*cacheEntry[Repository]
-	repoEntry    map[string]*cacheRepo
+	listsEntry   *cacheEntry[[]StarList]
+	reposEntry   map[reposCacheKey]*cacheEntry[[]Repository]
+	starredEntry map[bool]*cacheEntry[[]Repository]
+	repoEntry    map[string]*cacheEntry[Repository]
 	ttl          time.Duration
-}
-
-type cacheRepo struct {
-	data   Repository
-	expiry time.Time
 }
 
 func newCacheService(inner Service) *cacheService {
 	return &cacheService{
 		inner:        inner,
-		reposEntry:   make(map[reposCacheKey]*cacheEntry[Repository]),
-		starredEntry: make(map[bool]*cacheEntry[Repository]),
-		repoEntry:    make(map[string]*cacheRepo),
+		reposEntry:   make(map[reposCacheKey]*cacheEntry[[]Repository]),
+		starredEntry: make(map[bool]*cacheEntry[[]Repository]),
+		repoEntry:    make(map[string]*cacheEntry[Repository]),
 		ttl:          defaultCacheTTL,
 	}
 }
@@ -79,7 +74,7 @@ func (s *cacheService) ListStarLists(
 	}
 
 	s.mu.Lock()
-	s.listsEntry = &cacheEntry[StarList]{
+	s.listsEntry = &cacheEntry[[]StarList]{
 		data:   lists,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -108,7 +103,7 @@ func (s *cacheService) ListRepositories(
 	}
 
 	s.mu.Lock()
-	s.reposEntry[key] = &cacheEntry[Repository]{
+	s.reposEntry[key] = &cacheEntry[[]Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -136,7 +131,7 @@ func (s *cacheService) ListStarredRepositories(
 	}
 
 	s.mu.Lock()
-	s.starredEntry[withTopics] = &cacheEntry[Repository]{
+	s.starredEntry[withTopics] = &cacheEntry[[]Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -162,7 +157,7 @@ func (s *cacheService) GetRepository(
 	}
 
 	s.mu.Lock()
-	s.repoEntry[nameWithOwner] = &cacheRepo{
+	s.repoEntry[nameWithOwner] = &cacheEntry[Repository]{
 		data:   repo,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -246,16 +241,16 @@ func (s *cacheService) invalidateLists() {
 
 func (s *cacheService) invalidateStarred() {
 	s.mu.Lock()
-	s.starredEntry = make(map[bool]*cacheEntry[Repository])
+	s.starredEntry = make(map[bool]*cacheEntry[[]Repository])
 	s.mu.Unlock()
 }
 
 func (s *cacheService) invalidateAll() {
 	s.mu.Lock()
 	s.listsEntry = nil
-	s.reposEntry = make(map[reposCacheKey]*cacheEntry[Repository])
-	s.starredEntry = make(map[bool]*cacheEntry[Repository])
-	s.repoEntry = make(map[string]*cacheRepo)
+	s.reposEntry = make(map[reposCacheKey]*cacheEntry[[]Repository])
+	s.starredEntry = make(map[bool]*cacheEntry[[]Repository])
+	s.repoEntry = make(map[string]*cacheEntry[Repository])
 	s.mu.Unlock()
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
+	"github.com/maoyeedy/gh-star-lists/internal/search"
 )
 
 type Action string
@@ -313,7 +314,7 @@ func Parse(argv []string) (Parsed, error) {
 			if searchValue == "" {
 				return Parsed{}, usage("empty value for --search")
 			}
-			if len(searchTerms(searchValue)) == 0 {
+			if len(search.Tokens(searchValue)) == 0 {
 				return Parsed{}, usage("search has no searchable terms")
 			}
 		case "--template":

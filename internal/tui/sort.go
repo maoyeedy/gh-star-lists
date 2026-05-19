@@ -47,6 +47,30 @@ func sortRepos(repos []githubapi.Repository, key sortReposKey) {
 			if repos[i].PushedAt != repos[j].PushedAt {
 				return repos[i].PushedAt > repos[j].PushedAt
 			}
+		case sortReposLanguage:
+			a, b := strings.ToLower(repos[i].Language), strings.ToLower(repos[j].Language)
+			// empty language sorts last
+			if a == "" && b != "" {
+				return false
+			}
+			if a != "" && b == "" {
+				return true
+			}
+			if a != b {
+				return a < b
+			}
+		case sortReposStarredAt:
+			// descending: newer first; empty StarredAt sorts last
+			ai, aj := repos[i].StarredAt, repos[j].StarredAt
+			if ai == "" && aj != "" {
+				return false
+			}
+			if ai != "" && aj == "" {
+				return true
+			}
+			if ai != aj {
+				return ai > aj
+			}
 		case sortReposGitHub:
 			// server order - no sort
 			return false

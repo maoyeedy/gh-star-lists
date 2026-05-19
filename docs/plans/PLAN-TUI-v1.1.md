@@ -1,179 +1,100 @@
-# Plan: TUI v1.1 — Mutations + Preview + Sort parity
+# TUI v1.1 -- Ship record
 
-## Goal
+**Shipped:** 2026-05-19
 
-Close the gap between the TUI and `examples/fzf-browse.sh`. After v1.1 the TUI
-should be a complete replacement for the fzf script for daily use.
+## What shipped
 
-**Prerequisite:** TUI v1 shipped (browse-only, `internal/tui/` exists).
+**Prerequisite:** TUI v1.0 (browse-only two-pane browser, `internal/tui/` exists).
 
-## Scope
-
-| In | Out |
-|---|---|
-| All 9 mutation actions via Bubble Tea modal | Mouse support |
-| Detail preview pane (right side, toggle) | Multi-select / bulk ops |
-| Repo sort: add `language` + `starred` to cycle | Fuzzy search |
-| Status toasts (post-mutation, ~2s auto-dismiss) | YAML config / themes |
-| "coming soon" placeholder keys → real handlers | Changing default bare-command behavior |
-
-## Mutations (9 actions)
-
-Wire through `githubapi.Service` only. Never call GraphQL from TUI.
-
-For repo mutations (`add`, `remove`, `move`, `unstar`), resolving the repo ID
-requires `service.GetRepositoryMemberships`. The membership map is already used
-by `command.runRepoListMutation` — replicate the same pre-fetch pattern.
+### All 9 mutations wired
 
 | Key | Action | Modal type |
 |---|---|---|
 | `n` | Create list | Multi-field form: name, description, public/private toggle |
-| `e` | Edit list | Same form, prefilled; Esc cancels without save |
-| `d` | Delete list | Confirm: type list name to confirm, Enter submits |
-| `a` | Add focused repo to another list | List picker: shows all lists, marks current membership |
-| `x` | Remove focused repo from current list | Confirm: "remove repo from list? y/N" |
-| `m` | Move focused repo to another list | List picker (excludes current list) |
-| `u` | Unstar focused repo | Confirm: type repo name to confirm |
-| `c` | Copy current list contents into another | List picker |
-| `C` | Merge current list into another (destructive) | List picker + confirm |
+| `e` | Edit list | Same form, prefilled name+description; visibility unset (no `IsPrivate` on `StarList`) |
+| `d` | Delete list | Confirm: type list name; Enter submits only when match |
+| `a` | Add focused repo to another list | List picker: all lists |
+| `x` | Remove focused repo from current list | y/N confirm |
+| `m` | Move focused repo to another list | List picker: excludes current |
+| `u` | Unstar focused repo | Confirm: type `NameWithOwner` |
+| `c` | Copy current list contents to another | List picker: excludes source |
+| `C` | Merge current list into another (destructive) | List picker + auto-delete source |
 
-All modal keys must be no-ops in the opposite pane (e.g., `n/e/d/c/C` do
-nothing in repo pane; `a/x/m/u` do nothing in list pane).
+All modal keys enforce pane guards: `n/e/d/c/C` no-op in repo pane; `a/x/m/u` no-op in list pane.
 
-**Destructive confirmations** (`d`, `x`, `u`, `C`) require the user to type
-the exact name before submitting. Bubble Tea `textinput` for the typed value.
+**Destructive confirmations** (`d`, `u`) require the user to type the exact name before submitting; Enter only fires when `textinput.Value() == expected`.
 
-**Non-destructive pickers** (`a`, `m`, `c`) use an inline scrollable list
-overlay. Arrow keys move; Enter confirms; Esc cancels.
+**Bulk copy/merge** (`c`, `C`) use `golang.org/x/sync/errgroup` with `SetLimit(5)`, mirroring `runListCopy` in `command/run.go`. Each repo's current membership set is fetched individually inside the fan-out.
 
-## Modal architecture
+### Extended repo sort
 
-Add `internal/tui/modal.go`:
+Sort cycle extended from 4 to 6 modes: `github -> name -> stars -> pushed -> language -> starred`.
 
-```go
-type modalKind int
-const (
-    modalNone modalKind = iota
-    modalCreateList
-    modalEditList
-    modalDeleteList
-    modalPickList      // used by add, move, copy, merge
-    modalConfirmText   // typed-name confirmation (delete, unstar, merge)
-    modalConfirmYesNo  // simple y/N (remove)
-)
+- `sortReposLanguage`: case-insensitive ascending; empty language sorts last; tiebreak `NameWithOwner`.
+- `sortReposStarredAt`: descending (newest first); empty `StarredAt` sorts last (only populated by `ListStarredRepositories`; list-scoped repos display "-").
 
-type modal struct {
-    kind     modalKind
-    title    string
-    // for form modals (create/edit)
-    fields   []textinput.Model
-    focused  int
-    // for list-picker modals
-    choices  []githubapi.StarList
-    cursor   int
-    // for confirm-text modals
-    input    textinput.Model
-    expected string   // value user must type
-    // for yes/no confirms
-    confirmed bool
-    // action to dispatch after modal confirm
-    onConfirm func(m model) (model, tea.Cmd)
-}
-```
+### Detail preview pane
 
-The root model gains a `modal *modal` field. When `modal != nil`:
-- `View()` renders the modal overlay on top of the layout.
-- `Update` routes key events to `modal.Update`, not `handleKey`.
-- Esc always cancels the modal and returns to browse.
-- Mutation completion sets `modal = nil`, triggers pane refresh, sets a
-  status toast.
+`p` toggles a third column (lists | repos | preview) rendering:
+name, URL, description, language, license, archived/fork flags, pushed-at, starred-at, topics.
 
-Use `charm.land/bubbles/v2/textinput` for text fields.
+Topics require `WithTopics: true` on `ListRepositories` -- passed only when `showPreview == true`. Toggling preview on in repo pane re-dispatches `loadReposCmd(..., withTopics: true)`.
 
-## Status toast system
+### Status toast system
 
-Add `statusMsg` field (`string`) and `statusExpiry` field (`time.Time`) to
-the root model. After a mutation:
-```go
-m.statusMsg = "List deleted."
-m.statusExpiry = time.Now().Add(2 * time.Second)
-```
-In `renderFooter`, if `statusMsg != ""` and not expired, render it in green
-instead of the normal key hints. On expiry, clear via `tea.Tick`:
-```go
-func statusClearCmd(expiry time.Time) tea.Cmd {
-    return tea.Tick(time.Until(expiry)+10*time.Millisecond, func(time.Time) tea.Msg {
-        return statusExpiredMsg{}
-    })
-}
-```
+`mutationDoneMsg{err: nil}` sets `statusMsg = "Done."` for 2 seconds, displayed in `renderFooter` via `styleSuccess`. `tea.Tick` fires `statusExpiredMsg` to clear.
 
-## Detail preview pane
+### Footer hints
 
-Add `showPreview bool` to the root model, toggled by `p`. When on:
-- Three-column layout: lists | repos | preview.
-- Preview pane renders: name, URL, description, language, license, archived,
-  fork, pushed-at, starred-at, topics.
-- `Topics` requires `ListRepositories(ctx, id, ListOptions{WithTopics: true})`.
-  Pass `WithTopics: true` only when preview is visible (`showPreview == true`).
-  Add `showPreview` to `loadReposCmd` so it selects the right options.
-- Add `p` to keymap and footer hints.
+Footer now shows pane-specific mutation hints:
+- **List pane:** `n:new  e:edit  d:del  c:copy  C:merge  enter:select ...`
+- **Repo pane:** `a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open ...`
 
-Preview renders as a vertical card, no box-drawing (ASCII `|` separator only).
+## Architecture notes
 
-## Extended repo sort
+### Modal overlay
 
-Extend `sortReposKey` iota:
-```go
-const (
-    sortReposGitHub sortReposKey = iota
-    sortReposName
-    sortReposStars
-    sortReposPushed
-    sortReposLanguage   // NEW
-    sortReposStarredAt  // NEW
-)
-```
-Cycle: `github -> name -> stars -> pushed -> language -> starred -> github`
-(6 modes, `% 6`). Matches `fzf-browse.sh` exactly.
+`modal` struct in `internal/tui/modal.go`. When `model.modal != nil`:
+- `Update` routes `tea.KeyPressMsg` to `modal.update(msg)` instead of `handleKey`.
+- `renderContent` calls `lipgloss.Place(width, height, Center, Center, box)` replacing the base layout. lipgloss v2 has no z-order primitive; "replace" is the conventional approach.
+- Esc always cancels and returns `(nil, nil)`.
 
-`sortReposLanguage`: sort by `Language` ascending, case-insensitive; empty
-language sorts last. Tiebreak: `NameWithOwner`.
+### Mutation commands
 
-`sortReposStarredAt`: sort by `StarredAt` descending; empty `StarredAt` sorts
-last. `StarredAt` is only populated by `ListStarredRepositories`, not
-`ListRepositories` — display "-" for empty values; the sort still works
-(empty strings sort consistently).
+All commands in `internal/tui/messages.go`. Shape: `func xyzCmd(ctx, svc, ...) tea.Cmd` returning a closure that calls the service and returns `mutationDoneMsg{kind, err}`.
 
-## Files to create / modify
+Repo membership set-diff logic replicates `runRepoListMutation` (`command/run.go:631-699`):
+`GetRepositoryMemberships` -> build `map[string]struct{}` -> mutate -> `slices.Sorted(maps.Keys(next))` -> `UpdateRepositoryLists`.
 
-- `internal/tui/modal.go` — new; modal struct, Update, View for all modal types.
-- `internal/tui/model.go` — add `modal`, `statusMsg`, `statusExpiry`,
-  `showPreview` fields; new key handlers (`n/e/d/a/x/m/u/c/C/p`); wire
-  modal render into `View`; three-column layout when preview active.
-- `internal/tui/messages.go` — add mutation result messages (`mutationDoneMsg`,
-  `statusExpiredMsg`), mutation commands (`createListCmd`, `deleteListCmd`, etc.).
-- `internal/tui/sort.go` — add `sortReposLanguage`, `sortReposStarredAt` cases.
-- `internal/tui/keys.go` — add bindings for `n/e/d/a/x/m/u/c/C/p`.
-- `internal/tui/styles.go` — add `styleSuccess`, `styleModal*` styles.
+The TUI never imports `internal/command`.
 
-## Test additions
+### Cache invalidation
 
-- Modal open/cancel for each type.
-- Confirm-text: wrong input doesn't submit; correct input submits and triggers
-  mutation command.
-- List-picker: arrow navigation, Enter selects, Esc cancels.
-- Mutation command success → pane refreshed, status set.
-- Mutation command failure → error banner shown, modal closed.
-- Sort extended: `language` and `starred` modes sort correctly.
-- Preview pane: `WithTopics: true` passed when `showPreview == true`.
+Do NOT call `Invalidate()` after mutations. `cacheService` auto-invalidates inside each write method (`cache.go:180,192,201,216,224,232`). After `mutationDoneMsg` success, `model.Update` dispatches `loadListsCmd` (and `loadReposCmd` when in repo pane) to re-fetch fresh data.
 
-## Verification
+### Design decisions made at implementation time
 
-```
-make check
-make ascii-check
-# Interactive: create a list, edit it, add a repo, move it, delete the list.
-# Confirm each pane refreshes after each mutation.
-# Confirm Esc cancels mid-modal without side effects.
-```
+- `StarList` has no `IsPrivate` field (write-only) -- edit modal prefills name+description only; visibility toggle starts unset; `Private *bool` is nil unless user picks.
+- Copy/merge: errgroup with limit 5 (mirrors CLI), no typed-name confirm for `C` (Enter on picker is the confirmation).
+- Modal overlay: replace-mode (not z-order splice).
+
+## Files created / modified
+
+- `internal/tui/modal.go` -- NEW; `modalKind` enum, `modal` struct, all constructors and Update/View methods
+- `internal/tui/model.go` -- added fields (`modal`, `statusMsg`, `statusExpiry`, `showPreview`), message routing, key handlers, three-column layout, preview render, footer mutation hints
+- `internal/tui/messages.go` -- `mutationDoneMsg`, `statusExpiredMsg`, `statusClearCmd`, all 9 mutation commands + `loadReposCmd` extended with `withTopics bool`
+- `internal/tui/keys.go` -- 10 new bindings (n/e/d/a/x/m/u/c/C/p)
+- `internal/tui/styles.go` -- `styleSuccess`, `styleModalBorder`, `styleModalTitle`
+- `internal/tui/model_test.go` -- 56 tests total (v1.0: 28, v1.1 additions: 28); `recordingFakeService`, `repoMutationFakeService`, `copyMergeFakeService`, `topicTrackingService`
+
+## Deferred from v1.1
+
+| Deferred | Reason | Planned in |
+|---|---|---|
+| Typed-name confirm for merge (C) | Two-step picker+confirm modal not implemented | v1.2 |
+| Fuzzy search (/) | Requires extracting internal/search/ shared package | v1.2 |
+| Multi-select (space) | Depends on mutations being mature | v1.2 |
+| Mouse support | Low priority; keyboard-first | v1.2 |
+| Viewport scrolling | Requires bubbles/viewport swap | v1.2 |
+| YAML config / themes | No config system yet | v2 |
+| Bare `gh star-lists` opens TUI by default | Deferred until TUI validated in real use | v2 |

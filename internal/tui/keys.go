@@ -12,6 +12,17 @@ type keyMap struct {
 	Open    key.Binding
 	Refresh key.Binding
 	Help    key.Binding
+
+	CreateList key.Binding
+	EditList   key.Binding
+	DeleteList key.Binding
+	AddRepo    key.Binding
+	RemoveRepo key.Binding
+	MoveRepo   key.Binding
+	UnstarRepo key.Binding
+	CopyList   key.Binding
+	MergeList  key.Binding
+	Preview    key.Binding
 }
 
 var keys = keyMap{
@@ -24,4 +35,15 @@ var keys = keyMap{
 	Open:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open in browser")),
 	Refresh: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "refresh")),
 	Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "toggle help")),
+
+	CreateList: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new list")),
+	EditList:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit list")),
+	DeleteList: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete list")),
+	AddRepo:    key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add repo to list")),
+	RemoveRepo: key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "remove repo from list")),
+	MoveRepo:   key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "move repo")),
+	UnstarRepo: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unstar repo")),
+	CopyList:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy list contents")),
+	MergeList:  key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "merge list (destructive)")),
+	Preview:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "toggle preview")),
 }

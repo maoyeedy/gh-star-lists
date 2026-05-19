@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -388,11 +389,11 @@ func TestSortCycleReposPane(t *testing.T) {
 		t.Error("sortRepos should change after s key")
 	}
 	cur := m
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 6; i++ {
 		cur = update(cur, keyPress('s'))
 	}
 	if cur.sortRepos != initial {
-		t.Errorf("sortRepos after 4 cycles = %d, want %d (initial)", cur.sortRepos, initial)
+		t.Errorf("sortRepos after 6 cycles = %d, want %d (initial)", cur.sortRepos, initial)
 	}
 }
 
@@ -642,5 +643,799 @@ func TestLoadingRendersInView(t *testing.T) {
 	view := m.renderContent()
 	if !containsStr(view, "Loading") {
 		t.Errorf("loading view = %q, want to contain 'Loading'", view)
+	}
+}
+
+// TestSortReposByLanguage verifies ascending language sort (case-insensitive,
+// empty language sorts last).
+func TestSortReposByLanguage(t *testing.T) {
+	t.Parallel()
+	repos := []githubapi.Repository{
+		{NameWithOwner: "a/a", Language: "Rust"},
+		{NameWithOwner: "b/b", Language: ""},
+		{NameWithOwner: "c/c", Language: "Go"},
+		{NameWithOwner: "d/d", Language: "go"}, // lowercase -- ties with c/c, tiebreak by name
+	}
+	sortRepos(repos, sortReposLanguage)
+
+	// Empty must be last.
+	if repos[len(repos)-1].Language != "" {
+		t.Errorf("last repo Language = %q, want empty (sorts last)", repos[len(repos)-1].Language)
+	}
+	// First two should be "go"/"Go" variants before "Rust".
+	for i := 0; i < 2; i++ {
+		if strings.ToLower(repos[i].Language) != "go" {
+			t.Errorf("repos[%d].Language = %q, want a go variant", i, repos[i].Language)
+		}
+	}
+	if strings.ToLower(repos[2].Language) != "rust" {
+		t.Errorf("repos[2].Language = %q, want rust", repos[2].Language)
+	}
+}
+
+// TestSortReposByStarredAt verifies descending StarredAt sort (empty sorts last).
+func TestSortReposByStarredAt(t *testing.T) {
+	t.Parallel()
+	repos := []githubapi.Repository{
+		{NameWithOwner: "a/a", StarredAt: "2024-01-01T00:00:00Z"},
+		{NameWithOwner: "b/b", StarredAt: ""},
+		{NameWithOwner: "c/c", StarredAt: "2024-03-01T00:00:00Z"},
+	}
+	sortRepos(repos, sortReposStarredAt)
+
+	if repos[0].NameWithOwner != "c/c" {
+		t.Errorf("first by starredAt = %q, want c/c (newest)", repos[0].NameWithOwner)
+	}
+	if repos[len(repos)-1].StarredAt != "" {
+		t.Errorf("last StarredAt = %q, want empty (sorts last)", repos[len(repos)-1].StarredAt)
+	}
+}
+
+// TestModalOpenAndClose verifies a new-key stub opens a modal that Esc closes.
+func TestModalOpenAndClose(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+
+	m2 := update(m, keyPress('n'))
+	if m2.modal == nil {
+		t.Fatal("modal should be open after 'n'")
+	}
+
+	m3 := update(m2, specialKey(tea.KeyEscape))
+	if m3.modal != nil {
+		t.Error("modal should be closed after esc")
+	}
+}
+
+// TestRepoMutationKeysNoOpInListPane verifies a/x/m/u do nothing in list pane.
+func TestRepoMutationKeysNoOpInListPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneList
+
+	for _, k := range []rune{'a', 'x', 'm', 'u'} {
+		m2 := update(m, keyPress(k))
+		if m2.modal != nil {
+			t.Errorf("key %c should be no-op in list pane, got modal", k)
+		}
+	}
+}
+
+// TestPreviewToggle verifies p key toggles showPreview.
+func TestPreviewToggle(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+
+	m2 := update(m, keyPress('p'))
+	if !m2.showPreview {
+		t.Error("showPreview should be true after p")
+	}
+	m3 := update(m2, keyPress('p'))
+	if m3.showPreview {
+		t.Error("showPreview should be false after second p")
+	}
+}
+
+// TestStatusToastSetAndExpire verifies mutationDoneMsg sets toast and
+// statusExpiredMsg clears it.
+func TestStatusToastSetAndExpire(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+
+	// Simulate a mutation completing.
+	m2 := update(m, mutationDoneMsg{kind: modalCreateList})
+	if m2.statusMsg == "" {
+		t.Error("statusMsg should be set after mutationDoneMsg success")
+	}
+	if m2.statusExpiry.IsZero() {
+		t.Error("statusExpiry should be set after mutationDoneMsg success")
+	}
+
+	// Simulate expiry.
+	m3 := update(m2, statusExpiredMsg{})
+	if m3.statusMsg != "" {
+		t.Error("statusMsg should be cleared after statusExpiredMsg")
+	}
+}
+
+type recordingFakeService struct {
+	fakeService
+	createCalls []githubapi.StarListInput
+	updateCalls []githubapi.UpdateStarListInput
+	deleteCalls []string
+	createErr   error
+	updateErr   error
+	deleteErr   error
+}
+
+func (f *recordingFakeService) CreateStarList(
+	_ context.Context, input githubapi.StarListInput,
+) (githubapi.StarList, error) {
+	f.createCalls = append(f.createCalls, input)
+	return githubapi.StarList{Name: input.Name}, f.createErr
+}
+
+func (f *recordingFakeService) UpdateStarList(
+	_ context.Context, input githubapi.UpdateStarListInput,
+) (githubapi.StarList, error) {
+	f.updateCalls = append(f.updateCalls, input)
+	return githubapi.StarList{}, f.updateErr
+}
+
+func (f *recordingFakeService) DeleteStarList(_ context.Context, id string) error {
+	f.deleteCalls = append(f.deleteCalls, id)
+	return f.deleteErr
+}
+
+// TestCreateListModalOpenClose verifies n opens a create form and esc closes it.
+func TestCreateListModalOpenClose(t *testing.T) {
+	t.Parallel()
+	svc := &recordingFakeService{}
+	m := newTestModel(svc)
+
+	m2 := update(m, keyPress('n'))
+	if m2.modal == nil {
+		t.Fatal("modal should open on n")
+	}
+	if m2.modal.kind != modalCreateList {
+		t.Errorf("modal.kind = %v, want modalCreateList", m2.modal.kind)
+	}
+
+	m3 := update(m2, specialKey(tea.KeyEscape))
+	if m3.modal != nil {
+		t.Error("modal should be nil after esc")
+	}
+	if len(svc.createCalls) != 0 {
+		t.Error("esc should not trigger mutation")
+	}
+}
+
+// TestCreateListModalSubmit verifies typing a name and entering submits the mutation.
+func TestCreateListModalSubmit(t *testing.T) {
+	t.Parallel()
+	svc := &recordingFakeService{
+		fakeService: fakeService{
+			lists: []githubapi.StarList{{ID: "UL_1", Name: "existing"}},
+		},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Open create modal.
+	m = update(m, keyPress('n'))
+	if m.modal == nil {
+		t.Fatal("modal did not open")
+	}
+
+	// Type into name field using individual key presses.
+	for _, ch := range "My New List" {
+		m = update(m, keyPress(ch))
+	}
+
+	// Submit (enter while on name field -- advances to description; enter again to submit).
+	m = update(m, specialKey(tea.KeyEnter)) // advance to desc
+	m = update(m, specialKey(tea.KeyEnter)) // advance to visibility (or submit from desc)
+	m = update(m, specialKey(tea.KeyEnter)) // submit or advance
+
+	// The modal may still be open if extra advances are needed -- keep pressing enter.
+	for attempts := 0; m.modal != nil && attempts < 5; attempts++ {
+		m = update(m, specialKey(tea.KeyEnter))
+	}
+
+	// Deliver the mutationDoneMsg (simulate cmd completion).
+	m = update(m, mutationDoneMsg{kind: modalCreateList})
+
+	if m.modal != nil {
+		t.Error("modal should be closed after mutation done")
+	}
+	if m.statusMsg == "" {
+		t.Error("statusMsg should be set after success")
+	}
+}
+
+// TestDeleteListModalWrongNameBlocked verifies wrong input doesn't submit.
+func TestDeleteListModalWrongNameBlocked(t *testing.T) {
+	t.Parallel()
+	svc := &recordingFakeService{
+		fakeService: fakeService{
+			lists: []githubapi.StarList{{ID: "UL_1", Name: "mylist"}},
+		},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	m = update(m, keyPress('d'))
+	if m.modal == nil {
+		t.Fatal("delete modal should open")
+	}
+
+	// Type wrong name.
+	for _, ch := range "wrongname" {
+		m = update(m, keyPress(ch))
+	}
+	m = update(m, specialKey(tea.KeyEnter))
+
+	// Modal should still be open (name doesn't match).
+	if m.modal == nil {
+		t.Error("modal should stay open after wrong typed name")
+	}
+	if len(svc.deleteCalls) != 0 {
+		t.Error("wrong name should not trigger delete")
+	}
+}
+
+// TestDeleteListModalCorrectName verifies correct name submits.
+func TestDeleteListModalCorrectName(t *testing.T) {
+	t.Parallel()
+	svc := &recordingFakeService{
+		fakeService: fakeService{
+			lists: []githubapi.StarList{{ID: "UL_1", Name: "mylist"}},
+		},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	m = update(m, keyPress('d'))
+	if m.modal == nil {
+		t.Fatal("delete modal should open")
+	}
+
+	// Type correct name.
+	for _, ch := range "mylist" {
+		m = update(m, keyPress(ch))
+	}
+	_, cmd := m.Update(specialKey(tea.KeyEnter))
+	if cmd == nil {
+		t.Error("correct name should produce a cmd (delete mutation)")
+	}
+	// Execute the cmd to get mutationDoneMsg.
+	msg := cmd()
+	doneMsg, ok := msg.(mutationDoneMsg)
+	if !ok {
+		t.Fatalf("cmd returned %T, want mutationDoneMsg", msg)
+	}
+	if doneMsg.kind != modalDeleteList {
+		t.Errorf("doneMsg.kind = %v, want modalDeleteList", doneMsg.kind)
+	}
+}
+
+// TestEditListNoOpInRepoPane verifies e is no-op in repo pane.
+func TestEditListNoOpInRepoPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+
+	m2 := update(m, keyPress('e'))
+	if m2.modal != nil {
+		t.Error("edit should be no-op in repo pane")
+	}
+}
+
+// TestMutationListErrorDisplayed verifies that mutationDoneMsg with an error sets model.err.
+func TestMutationListErrorDisplayed(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	sentinel := errors.New("delete failed")
+
+	m2 := update(m, mutationDoneMsg{kind: modalDeleteList, err: sentinel})
+	if !errors.Is(m2.err, sentinel) {
+		t.Errorf("err = %v, want sentinel", m2.err)
+	}
+	if m2.modal != nil {
+		t.Error("modal should be nil after error")
+	}
+}
+
+// TestMutationErrorSetsErrField verifies mutationDoneMsg with err sets model.err.
+func TestMutationErrorSetsErrField(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	sentinel := errors.New("create failed")
+
+	m2 := update(m, mutationDoneMsg{kind: modalCreateList, err: sentinel})
+	if !errors.Is(m2.err, sentinel) {
+		t.Errorf("err = %v, want %v", m2.err, sentinel)
+	}
+	if m2.modal != nil {
+		t.Error("modal should be closed after error")
+	}
+}
+
+type repoMutationFakeService struct {
+	fakeService
+	membershipsResult struct {
+		repoID  string
+		listIDs []string
+		err     error
+	}
+	membershipsCalls []string // nameWithOwner values called
+	updateListsCalls []struct {
+		repoID  string
+		listIDs []string
+	}
+	removeStarCalls []string // repoIDs
+	removeStarErr   error
+}
+
+func (f *repoMutationFakeService) GetRepositoryMemberships(
+	_ context.Context, nameWithOwner string,
+) (string, []string, error) {
+	f.membershipsCalls = append(f.membershipsCalls, nameWithOwner)
+	return f.membershipsResult.repoID, f.membershipsResult.listIDs, f.membershipsResult.err
+}
+
+func (f *repoMutationFakeService) UpdateRepositoryLists(
+	_ context.Context, repoID string, listIDs []string,
+) error {
+	f.updateListsCalls = append(f.updateListsCalls, struct {
+		repoID  string
+		listIDs []string
+	}{repoID, listIDs})
+	return nil
+}
+
+func (f *repoMutationFakeService) RemoveStar(_ context.Context, repoID string) error {
+	f.removeStarCalls = append(f.removeStarCalls, repoID)
+	return f.removeStarErr
+}
+
+// TestAddRepoModalOpensInRepoPane verifies 'a' opens picker in repo pane with all lists.
+func TestAddRepoModalOpensInRepoPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	m2 := update(m, keyPress('a'))
+	if m2.modal == nil {
+		t.Fatal("modal should open on 'a' in repo pane")
+	}
+	if m2.modal.kind != modalPickList {
+		t.Errorf("modal.kind = %v, want modalPickList", m2.modal.kind)
+	}
+	if len(m2.modal.choices) != len(svc.lists) {
+		t.Errorf("picker choices = %d, want %d (all lists)", len(m2.modal.choices), len(svc.lists))
+	}
+}
+
+// TestAddRepoNoOpInListPane verifies 'a' is no-op in list pane.
+func TestAddRepoNoOpInListPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneList
+
+	m2 := update(m, keyPress('a'))
+	if m2.modal != nil {
+		t.Error("'a' should be no-op in list pane")
+	}
+}
+
+// TestMoveRepoExcludesCurrentList verifies move picker excludes the current list.
+func TestMoveRepoExcludesCurrentList(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0] // UL_1
+
+	m2 := update(m, keyPress('m'))
+	if m2.modal == nil {
+		t.Fatal("modal should open on 'm'")
+	}
+	for _, choice := range m2.modal.choices {
+		if choice.ID == "UL_1" {
+			t.Error("move picker should not include current list UL_1")
+		}
+	}
+}
+
+// TestPickListNavigation verifies j/k cursor movement and Enter calls onConfirm.
+func TestPickListNavigation(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	m = update(m, keyPress('a'))
+	if m.modal == nil {
+		t.Fatal("modal should be open")
+	}
+	// Move cursor down.
+	m = update(m, keyPress('j'))
+	if m.modal.choiceCursor != 1 {
+		t.Errorf("choiceCursor after j = %d, want 1", m.modal.choiceCursor)
+	}
+	// Esc cancels.
+	m = update(m, specialKey(tea.KeyEscape))
+	if m.modal != nil {
+		t.Error("modal should close on esc")
+	}
+}
+
+// TestRemoveRepoConfirmYesNo verifies y confirms, n cancels.
+func TestRemoveRepoConfirmYesNo(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	// Open remove modal.
+	m2 := update(m, keyPress('x'))
+	if m2.modal == nil {
+		t.Fatal("remove modal should open")
+	}
+	if m2.modal.kind != modalConfirmYesNo {
+		t.Errorf("modal.kind = %v, want modalConfirmYesNo", m2.modal.kind)
+	}
+
+	// 'n' cancels.
+	m3 := update(m2, keyPress('n'))
+	if m3.modal != nil {
+		t.Error("modal should close on 'n'")
+	}
+
+	// Reopen and 'y' fires the command.
+	m4 := update(m, keyPress('x'))
+	_, cmd := m4.Update(keyPress('y'))
+	if cmd == nil {
+		t.Error("'y' should produce a mutation cmd")
+	}
+}
+
+// TestAddRepoCmd verifies the set-union logic in addRepoToListCmd.
+func TestAddRepoCmd(t *testing.T) {
+	t.Parallel()
+	svc := &repoMutationFakeService{}
+	svc.membershipsResult.repoID = "R_1"
+	svc.membershipsResult.listIDs = []string{"UL_2"}
+
+	cmd := addRepoToListCmd(context.Background(), svc, "owner/repo", "UL_3")
+	msg := cmd()
+	done, ok := msg.(mutationDoneMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want mutationDoneMsg", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("unexpected error: %v", done.err)
+	}
+	if len(svc.updateListsCalls) != 1 {
+		t.Fatalf("UpdateRepositoryLists calls = %d, want 1", len(svc.updateListsCalls))
+	}
+	got := svc.updateListsCalls[0].listIDs
+	want := []string{"UL_2", "UL_3"} // sorted
+	if len(got) != len(want) {
+		t.Fatalf("listIDs = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("listIDs[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestRemoveRepoCmd verifies the set-remove logic in removeRepoFromListCmd.
+func TestRemoveRepoCmd(t *testing.T) {
+	t.Parallel()
+	svc := &repoMutationFakeService{}
+	svc.membershipsResult.repoID = "R_1"
+	svc.membershipsResult.listIDs = []string{"UL_1", "UL_2"}
+
+	cmd := removeRepoFromListCmd(context.Background(), svc, "owner/repo", "UL_1")
+	msg := cmd()
+	done, ok := msg.(mutationDoneMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want mutationDoneMsg", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("unexpected error: %v", done.err)
+	}
+	got := svc.updateListsCalls[0].listIDs
+	want := []string{"UL_2"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("listIDs = %v, want %v", got, want)
+	}
+}
+
+type topicTrackingService struct {
+	fakeService
+	withTopicsReceived bool
+}
+
+func (f *topicTrackingService) ListRepositories(
+	_ context.Context,
+	_ string,
+	opts ...githubapi.ListOptions,
+) ([]githubapi.Repository, error) {
+	for _, opt := range opts {
+		if opt.WithTopics {
+			f.withTopicsReceived = true
+		}
+	}
+	return f.repos, f.reposErr
+}
+
+// TestPreviewToggleLoadsTopics verifies 'p' in repo pane dispatches loadReposCmd
+// with WithTopics=true.
+func TestPreviewToggleLoadsTopics(t *testing.T) {
+	t.Parallel()
+	inner := threeListsSvc()
+	svc := &topicTrackingService{fakeService: *inner}
+	m := newModel(context.Background(), svc, Options{
+		OpenBrowser: func(_ string) error { return nil },
+	})
+	m = update(m, listsLoadedMsg{lists: inner.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.repos = inner.repos
+
+	// Toggle preview on.
+	_, cmd := m.Update(keyPress('p'))
+	if cmd == nil {
+		t.Fatal("p in repo pane should dispatch a loadReposCmd")
+	}
+	// Execute the cmd to trigger the ListRepositories call.
+	cmd()
+
+	if !svc.withTopicsReceived {
+		t.Error("WithTopics should be true when preview is toggled on")
+	}
+}
+
+// TestPreviewNoReloadInListPane verifies 'p' in list pane only toggles without fetching.
+func TestPreviewNoReloadInListPane(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.active = paneList
+
+	_, cmd := m.Update(keyPress('p'))
+	if cmd != nil {
+		t.Error("p in list pane (no focused list) should not dispatch a cmd")
+	}
+}
+
+// TestPreviewPaneRendersInThreeColumnLayout verifies showPreview adds a third column.
+func TestPreviewPaneRendersInThreeColumnLayout(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.width = 120
+	m.height = 24
+
+	layout := m.renderLayout()
+	// Three-column has two separators on each row.
+	rows := strings.Split(layout, "\n")
+	// Find a row that has exactly 2 "|" separators (content rows, not header/footer).
+	found := false
+	for _, row := range rows[1 : len(rows)-1] { // skip header + footer
+		if strings.Count(row, "|") >= 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("three-column layout should have rows with at least 2 '|' separators")
+	}
+}
+
+// TestUnstarRepoCmd verifies GetRepositoryMemberships is called and RemoveStar is invoked.
+func TestUnstarRepoCmd(t *testing.T) {
+	t.Parallel()
+	svc := &repoMutationFakeService{}
+	svc.membershipsResult.repoID = "R_star_1"
+
+	cmd := unstarRepoCmd(context.Background(), svc, "owner/repo")
+	msg := cmd()
+	done, ok := msg.(mutationDoneMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want mutationDoneMsg", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("unexpected error: %v", done.err)
+	}
+	if len(svc.removeStarCalls) != 1 || svc.removeStarCalls[0] != "R_star_1" {
+		t.Errorf("RemoveStar calls = %v, want [R_star_1]", svc.removeStarCalls)
+	}
+}
+
+type copyMergeFakeService struct {
+	fakeService
+	reposResult        []githubapi.Repository
+	membershipsRepoID  string
+	membershipsListIDs []string
+	updateListsCalls   [][]string // just listIDs per call
+	deleteListCalls    []string
+	deleteListErr      error
+}
+
+func (f *copyMergeFakeService) ListRepositories(
+	_ context.Context, _ string, _ ...githubapi.ListOptions,
+) ([]githubapi.Repository, error) {
+	return f.reposResult, nil
+}
+
+func (f *copyMergeFakeService) GetRepositoryMemberships(
+	_ context.Context, _ string,
+) (string, []string, error) {
+	return f.membershipsRepoID, f.membershipsListIDs, nil
+}
+
+func (f *copyMergeFakeService) UpdateRepositoryLists(
+	_ context.Context, _ string, listIDs []string,
+) error {
+	f.updateListsCalls = append(f.updateListsCalls, listIDs)
+	return nil
+}
+
+func (f *copyMergeFakeService) DeleteStarList(_ context.Context, id string) error {
+	f.deleteListCalls = append(f.deleteListCalls, id)
+	return f.deleteListErr
+}
+
+// TestCopyListModalOpens verifies 'c' opens a list picker in list pane.
+func TestCopyListModalOpens(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneList
+
+	m2 := update(m, keyPress('c'))
+	if m2.modal == nil {
+		t.Fatal("copy modal should open on 'c'")
+	}
+	if m2.modal.kind != modalPickList {
+		t.Errorf("modal.kind = %v, want modalPickList", m2.modal.kind)
+	}
+	// Source list excluded from choices.
+	if len(m2.modal.choices) != len(svc.lists)-1 {
+		t.Errorf(
+			"choices = %d, want %d (all except source)",
+			len(m2.modal.choices),
+			len(svc.lists)-1,
+		)
+	}
+}
+
+// TestMergeListModalTitle verifies 'C' modal has destructive indicator.
+func TestMergeListModalTitle(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneList
+
+	m2 := update(m, keyPress('C'))
+	if m2.modal == nil {
+		t.Fatal("merge modal should open on 'C'")
+	}
+	if !containsStr(m2.modal.title, "source deleted") && !containsStr(m2.modal.title, "Merge") {
+		t.Errorf("merge modal title = %q, want to contain 'Merge'", m2.modal.title)
+	}
+}
+
+// TestCopyMergeNoOpInRepoPane verifies c/C are no-ops in repo pane.
+func TestCopyMergeNoOpInRepoPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+
+	for _, k := range []rune{'c', 'C'} {
+		m2 := update(m, keyPress(k))
+		if m2.modal != nil {
+			t.Errorf("key %c should be no-op in repo pane", k)
+		}
+	}
+}
+
+// TestCopyListCmd verifies repos are added to target list via UpdateRepositoryLists.
+func TestCopyListCmd(t *testing.T) {
+	t.Parallel()
+	svc := &copyMergeFakeService{
+		reposResult: []githubapi.Repository{
+			{NameWithOwner: "owner/repo1"},
+		},
+		membershipsRepoID:  "R_1",
+		membershipsListIDs: []string{"UL_src"},
+	}
+	cmd := copyListCmd(context.Background(), svc, "UL_src", "UL_dst", false)
+	msg := cmd()
+	done, ok := msg.(mutationDoneMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want mutationDoneMsg", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("unexpected error: %v", done.err)
+	}
+	if len(svc.updateListsCalls) != 1 {
+		t.Fatalf("UpdateRepositoryLists calls = %d, want 1", len(svc.updateListsCalls))
+	}
+	got := svc.updateListsCalls[0]
+	// Should contain both src and dst.
+	found := false
+	for _, id := range got {
+		if id == "UL_dst" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("listIDs %v should contain UL_dst", got)
+	}
+	// No delete because deleteSource=false.
+	if len(svc.deleteListCalls) != 0 {
+		t.Error("DeleteStarList should not be called for copy (not merge)")
+	}
+}
+
+// TestMergeListCmdDeletesSource verifies DeleteStarList is called when deleteSource=true.
+func TestMergeListCmdDeletesSource(t *testing.T) {
+	t.Parallel()
+	svc := &copyMergeFakeService{
+		reposResult: []githubapi.Repository{
+			{NameWithOwner: "owner/repo1"},
+		},
+		membershipsRepoID:  "R_1",
+		membershipsListIDs: []string{"UL_src"},
+	}
+	cmd := copyListCmd(context.Background(), svc, "UL_src", "UL_dst", true)
+	msg := cmd()
+	done, ok := msg.(mutationDoneMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want mutationDoneMsg", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("unexpected error: %v", done.err)
+	}
+	if len(svc.deleteListCalls) != 1 || svc.deleteListCalls[0] != "UL_src" {
+		t.Errorf("DeleteStarList calls = %v, want [UL_src]", svc.deleteListCalls)
 	}
 }

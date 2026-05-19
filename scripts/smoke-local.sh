@@ -6,8 +6,7 @@ if [[ ! -f go.mod ]]; then
   exit 1
 fi
 
-mkdir -p ./bin
-binary="./bin/gh-star-lists$(go env GOEXE)"
+binary="./gh-star-lists$(go env GOEXE)"
 
 go test ./...
 go vet ./...
@@ -32,7 +31,14 @@ stderr="$($binary list --json --tsv 2>&1 >/dev/null)"
 status=$?
 set -e
 [[ "$status" -eq 2 ]]
-[[ "$stderr" == *"cannot combine --json and --tsv"* ]]
+[[ "$stderr" == *"cannot combine"* ]]
+
+set +e
+stderr="$($binary list --fzf --json 2>&1 >/dev/null)"
+status=$?
+set -e
+[[ "$status" -eq 2 ]]
+[[ "$stderr" == *"--fzf"* ]]
 
 set +e
 stderr="$($binary stars 2>&1 >/dev/null)"

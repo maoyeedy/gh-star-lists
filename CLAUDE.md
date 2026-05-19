@@ -2,107 +2,110 @@
 
 ## Architecture Invariants
 
-Rules must not violate:
+- `githubapi.Service` is the single API boundary consumed by `command`. All GitHub data flows through it. Do not call `graphQLService` or `go-gh` API directly from `command` or `format`.
+- `command.Parse` is pure argument parsing — never imports `githubapi`, never touches GitHub API. Keeps help and usage paths auth-free.
+- JSON field names and TSV column order are scriptable contracts. Machine output changes require coordinated consumer updates.
+- `NewProductionServiceWithOptions` returns a lazy wrapper. `go-gh` GraphQL client constructed on first API call, not at startup.
+- Extension delegates auth entirely to `gh`. Never store, cache, or forward tokens.
+- `NewCacheServiceWithOptions` wraps `Service`. Cache decisions stay in `githubapi`. Never add caching logic to `command` or `format`.
 
-1. **Service interface is API boundary.** `githubapi.Service` single interface `command` package consumes. All GitHub data flow through it. Do not call `githubapi.GraphQLService` or `go-gh` API directly from `command` or `format` packages.
+## Build / Commands
 
-2. **Parse does not touch GitHub.** `command.Parse` must never initialize GitHub client, call API, or import `githubapi`. Pure argument parsing. Keeps help and usage paths auth-free.
-
-3. **Output contracts stable.** JSON field names and TSV column order scriptable contracts. Machine output changes require coordinated consumer updates. Human output polished freely.
-
-4. **Lazy init at main boundary.** `NewProductionService` returns lazy wrapper. go-gh GraphQL client constructed on first API call, not startup. Any new service initialization must follow this pattern.
-
-5. **No token storage.** Extension delegates auth entirely to `gh`. Never store, cache, or forward tokens.
-
-6. **Cache transparent wrapper.** `NewCacheService` wraps `Service`. Never add caching logic to `command` or `format` packages. Cache decisions stay in `githubapi`.
+- `make test` — `go test ./...`
+- `make vet` — `go vet ./...`
+- `make build` — `go build -o ./gh-star-lists .`
+- `make fmt` — `go tool goimports -w .`
+- `make lint` — `golangci-lint run --fix`
+- `make check` — `bash scripts/check.sh` (test + vet + build)
+- `make ascii-check` — non-ASCII scanner for Go source
+- `make smoke` — `bash scripts/smoke-local.sh`
+- After editing Go files: `go tool goimports -w <file>`
+- Final gate: `make check`
 
 ## Package Responsibilities
 
 | Package | Owns | Does Not Own |
 |---------|------|-------------|
 | `main` | Binary entrypoint, service wiring | Logic, formatting |
-| `command` | CLI parsing, run orchestration, exit codes | GitHub API, output rendering details |
-| `githubapi` | GraphQL queries, pagination, response mapping, caching | CLI args, formatting |
-| `format` | JSON/TSV/human/plain/template serialization | API calls, CLI state |
+| `command` | CLI parsing (`Parse`), run orchestration (`Run`), exit codes | GitHub API calls, output rendering |
+| `githubapi` | GraphQL queries, pagination, response mapping, caching, retry | CLI args, formatting |
+| `format` | JSON/TSV/human/plain/template serialization (`--jq`, `--template`) | API calls, CLI state |
 
 ## Common Pitfalls
 
-**Sort key literals.** Do not use raw strings `"added"`, `"name"`, `"stars"`, `"pushed"`, `"language"`, `"repos"`, `"starred"` in switch cases or comparisons. Use named constants: `command.SortKeyAdded`, `command.SortKeyName`, `command.SortKeyStars`, `command.SortKeyPushed`, `command.SortKeyLanguage`, `command.SortKeyRepoCount`, `command.SortKeyStarred`. Defined in `internal/command/parse.go`.
+**Sort key literals.** Use `command.SortKey*` constants, not raw strings `"added"`, `"stars"`, `"repos"`.
 
-**Filter key literals.** Do not use raw strings `"name"`, `"fork"`, `"language"` in filter switch cases or validation. Use `command.FilterKeyName`, `command.FilterKeyFork`, `command.FilterKeyLanguage`. Defined in `internal/command/parse.go`.
+**Filter key literals.** Use `command.FilterKey*` constants, not raw strings.
 
-**Filter value casing.** `Parse` lowers both filter key and value at parse time. Filter functions compare `f.Value` directly against lowered field values — no `strings.ToLower(f.Value)` needed in run.go.
+**Filter values already lowered.** `Parse` lowers key+value. Compare `f.Value` directly — no `strings.ToLower` needed in filter functions.
 
-**ANSI styling.** Do not inline raw escape sequences. Use `ansiStyle(enabled, code)` from `internal/format/human.go`. Pre-defined: `bold(bool)`, `faint(bool)`.
+**Adding a repos-only filter.** Add key to `reposOnlyFilterKeys` map, handle in `validateFilters` switch, implement in `filterRepositories`.
 
-**JSON serialization.** Do not write nil-guard + `json.NewEncoder` patterns. Use generic `writeJSONSlice[T](w, data)` from `internal/format/human.go`.
+**ANSI styling.** Use `ansiStyle(enabled, code)` / `bold(bool)` / `faint(bool)` from `internal/format/human.go`. No raw escape sequences.
 
-**Template serialization.** Use generic `writeTemplate[T](w, options, data)` from `internal/format/human.go`. Template mode implies JSON data model — template engine receives JSON bytes.
+**JSON serialization.** Use `writeJSONSlice[T](w, data)` or `writeJSONSliceWithOptions(w, options, data)` (for `--jq`). No manual nil-guard + `json.NewEncoder`.
 
-**Closure allocation.** When using `bold()` or `faint()` in loops, pre-compute once before loop. These closures nil when color disabled, so hoisting avoids N conditional allocations.
+**Template serialization.** Use `writeTemplate[T](w, options, data)` from `internal/format/human.go`. Template engine receives JSON bytes.
 
-**Slice allocation.** Paginated GraphQL fetches pre-allocate slices using `s.pageSize`: `make([]T, 0, s.pageSize)`. Production page size 100, set via `newGraphQLService(executor, 100)`.
+**Closure allocation.** Pre-compute `bold()` / `faint()` before loops. Nil when color disabled, so hoisting avoids N conditional allocations.
 
-**Error wrapping.** All GraphQL executor errors must wrap with `"GitHub GraphQL request failed: %w"`. String asserted in tests.
+**Slice pre-allocation.** Paginated fetches: `make([]T, 0, s.pageSize)`. Page size 100.
 
-**Context cancellation.** Both pagination loops check `ctx.Err()` at top of each iteration. Any new pagination or API loop must do same.
+**Error wrapping.** All GraphQL errors: `fmt.Errorf("GitHub GraphQL request failed: %w", err)`. String asserted in tests.
 
-**Sort stability.** Use `sort.Slice` not `sort.SliceStable`. Comparators always return total order via ID/URL fallback, so stability guarantees unused.
+**Context cancellation.** Check `ctx.Err()` at top of every pagination or batch iteration.
 
-**Name resolution.** `resolveList()` in run.go returns `resolvedList{ID, URL}` by fetching all lists, matching by name or ID. `resolveListID` delegates to it (returns only ID). `--web` uses it for URL. On API error propagates (no silent fallback). On name-not-found returns raw input as ID — subsequent call surfaces real error.
+**Sort stability.** Use `sort.Slice`. Comparators provide total order via ID/URL fallback.
 
-**Filter action scoping.** `validateFilters` accepts `Action` parameter. Filters valid only for `repos` (e.g., `fork`) must reject for `list` at parse time, not silently ignored at run time.
+**Per-key sort direction.** Comparators return `(int, bool)` — `SortTerm.Desc`. Keys can mix directions: `--sort stars:desc,name:asc`.
 
-**Multi-key sort.** `--sort` accepts comma-separated keys and repeatable flags. `sortKeys` is `[]string`. Comparators chain fallbacks per-key with final tiebreaker (ID/URL).
+**Name resolution.** `resolveList()` returns `resolvedList{ID, URL, Name}` by matching name or ID. `resolveListID` delegates to it. `--web` uses URL. Name-not-found returns raw input — subsequent call surfaces the real error.
 
-**Non-ASCII characters in source.** Go string literals may contain non-ASCII (Unicode) characters, but punctuation should always be ASCII. Watch for em dashes (`—` U+2014), en dashes (`–` U+2013), smart quotes (`"" ''`), non-breaking spaces (`U+00A0`), zero-width spaces (`U+200B`), and similar copy-paste artifacts. Invisible in diff review and break grep/search. Run `LC_ALL=C grep -Pn '[^\x00-\x7F]' --include='*.go' .` before committing to catch them.
+**Server-side limit pushdown.** `directListOptions()` pushes `Limit` server-side only when no local post-processing exists (no filters, search, or sort). Otherwise fetches all pages, applies limit locally.
+
+**Topics query guard.** `topicsNeeded()` returns true only for `--filter topic:` or template referencing `Topics`. Avoids fetching topics on every query.
+
+**Destructive operations.** Use `requireYes(parsed, action)`. Non-TTY requires `--yes` or `--dry-run`.
+
+**`membershipIndex` for bulk ops.** `loadMembershipIndex()` fetches all list memberships concurrently (errgroup, limit 5). Used by `unlisted` and `copy`/`merge`.
+
+**Cache invalidation.** Write ops call `invalidateLists()`, `invalidateStarred()`, or `invalidateAll()`. Never in `command` or `format` packages.
+
+**Search buffer reuse.** Hoist `tokenCache` map and `editPrev`/`editCurr` `[]int` buffers outside the repo loop in `searchRepositories()`. Reused via `growIntSlice` to avoid per-repo DP allocation.
+
+**`Topics` field type.** `Repository.Topics` is `[]string` (`json:"-"`). Not in JSON/TSV. Used for `--filter topic:` and template matching.
+
+**Non-ASCII characters.** Run `make ascii-check` before commit. Watch for em dashes, en dashes, smart quotes, non-breaking spaces.
 
 ## Code Review Checklist
 
-When reviewing changes, check:
+- [ ] New action? Add `Action*` constant, `Parse` handler, `run.go` case, help/usage text
+- [ ] New filter key? Add `FilterKey*` constant, `reposOnlyFilterKeys` if repos-only, `validateFilters`, `filterRepositories`
+- [ ] New sort key? Add `SortKey*` constant, `validateSort`, comparator case
+- [ ] New flag? Add `Parse` handler, `Parsed` field, thread into action, help/usage
+- [ ] New output mode? Handle in both `WriteStarListsWithOptions` and `WriteRepositoriesWithOptions`, `SelectOutputMode` validation
+- [ ] New GraphQL query? Paginate with `$endCursor`/`$first`, `HasNextPage`, `ctx.Err()` guard
+- [ ] New service method? Add to `Service` interface, `lazyService`, `cacheService`, all `fakeService` impls
+- [ ] Test on stdout? Set `Now` in `Options`, use `testOutputOptions` helper in `run_test.go`
+- [ ] Test uses `errWriter`? Duplicate type in `command_test` and `format_test`
+- [ ] Build passes? `make check`
 
-- [ ] New flags added to `Parse`? Update `validateSort`, `validateFilters`, help text, and usage text.
-- [ ] New filter key? Add constant to `FilterKey*` block. Add to `validateFilters` switch. Handle in `filterStarLists` and/or `filterRepositories`.
-- [ ] New output mode? Must handle in both `WriteStarListsWithOptions` and `WriteRepositoriesWithOptions` dispatch switches. Add to `SelectOutputMode` validation.
-- [ ] New GraphQL query? Must paginate with cursor, accept `$endCursor` and `$first`, check `HasNextPage`.
-- [ ] New test asserts on stdout? Must set `Now` in `Options` for deterministic timestamps. Use `testOutputOptions` helper in `run_test.go`.
-- [ ] Test uses `errWriter`? Duplicate type defined in both `command_test` and `format_test` packages — normal Go isolation.
-- [ ] New service feature? Add to `Service` interface, update `cacheService` (both methods), update all `fakeService` implementations in tests.
-- [ ] Build passes? Run `make check` before committing.
+## Style & Tooling
 
-## Future Work (Agent Guidance)
-
-When implementing, follow patterns below:
-
-- **`--sort` per-key direction**: CLI plumbing for `--sort name:asc,stars:desc`. Comparator already chains fallbacks; need parser to split key:direction and sort direction per key (not single `desc` bool).
-- **`--cache-ttl`**: Add duration flag in `Parse`. Expose on `NewCacheService` as public option. Default 5 min. Do not add TTL to `Service` interface.
-
-## Terminal / Platform
-
-- Windows paths in tests use `go-gh/pkg/term` for terminal detection. CI runs on ubuntu-latest.
-- WSL users: smoke tests skip on WSL bash. Use Git Bash or native Windows shell.
-- Temp directory for smoke test fakes uses `t.TempDir()` — auto-cleaned by Go test runner.
+- UTF-8 LF (`.editorconfig` enforces). No smart quotes, non-breaking spaces, or exotic whitespace.
+- Go tabs for indentation. Let `go tool goimports -w` handle formatting.
+- Prefer raw string literals (backticks) for regexes.
+- Prefer `ast-grep` for structural Go edits (switch cases, signatures, interfaces, structs).
+- Prefer `sd` for focused token/replacement edits and renames.
+- After Go edits: `go tool goimports -w <file>`
+- Final validation: `make check`
 
 ## Context7 Library IDs
 
-Use `query-docs` with these IDs when working on relevant package. Skip `resolve-library-id` — IDs pre-resolved.
+Pre-resolved. Use `query-docs` directly.
 
 | Library | Context7 ID | Query when… |
 |---------|-------------|-------------|
-| `go-gh/v2` | `/cli/go-gh` | GraphQL executor, pagination, terminal detection, auth, `go-gh` API surface |
-| `Masterminds/sprig` | `/masterminds/sprig` | `--template` mode, template function availability or behavior |
-| `charmbracelet/lipgloss` | `/charmbracelet/lipgloss` | ANSI color profiles, styling API, `ansiStyle` / `bold` / `faint` internals |
-| `gopkg.in/yaml.v3` | `/yaml/go-yaml` | YAML marshaling/unmarshaling, struct tags |
-
-## Go Files
-
-- Use UTF-8 plain text only.
-- Do not introduce smart quotes, non-breaking spaces, zero-width characters, Markdown escapes, or other exotic whitespace.
-- Go permits tabs; do not manually align indentation. Let `goimports` handle formatting.
-- Prefer raw string literals with backticks for regexes and Windows paths when practical.
-- Prefer syntax-aware or anchor-based edits over exact whitespace patches.
-- Prefer `ast-grep` for structural Go edits such as switch cases, function signatures, methods, interfaces, and struct changes.
-- Prefer `sd` for focused token/keyword-based replacements, insertions, and bulk renames. Match semantic anchors, not tab depth.
-- Avoid multi-line edits that depend on counting tabs or exact indentation.
-- After editing Go files, run `goimports -w` on touched files. (`goimports` superset of `gofmt` — handles both formatting and imports in one pass.)
-- Final validation: `make check` (runs `scripts/check.sh`: `go test ./...`, `go vet ./...`, `go build`). Skills `/go-check` and `/ascii-check` available as interactive aliases.
+| `go-gh/v2` | `/cli/go-gh` | GraphQL executor, pagination, terminal, auth |
+| `Masterminds/sprig` | `/masterminds/sprig` | `--template` function availability |
+| `gopkg.in/yaml.v3` | `/yaml/go-yaml` | YAML marshal/unmarshal, struct tags |

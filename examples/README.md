@@ -20,7 +20,7 @@ Interactive two-pane browser for GitHub Star Lists. Single fzf instance, two-mod
 
 ## Requirements
 
-- `fzf` with footer support, `gh` (authenticated), `gh star-lists` extension
+- `fzf` with footer support, `gh` (authenticated), `go run .` (from repo root)
 
 ```sh
 bash examples/fzf-browse.sh
@@ -36,6 +36,11 @@ bash examples/fzf-browse.sh
 | `Enter` | Drill into focused list |
 | `Esc` | Quit |
 | `Alt-S` | Cycle list sort: name, repo count, recently added, GitHub order |
+| `Ctrl-R` | Refresh cached lists and previews |
+| `n` | Create a Star List |
+| `e` | Edit focused Star List name/description |
+| `D` | Delete focused Star List after typed confirmation |
+| `c` | Copy focused Star List contents to another list |
 | `?` | Toggle preview pane |
 | Type | Fuzzy-match list names |
 
@@ -46,6 +51,11 @@ bash examples/fzf-browse.sh
 | `Enter` | Open focused repo in browser, stay in fzf |
 | `Esc` | Back to list view |
 | `Alt-S` | Cycle repo sort: name, stars, pushed, GitHub order |
+| `Ctrl-R` | Refresh cached repos and previews |
+| `a` | Add focused repo to another Star List |
+| `x` | Remove focused repo from the current Star List |
+| `m` | Move focused repo from the current Star List to another |
+| `u` | Unstar focused repo after typed confirmation |
 | `?` | Toggle preview pane |
 | Type | Fuzzy-match repo names |
 
@@ -56,9 +66,9 @@ $XDG_CACHE_HOME/gh-star-lists/fzf/   (if XDG_CACHE_HOME set)
 $HOME/.cache/gh-star-lists/fzf/      (default)
 ```
 
-- `_lists.<sort>.tsv` — cached list index per sort mode
-- `<list-ID>.<sort>.tsv` — repos per list and sort mode, fetched on first focus
-- Remove the cache directory manually to force a fresh fetch.
+- `_lists.<sort>.fzf` — cached list index per sort mode
+- `<list-ID>.<sort>.fzf` — repos per list and sort mode, fetched on first focus
+- Mutating fzf actions clear the cache automatically. `Ctrl-R` also clears and reloads.
 
 ## How it works
 
@@ -73,15 +83,15 @@ Mode switch: `Enter` sends `change-prompt(...)+reload(...)+transform-footer(...)
 
 Bash functions (`gsl_*`) `export -f`'d. Script forces `SHELL=bash` so functions survive into fzf subshells regardless of login shell.
 
-**TSV columns consumed:**
+**FZF columns consumed:**
 
-| Command | Col 1 | Col 4 | Col 5 |
+| Command | Col 1 | Col 2 | Col 3 |
 |---------|-------|-------|-------|
-| `gh star-lists list --tsv` | Name | LastAddedAt | ID |
+| `go run . list --fzf` | Name | ID | RepoCount |
 
-| Command | Col 1 | Col 4 | Col 6 | Col 7 |
-|---------|-------|-------|-------|-------|
-| `gh star-lists repos <id> --tsv` | NameWithOwner | Stars | URL | Language |
+| Command | Col 1 | Col 2 | Col 3 | Col 4 | Col 5 | Col 6 | Col 7 |
+|---------|-------|-------|-------|-------|-------|-------|-------|
+| `go run . repos <id> --fzf` | NameWithOwner | Stars | Language | URL | Desc | PushedAt | IsFork |
 
 ## Customization
 
@@ -118,15 +128,15 @@ Smaller `--height` for less obtrusive overlay. Drop `--color` lines for terminal
 
 ```sh
 # Current: Stars  Language  NameWithOwner  Fork marker
-printf "\033[33m%7s \342\230\205\033[0m  \033[36m%-12s\033[0m  \033[37m%s\033[0m\033[2m%s\033[0m\n", fmtstars($4), lang, name, fork
+printf "\033[33m%7s \342\230\205\033[0m  \033[36m%-12s\033[0m  \033[37m%s\033[0m\033[2m%s\033[0m\n", fmtstars($2), lang, name, fork
 
 # Add description back if you prefer a denser preview:
-printf "%-45s  %6s \342\230\205  %s\n", name, fmtstars($4), d
+printf "%-45s  %6s \342\230\205  %s\n", name, fmtstars($2), $5
 ```
 
 `gsl_preview_repo` — formats repo detail in repo-mode right pane. Emits ANSI for hierarchy and label coloring.
 
-TSV repo columns: `1=NameWithOwner 2=Desc 3=IsFork 4=Stars 5=PushedAt 6=URL 7=Language`
+FZF repo columns: `1=NameWithOwner 2=Stars 3=Language 4=URL 5=Desc 6=PushedAt 7=IsFork`
 
 ### Sort lists and repos
 
@@ -134,19 +144,19 @@ The browser sorts Star Lists by name by default. In list view, `Alt-S` cycles th
 
 | Mode | Command behavior |
 |------|------------------|
-| `name` | `gh star-lists list --tsv --sort name` |
-| `repos` | `gh star-lists list --tsv --sort repos --desc` |
-| `added` | `gh star-lists list --tsv --sort added --desc` |
-| `github` | `gh star-lists list --tsv` |
+| `name` | `go run . list --fzf --sort name` |
+| `repos` | `go run . list --fzf --sort repos --desc` |
+| `added` | `go run . list --fzf --sort added --desc` |
+| `github` | `go run . list --fzf` |
 
 Repos are sorted by full `owner/repo` name by default. In repo view, `Alt-S` cycles through:
 
 | Mode | Command behavior |
 |------|------------------|
-| `name` | `gh star-lists repos <id> --tsv --sort name` |
-| `stars` | `gh star-lists repos <id> --tsv --sort stars --desc` |
-| `pushed` | `gh star-lists repos <id> --tsv --sort pushed --desc` |
-| `github` | `gh star-lists repos <id> --tsv` |
+| `name` | `go run . repos <id> --fzf --sort name` |
+| `stars` | `go run . repos <id> --fzf --sort stars --desc` |
+| `pushed` | `go run . repos <id> --fzf --sort pushed --desc` |
+| `github` | `go run . repos <id> --fzf` |
 
 To change the repo default, edit `gsl_repo_sort_mode`:
 
@@ -165,10 +175,10 @@ gsl_repo_sort_mode() {
 
 ```sh
 gsl_drill() {
-  local id="$1" f="$CACHE_DIR/$id.tsv"
+  local id="$1" f="$CACHE_DIR/$id.fzf"
   printf '%s' "$id" >"$STATE_FILE"
-  [[ -s "$f" ]] || gh star-lists repos "$id" --tsv >"$f" 2>/dev/null
-  awk -F'\t' 'tolower($7) == "go"' "$f"
+  [[ -s "$f" ]] || go run . repos "$id" --fzf >"$f" 2>/dev/null
+  awk -F'\t' 'tolower($3) == "go"' "$f"
 }
 ```
 
@@ -181,16 +191,16 @@ CACHE_DIR="$HOME/.local/share/gh-star-lists-fzf"
 ### Disable disk cache (always fetch fresh)
 
 ```sh
-gsl_repos() { gh star-lists repos "$1" --tsv; }
-gsl_lists() { gh star-lists list --tsv; }
+gsl_repos() { go run . repos "$1" --fzf; }
+gsl_lists() { go run . list --fzf; }
 ```
 
 ### Cap large lists with --limit
 
 ```sh
 gsl_repos() {
-  local id="$1" f="$CACHE_DIR/$id.tsv"
-  [[ -s "$f" ]] || gh star-lists repos "$id" --tsv --limit 100 >"$f" 2>/dev/null
+  local id="$1" f="$CACHE_DIR/$id.fzf"
+  [[ -s "$f" ]] || go run . repos "$id" --fzf --limit 100 >"$f" 2>/dev/null
   cat "$f"
 }
 ```

@@ -14,6 +14,7 @@ func TestSelectOutputMode(t *testing.T) {
 		jsonFlag  bool
 		tsvFlag   bool
 		plainFlag bool
+		fzfFlag   bool
 		want      format.OutputMode
 		wantErr   bool
 	}{
@@ -21,41 +22,47 @@ func TestSelectOutputMode(t *testing.T) {
 		{name: "selects json", jsonFlag: true, want: format.OutputJSON},
 		{name: "selects tsv", tsvFlag: true, want: format.OutputTSV},
 		{name: "selects plain", plainFlag: true, want: format.OutputPlain},
+		{name: "selects fzf", fzfFlag: true, want: format.OutputFZF},
 		{name: "rejects conflict", jsonFlag: true, tsvFlag: true, wantErr: true},
 		{name: "rejects plain conflict", jsonFlag: true, plainFlag: true, wantErr: true},
+		{name: "rejects fzf+json conflict", jsonFlag: true, fzfFlag: true, wantErr: true},
+		{name: "rejects fzf+tsv conflict", tsvFlag: true, fzfFlag: true, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := format.SelectOutputMode(tt.jsonFlag, tt.tsvFlag, tt.plainFlag)
+			got, err := format.SelectOutputMode(tt.jsonFlag, tt.tsvFlag, tt.plainFlag, tt.fzfFlag)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf(
-						"SelectOutputMode(%v, %v, %v) returned nil error",
+						"SelectOutputMode(%v, %v, %v, %v) returned nil error",
 						tt.jsonFlag,
 						tt.tsvFlag,
 						tt.plainFlag,
+						tt.fzfFlag,
 					)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf(
-					"SelectOutputMode(%v, %v, %v) returned unexpected error: %v",
+					"SelectOutputMode(%v, %v, %v, %v) returned unexpected error: %v",
 					tt.jsonFlag,
 					tt.tsvFlag,
 					tt.plainFlag,
+					tt.fzfFlag,
 					err,
 				)
 			}
 			if got != tt.want {
 				t.Fatalf(
-					"SelectOutputMode(%v, %v, %v) = %q, want %q",
+					"SelectOutputMode(%v, %v, %v, %v) = %q, want %q",
 					tt.jsonFlag,
 					tt.tsvFlag,
 					tt.plainFlag,
+					tt.fzfFlag,
 					got,
 					tt.want,
 				)

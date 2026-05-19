@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ type fakeGraphQLExecutor struct {
 	calls     []graphQLCall
 }
 
-func (f *fakeGraphQLExecutor) Execute(
+func (f *fakeGraphQLExecutor) DoWithContext(
 	_ context.Context,
 	query string,
 	variables map[string]any,
@@ -308,7 +309,7 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 			Language:       "",
 		},
 	}
-	if len(repositories) != len(want) || repositories[0] != want[0] || repositories[1] != want[1] {
+	if !reflect.DeepEqual(repositories, want) {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, want)
 	}
 	if len(executor.calls) != 2 {
@@ -357,7 +358,7 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 		PushedAt:       "",
 		Language:       "",
 	}
-	if len(repositories) != 1 || repositories[0] != want {
+	if len(repositories) != 1 || !reflect.DeepEqual(repositories[0], want) {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
 	}
 }
@@ -465,7 +466,7 @@ func TestGraphQLServiceListRepositoriesSkipsNonRepositoryAndMissingNameItems(t *
 		StargazerCount: 2,
 		PushedAt:       "2026-01-02T00:00:00Z",
 	}
-	if len(repositories) != 1 || repositories[0] != want {
+	if len(repositories) != 1 || !reflect.DeepEqual(repositories[0], want) {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
 	}
 }
@@ -705,10 +706,10 @@ func TestGraphQLServiceListStarredRepositoriesMapsFields(t *testing.T) {
 		Language:       "",
 		StarredAt:      "2026-02-01T00:00:00Z",
 	}
-	if repos[0] != want0 {
+	if !reflect.DeepEqual(repos[0], want0) {
 		t.Fatalf("repos[0] = %#v, want %#v", repos[0], want0)
 	}
-	if repos[1] != want1 {
+	if !reflect.DeepEqual(repos[1], want1) {
 		t.Fatalf("repos[1] = %#v, want %#v", repos[1], want1)
 	}
 	if !strings.Contains(executor.calls[0].query, "starredRepositories") {

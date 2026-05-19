@@ -23,9 +23,11 @@ func WriteRepositoriesWithOptions(
 	options = normalizeOptions(options)
 	switch options.Mode {
 	case OutputJSON:
-		return writeRepositoriesJSON(w, repos)
+		return writeJSONSliceWithOptions(w, options, repos)
 	case OutputTSV:
 		return writeRepositoriesTSV(w, repos)
+	case OutputFZF:
+		return writeRepositoriesFZF(w, repos)
 	case OutputPlain:
 		return writeRepositoriesPlain(w, repos)
 	case OutputTemplate:
@@ -35,10 +37,6 @@ func WriteRepositoriesWithOptions(
 	default:
 		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
-}
-
-func writeRepositoriesJSON(w io.Writer, repos []githubapi.Repository) error {
-	return writeJSONSlice(w, repos)
 }
 
 func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
@@ -60,12 +58,32 @@ func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 	return nil
 }
 
+func writeRepositoriesFZF(w io.Writer, repos []githubapi.Repository) error {
+	for _, repo := range repos {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			repo.NameWithOwner,
+			repo.StargazerCount,
+			repo.Language,
+			repo.URL,
+			repo.Description,
+			repo.PushedAt,
+			yesNo(repo.IsFork),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repository) error {
 	if len(repos) == 0 {
-		_, err := fmt.Fprintln(w, "No repositories found.")
+		_, _ = fmt.Fprintln(w, "No repositories found.")
+		_, err := fmt.Fprintln(w, "Try a different filter, --search, or --all.")
 		return err
 	}
-	boldFn := bold(options.Color)
+	boldFn := Bold(options.Color)
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader(

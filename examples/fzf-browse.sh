@@ -5,12 +5,15 @@
 # cached on disk after first fetch). Enter drills into a list; enter on a repo
 # opens it in the browser while staying in fzf; esc goes back to lists.
 #
-# Requires: fzf, gh (authenticated as a gh extension via `gh star-lists`)
+# Requires: fzf, gh (authenticated). Runs via `go run .` (from repo root) by default; set $GSL to override.
 #
 # Keys
 #   Enter    drill into list / open repo in browser
 #   Esc      back (repo mode) / quit (list mode)
 #   Alt-S    cycle sort mode
+#   Ctrl-R   refresh cached data
+#   n/e/D    create/edit/delete list
+#   a/x/m/u  add/remove/move/unstar repo
 #   ?        toggle preview pane
 
 set -euo pipefail
@@ -33,6 +36,9 @@ export SHELL
 # --- disk cache -----------------------------------------------------------------
 # Repos for each list are cached by list ID. Survives across arrow-key navigations
 # (only the first focus hits the network). The list index itself is also cached.
+
+GSL="go run ."
+export GSL
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/gh-star-lists/fzf"
 STATE_FILE="$CACHE_DIR/.state"   # holds current list ID while in repo view
@@ -58,7 +64,7 @@ gsl_repo_sort_mode() {
   local mode
   mode=$(cat "$REPO_SORT_FILE" 2>/dev/null || true)
   case "$mode" in
-    name|stars|pushed|github) printf '%s' "$mode" ;;
+    name|stars|pushed|language|starred|github) printf '%s' "$mode" ;;
     *) printf 'name' ;;
   esac
 }
@@ -67,20 +73,26 @@ gsl_repo_sort_mode() {
 gsl_repos() {
   local id="$1" mode="${2:-}" f
   [[ -n "$mode" ]] || mode=$(gsl_repo_sort_mode)
-  f="$CACHE_DIR/$id.$mode.tsv"
+  f="$CACHE_DIR/$id.$mode.fzf"
   if [[ ! -s "$f" ]]; then
     case "$mode" in
       name)
-        gh star-lists repos "$id" --tsv --sort name >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL repos "$id" --fzf --sort name >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       stars)
-        gh star-lists repos "$id" --tsv --sort stars --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL repos "$id" --fzf --sort stars --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       pushed)
-        gh star-lists repos "$id" --tsv --sort pushed --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL repos "$id" --fzf --sort pushed --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        ;;
+      language)
+        $GSL repos "$id" --fzf --sort language >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        ;;
+      starred)
+        $GSL repos "$id" --fzf --sort starred --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       github)
-        gh star-lists repos "$id" --tsv >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL repos "$id" --fzf >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       *)
         return 1
@@ -94,20 +106,20 @@ gsl_repos() {
 gsl_lists() {
   local mode="${1:-}" f
   [[ -n "$mode" ]] || mode=$(gsl_list_sort_mode)
-  f="$CACHE_DIR/_lists.$mode.tsv"
+  f="$CACHE_DIR/_lists.$mode.fzf"
   if [[ ! -s "$f" ]]; then
     case "$mode" in
       name)
-        gh star-lists list --tsv --sort name >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL list --fzf --sort name >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       repos)
-        gh star-lists list --tsv --sort repos --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL list --fzf --sort repos --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       added)
-        gh star-lists list --tsv --sort added --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL list --fzf --sort added --desc >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       github)
-        gh star-lists list --tsv >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+        $GSL list --fzf >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
         ;;
       *)
         return 1
@@ -129,18 +141,119 @@ gsl_back() {
   gsl_lists
 }
 
-# Open a repo by NameWithOwner (col 1 of repos TSV).
+# Open a repo by NameWithOwner (col 1 of repos FZF output).
 gsl_open_repo() {
   gh repo view "$1" --web
 }
 
+gsl_clear_cache() {
+  rm -f "$CACHE_DIR"/*.fzf "$CACHE_DIR"/_lists.*.fzf 2>/dev/null || true
+}
+
+gsl_prompt() {
+  local label="$1" value
+  printf '%s: ' "$label" >/dev/tty
+  IFS= read -r value </dev/tty || return 1
+  [[ -n "$value" ]] || return 1
+  printf '%s' "$value"
+}
+
+gsl_confirm() {
+  local label="$1" value
+  printf 'Type %s to confirm: ' "$label" >/dev/tty
+  IFS= read -r value </dev/tty || return 1
+  [[ "$value" == "$label" ]]
+}
+
+gsl_create_list() {
+  local name desc visibility
+  name=$(gsl_prompt "New list name") || return 0
+  printf 'Description (optional): ' >/dev/tty
+  IFS= read -r desc </dev/tty || desc=
+  printf 'Private? [y/N]: ' >/dev/tty
+  IFS= read -r visibility </dev/tty || visibility=
+  if [[ "$visibility" == [Yy]* ]]; then
+    $GSL create "$name" --description "$desc" --private || return 0
+  else
+    $GSL create "$name" --description "$desc" --public || return 0
+  fi
+  gsl_clear_cache
+}
+
+gsl_edit_list() {
+  local id="$1" name desc vis args
+  name=$(gsl_prompt "New list name") || return 0
+  printf 'Description (optional): ' >/dev/tty
+  IFS= read -r desc </dev/tty || desc=
+  printf 'Private? [y/N]: ' >/dev/tty
+  IFS= read -r vis </dev/tty || vis=
+  args=($GSL edit "$id" --name "$name")
+  [[ -n "$desc" ]] && args+=(--description "$desc")
+  [[ "$vis" == [Yy]* ]] && args+=(--private)
+  [[ "$vis" == [Nn]* ]] && args+=(--public)
+  "${args[@]}" || return 0
+  gsl_clear_cache
+}
+
+gsl_delete_list() {
+  local id="$1"
+  gsl_confirm "$id" || return 0
+  $GSL delete "$id" --yes || return 0
+  gsl_clear_cache
+}
+
+gsl_add_repo() {
+  local repo="$1" target
+  target=$(gsl_prompt "Add $repo to list") || return 0
+  $GSL add "$repo" --to "$target" || return 0
+  gsl_clear_cache
+}
+
+gsl_remove_repo() {
+  local repo="$1" id
+  id=$(cat "$STATE_FILE" 2>/dev/null) || return 0
+  [[ -n "$id" ]] || return 0
+  $GSL remove "$repo" --from "$id" --yes || return 0
+  gsl_clear_cache
+}
+
+gsl_move_repo() {
+  local repo="$1" id target
+  id=$(cat "$STATE_FILE" 2>/dev/null) || return 0
+  [[ -n "$id" ]] || return 0
+  target=$(gsl_prompt "Move $repo to list") || return 0
+  $GSL move "$repo" --from "$id" --to "$target" --yes || return 0
+  gsl_clear_cache
+}
+
+gsl_unstar_repo() {
+  local repo="$1"
+  gsl_confirm "$repo" || return 0
+  $GSL unstar "$repo" --yes || return 0
+  gsl_clear_cache
+}
+
+gsl_copy_list() {
+  local from="$1" target
+  target=$(gsl_prompt "Copy list contents to") || return 0
+  $GSL copy --from "$from" --to "$target" || return 0
+  gsl_clear_cache
+}
+
+gsl_merge_list() {
+  local from="$1" target
+  target=$(gsl_prompt "Merge contents into") || return 0
+  $GSL merge --from "$from" --to "$target" --yes || return 0
+  gsl_clear_cache
+}
+
 # Footer: repo mode shows the active domain sort, not fzf's fuzzy ranking.
 gsl_list_footer() {
-  printf ' Enter: repos  |  Esc: quit  |  Alt-S: sort (%s) ' "$(gsl_list_sort_mode)"
+  printf ' Enter: repos | n/e/D: list | c: copy | C: merge | Ctrl-R: refresh | Alt-S: sort (%s) ' "$(gsl_list_sort_mode)"
 }
 
 gsl_repo_footer() {
-  printf ' Enter: open  |  Esc: lists  |  Alt-S: sort (%s) ' "$(gsl_repo_sort_mode)"
+  printf ' Enter: open | a/x/m/u: repo | Esc: lists | Ctrl-R: refresh | Alt-S: sort (%s) ' "$(gsl_repo_sort_mode)"
 }
 
 # Cycle list sort modes while staying in list view.
@@ -166,15 +279,18 @@ gsl_cycle_sort() {
   case "$current" in
     name) next="stars" ;;
     stars) next="pushed" ;;
-    pushed) next="github" ;;
+    pushed) next="language" ;;
+    language) next="starred" ;;
+    starred) next="github" ;;
     *) next="name" ;;
   esac
   printf '%s' "$next" >"$REPO_SORT_FILE"
   printf 'reload(gsl_repos %s %s)+transform-footer(gsl_repo_footer)+first' "$id" "$next"
 }
 
-# Preview: repos inside a focused list (col 5 of lists TSV = list ID).
-# TSV columns for lists: 1=Name 2=Desc 3=RepoCount 4=LastAddedAt 5=ID 6=URL
+# Preview: repos inside a focused list (col 2 of lists FZF output = list ID).
+# FZF columns for lists:  1=Name 2=ID 3=RepoCount 4=URL 5=Desc 6=LastAddedAt
+# FZF columns for repos: 1=NameWithOwner 2=Stars 3=Language 4=URL 5=Desc 6=PushedAt 7=IsFork
 gsl_preview_list() {
   gsl_repos "$1" | awk -F'\t' -v title="$2" -v repo_count="$3" '
     function fmtstars(n) {
@@ -196,22 +312,22 @@ gsl_preview_list() {
     {
       name = $1
       if (length(name) > 48) name = substr(name, 1, 45) "..."
-      lang = $7
+      lang = $3
       if (lang == "") lang = "-"
       if (length(lang) > 12) lang = substr(lang, 1, 9) "..."
-      fork = ($3 == "true") ? " fork" : ""
-      printf "\033[33m%7s \342\230\205\033[0m  \033[36m%-12s\033[0m  \033[37m%s\033[0m\033[2m%s\033[0m\n", fmtstars($4), lang, name, fork
+      fork = ($7 == "yes") ? " fork" : ""
+      printf "\033[33m%7s \342\230\205\033[0m  \033[36m%-12s\033[0m  \033[37m%s\033[0m\033[2m%s\033[0m\n", fmtstars($2), lang, name, fork
     }
     END { if (NR == 0) print "\033[2m(empty list)\033[0m" }'
 }
 
-# Preview: detail block for a focused repo (col 1 of repos TSV = NameWithOwner).
-# TSV columns for repos: 1=NameWithOwner 2=Desc 3=IsFork 4=Stars 5=PushedAt 6=URL 7=Lang
+# Preview: detail block for a focused repo (col 1 of repos FZF output = NameWithOwner).
+# FZF columns for repos: 1=NameWithOwner 2=Stars 3=Language 4=URL 5=Desc 6=PushedAt 7=IsFork
 gsl_preview_repo() {
   local name="$1" id mode f
   id=$(cat "$STATE_FILE" 2>/dev/null) || { printf '\033[2m(no state)\033[0m\n'; return; }
   mode=$(gsl_repo_sort_mode)
-  f="$CACHE_DIR/$id.$mode.tsv"
+  f="$CACHE_DIR/$id.$mode.fzf"
   [[ -s "$f" ]] || { printf '\033[2m(cache miss)\033[0m\n'; return; }
   awk -F'\t' -v n="$name" '
     function fmtstars(n) {
@@ -220,15 +336,15 @@ gsl_preview_repo() {
       return sprintf("%d", n)
     }
     $1 == n {
-      desc = $2
+      desc = $5
       if (desc == "") desc = "(no description)"
       if (length(desc) > 100) desc = substr(desc, 1, 97) "..."
-      lang = $7
+      lang = $3
       if (lang == "") lang = "-"
-      fork = ($3 == "true") ? "fork" : "source"
+      fork = ($7 == "yes") ? "fork" : "source"
       printf "\033[1;36m%s\033[0m\n", $1
-      printf "\033[2m%s\033[0m\n\n", $6
-      printf "\033[33m%s \342\230\205\033[0m  \033[36m%s\033[0m  \033[2m%s  pushed %s\033[0m\n\n", fmtstars($4), lang, fork, $5
+      printf "\033[2m%s\033[0m\n\n", $4
+      printf "\033[33m%s \342\230\205\033[0m  \033[36m%s\033[0m  \033[2m%s  pushed %s\033[0m\n\n", fmtstars($2), lang, fork, $6
       printf "\033[1;34mDescription\033[0m\n%s\n", desc
       exit
     }' "$f"
@@ -238,7 +354,7 @@ gsl_preview_repo() {
 cleanup() { rm -f "$STATE_FILE" "$LIST_SORT_FILE" "$REPO_SORT_FILE"; }
 trap cleanup EXIT
 
-export -f gsl_list_sort_mode gsl_repo_sort_mode gsl_repos gsl_lists gsl_drill gsl_back gsl_open_repo gsl_list_footer gsl_repo_footer gsl_cycle_list_sort gsl_cycle_sort gsl_preview_list gsl_preview_repo
+export -f gsl_list_sort_mode gsl_repo_sort_mode gsl_repos gsl_lists gsl_drill gsl_back gsl_open_repo gsl_clear_cache gsl_prompt gsl_confirm gsl_create_list gsl_edit_list gsl_delete_list gsl_add_repo gsl_remove_repo gsl_move_repo gsl_unstar_repo gsl_copy_list gsl_merge_list gsl_list_footer gsl_repo_footer gsl_cycle_list_sort gsl_cycle_sort gsl_preview_list gsl_preview_repo
 
 # --- fzf prompt names -----------------------------------------------------------
 # Trailing space is intentional: fzf includes it in $FZF_PROMPT.
@@ -257,7 +373,7 @@ export P_LIST P_REPO LIST_FOOTER
 # Preview panel: repos of focused list (list mode) or repo detail (repo mode).
 PREVIEW='
 if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
-  gsl_preview_list {5} {1} {3}
+  gsl_preview_list {2} {1} {3}
 else
   gsl_preview_repo {1}
 fi
@@ -266,7 +382,7 @@ fi
 # Enter: drill in list mode; open repo URL in repo mode.
 ENTER='
 if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
-  echo "change-prompt($P_REPO)+reload(gsl_drill {5})+transform-footer(gsl_repo_footer)"
+  echo "change-prompt($P_REPO)+reload(gsl_drill {2})+transform-footer(gsl_repo_footer)"
 else
   echo "execute-silent(gsl_open_repo {1})"
 fi
@@ -287,6 +403,74 @@ if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
   gsl_cycle_list_sort
 elif [[ "$FZF_PROMPT" == "$P_REPO" ]]; then
   gsl_cycle_sort
+fi
+'
+
+REFRESH='
+gsl_clear_cache
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+else
+  id=$(cat "$STATE_FILE" 2>/dev/null)
+  echo "reload(gsl_repos $id)+transform-footer(gsl_repo_footer)+first"
+fi
+'
+
+LIST_CREATE='
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "execute(gsl_create_list)+reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+fi
+'
+
+LIST_EDIT='
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "execute(gsl_edit_list {2})+reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+fi
+'
+
+LIST_DELETE='
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "execute(gsl_delete_list {2})+reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+fi
+'
+
+LIST_COPY='
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "execute(gsl_copy_list {2})+reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+fi
+'
+
+LIST_MERGE='
+if [[ "$FZF_PROMPT" == "$P_LIST" ]]; then
+  echo "execute(gsl_merge_list {2})+reload(gsl_lists)+transform-footer(gsl_list_footer)+first"
+fi
+'
+
+REPO_ADD='
+if [[ "$FZF_PROMPT" == "$P_REPO" ]]; then
+  id=$(cat "$STATE_FILE" 2>/dev/null)
+  echo "execute(gsl_add_repo {1})+reload(gsl_repos $id)+transform-footer(gsl_repo_footer)+first"
+fi
+'
+
+REPO_REMOVE='
+if [[ "$FZF_PROMPT" == "$P_REPO" ]]; then
+  id=$(cat "$STATE_FILE" 2>/dev/null)
+  echo "execute(gsl_remove_repo {1})+reload(gsl_repos $id)+transform-footer(gsl_repo_footer)+first"
+fi
+'
+
+REPO_MOVE='
+if [[ "$FZF_PROMPT" == "$P_REPO" ]]; then
+  id=$(cat "$STATE_FILE" 2>/dev/null)
+  echo "execute(gsl_move_repo {1})+reload(gsl_repos $id)+transform-footer(gsl_repo_footer)+first"
+fi
+'
+
+REPO_UNSTAR='
+if [[ "$FZF_PROMPT" == "$P_REPO" ]]; then
+  id=$(cat "$STATE_FILE" 2>/dev/null)
+  echo "execute(gsl_unstar_repo {1})+reload(gsl_repos $id)+transform-footer(gsl_repo_footer)+first"
 fi
 '
 
@@ -324,5 +508,15 @@ fzf \
   --bind="enter:transform:$ENTER" \
   --bind="esc:transform:$BACK_OR_QUIT" \
   --bind="alt-s:transform:$SORT" \
+  --bind="ctrl-r:transform:$REFRESH" \
+  --bind="n:transform:$LIST_CREATE" \
+  --bind="e:transform:$LIST_EDIT" \
+  --bind="D:transform:$LIST_DELETE" \
+  --bind="c:transform:$LIST_COPY" \
+  --bind="C:transform:$LIST_MERGE" \
+  --bind="a:transform:$REPO_ADD" \
+  --bind="x:transform:$REPO_REMOVE" \
+  --bind="m:transform:$REPO_MOVE" \
+  --bind="u:transform:$REPO_UNSTAR" \
   --bind="start:reload(gsl_lists)" \
   --bind='?:toggle-preview'

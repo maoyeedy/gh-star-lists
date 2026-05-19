@@ -18,9 +18,11 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 	options = normalizeOptions(options)
 	switch options.Mode {
 	case OutputJSON:
-		return writeStarListsJSON(w, lists)
+		return writeJSONSliceWithOptions(w, options, lists)
 	case OutputTSV:
 		return writeStarListsTSV(w, lists)
+	case OutputFZF:
+		return writeStarListsFZF(w, lists)
 	case OutputPlain:
 		return writeStarListsPlain(w, lists)
 	case OutputTemplate:
@@ -30,10 +32,6 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.S
 	default:
 		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
-}
-
-func writeStarListsJSON(w io.Writer, lists []githubapi.StarList) error {
-	return writeJSONSlice(w, lists)
 }
 
 func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
@@ -54,12 +52,31 @@ func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
 	return nil
 }
 
+func writeStarListsFZF(w io.Writer, lists []githubapi.StarList) error {
+	for _, list := range lists {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\t%d\t%s\t%s\t%s\n",
+			list.Name,
+			list.ID,
+			list.RepoCount,
+			list.URL,
+			list.Description,
+			list.LastAddedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarList) error {
 	if len(lists) == 0 {
-		_, err := fmt.Fprintln(w, "No Star Lists found.")
+		_, _ = fmt.Fprintln(w, "No Star Lists found.")
+		_, err := fmt.Fprintln(w, "Create one with `gh star-lists create <NAME>`.")
 		return err
 	}
-	boldFn := bold(options.Color)
+	boldFn := Bold(options.Color)
 	faintFn := faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader([]string{"NAME", "REPOS", "ADDED", "ID", "URL"}, tableprinter.WithColor(boldFn))

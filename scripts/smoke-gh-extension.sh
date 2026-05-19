@@ -11,8 +11,7 @@ command -v gh >/dev/null 2>&1 || {
   exit 1
 }
 
-mkdir -p ./bin
-binary="./bin/gh-star-lists$(go env GOEXE)"
+binary="./gh-star-lists$(go env GOEXE)"
 
 go build -o "$binary" .
 gh extension install . --force

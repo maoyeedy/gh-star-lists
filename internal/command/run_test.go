@@ -15,19 +15,47 @@ import (
 )
 
 type fakeService struct {
-	listCalls    int
-	reposCalls   int
-	starredCalls int
-	reposListIDs []string
-	lists        []githubapi.StarList
-	repos        []githubapi.Repository
-	starred      []githubapi.Repository
-	listErr      error
-	reposErr     error
-	starredErr   error
+	listCalls           int
+	reposCalls          int
+	starredCalls        int
+	getRepoCalls        int
+	createCalls         int
+	updateCalls         int
+	deleteCalls         int
+	updateRepoListCalls int
+	addStarCalls        int
+	removeStarCalls     int
+	reposListIDs        []string
+	lists               []githubapi.StarList
+	repos               []githubapi.Repository
+	reposByList         map[string][]githubapi.Repository
+	starred             []githubapi.Repository
+	gotRepo             githubapi.Repository
+	createdList         githubapi.StarList
+	updatedList         githubapi.StarList
+	createdInput        githubapi.StarListInput
+	updatedInput        githubapi.UpdateStarListInput
+	updatedRepoID       string
+	updatedListIDs      []string
+	deletedListID       string
+	addedStarID         string
+	removedStarID       string
+	listErr             error
+	reposErr            error
+	starredErr          error
+	getRepoErr          error
+	createErr           error
+	updateErr           error
+	deleteErr           error
+	updateRepoListErr   error
+	addStarErr          error
+	removeStarErr       error
 }
 
-func (f *fakeService) ListStarLists(context.Context) ([]githubapi.StarList, error) {
+func (f *fakeService) ListStarLists(
+	context.Context,
+	...githubapi.ListOptions,
+) ([]githubapi.StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
@@ -35,15 +63,121 @@ func (f *fakeService) ListStarLists(context.Context) ([]githubapi.StarList, erro
 func (f *fakeService) ListRepositories(
 	_ context.Context,
 	listID string,
+	_ ...githubapi.ListOptions,
 ) ([]githubapi.Repository, error) {
 	f.reposCalls++
 	f.reposListIDs = append(f.reposListIDs, listID)
+	if f.reposByList != nil {
+		return f.reposByList[listID], f.reposErr
+	}
 	return f.repos, f.reposErr
 }
 
-func (f *fakeService) ListStarredRepositories(context.Context) ([]githubapi.Repository, error) {
+func (f *fakeService) ListStarredRepositories(
+	_ context.Context,
+	_ ...githubapi.ListOptions,
+) ([]githubapi.Repository, error) {
 	f.starredCalls++
 	return f.starred, f.starredErr
+}
+
+func (f *fakeService) GetRepository(
+	_ context.Context,
+	nameWithOwner string,
+) (githubapi.Repository, error) {
+	f.getRepoCalls++
+	if f.getRepoErr != nil {
+		return githubapi.Repository{}, f.getRepoErr
+	}
+	if f.gotRepo.ID != "" {
+		return f.gotRepo, nil
+	}
+	return githubapi.Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
+}
+
+func (f *fakeService) GetRepositoryMemberships(
+	_ context.Context,
+	nameWithOwner string,
+) (string, []string, error) {
+	if f.getRepoErr != nil {
+		return "", nil, f.getRepoErr
+	}
+	repoID := "R_1"
+	if f.gotRepo.ID != "" {
+		repoID = f.gotRepo.ID
+	}
+	var listIDs []string
+	for listID, repos := range f.reposByList {
+		for _, repo := range repos {
+			if repo.NameWithOwner == nameWithOwner {
+				listIDs = append(listIDs, listID)
+				if repo.ID != "" {
+					repoID = repo.ID
+				}
+				break
+			}
+		}
+	}
+	return repoID, listIDs, nil
+}
+
+func (f *fakeService) CreateStarList(
+	_ context.Context,
+	input githubapi.StarListInput,
+) (githubapi.StarList, error) {
+	f.createCalls++
+	f.createdInput = input
+	if f.createErr != nil {
+		return githubapi.StarList{}, f.createErr
+	}
+	if f.createdList.ID != "" {
+		return f.createdList, nil
+	}
+	return githubapi.StarList{Name: input.Name, ID: "UL_new"}, nil
+}
+
+func (f *fakeService) UpdateStarList(
+	_ context.Context,
+	input githubapi.UpdateStarListInput,
+) (githubapi.StarList, error) {
+	f.updateCalls++
+	f.updatedInput = input
+	if f.updateErr != nil {
+		return githubapi.StarList{}, f.updateErr
+	}
+	if f.updatedList.ID != "" {
+		return f.updatedList, nil
+	}
+	return githubapi.StarList{Name: input.Name, ID: input.ID}, nil
+}
+
+func (f *fakeService) DeleteStarList(_ context.Context, listID string) error {
+	f.deleteCalls++
+	f.deletedListID = listID
+	return f.deleteErr
+}
+
+func (f *fakeService) UpdateRepositoryLists(
+	_ context.Context,
+	repoID string,
+	listIDs []string,
+) error {
+	f.updateRepoListCalls++
+	f.updatedRepoID = repoID
+	f.updatedListIDs = append([]string(nil), listIDs...)
+	return f.updateRepoListErr
+}
+
+func (f *fakeService) AddStar(_ context.Context, repoID string) error {
+	f.addStarCalls++
+	f.addedStarID = repoID
+	return f.addStarErr
+}
+
+func (f *fakeService) RemoveStar(_ context.Context, repoID string) error {
+	f.removeStarCalls++
+	f.removedStarID = repoID
+	return f.removeStarErr
 }
 
 type errWriter struct{}
@@ -303,6 +437,11 @@ func TestRunWritesListOutput(t *testing.T) {
 			want: "Go Tools\tCLI helpers\t3\t2024-05-01T12:00:00Z\tUL_1\thttps://github.com/stars/maoyeedy/lists/go-tools\n",
 		},
 		{
+			name: "fzf",
+			argv: []string{"list", "--fzf"},
+			want: "Go Tools\tUL_1\t3\thttps://github.com/stars/maoyeedy/lists/go-tools\tCLI helpers\t2024-05-01T12:00:00Z\n",
+		},
+		{
 			name: "template",
 			argv: []string{"list", "--template", "{{range .}}{{.name}}\n{{end}}"},
 			want: "Go Tools\n",
@@ -312,7 +451,6 @@ func TestRunWritesListOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
 			svc := fixtureService()
 			var stdout, stderr strings.Builder
 
@@ -361,6 +499,11 @@ func TestRunWritesReposOutputWithParsedListID(t *testing.T) {
 			name: "tsv",
 			argv: []string{"repos", "UL_1", "--tsv"},
 			want: "cli/cli\tGitHub CLI\tno\t41000\t2024-05-01T12:00:00Z\thttps://github.com/cli/cli\t\n",
+		},
+		{
+			name: "fzf",
+			argv: []string{"repos", "UL_1", "--fzf"},
+			want: "cli/cli\t41000\t\thttps://github.com/cli/cli\tGitHub CLI\t2024-05-01T12:00:00Z\tno\n",
 		},
 	}
 
@@ -763,7 +906,11 @@ func TestRunEmptyResultsSucceed(t *testing.T) {
 		argv []string
 		want string
 	}{
-		{name: "empty lists human", argv: []string{"list"}, want: "No Star Lists found.\n"},
+		{
+			name: "empty lists human",
+			argv: []string{"list"},
+			want: "No Star Lists found.\nCreate one with `gh star-lists create <NAME>`.\n",
+		},
 		{name: "empty lists json", argv: []string{"list", "--json"}, want: "[]\n"},
 		{name: "empty repos tsv", argv: []string{"repos", "UL_1", "--tsv"}, want: ""},
 	}
@@ -800,30 +947,41 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		argv    []string
-		wantErr string
+		name      string
+		argv      []string
+		wantErr   string
+		wantUsage bool
 	}{
 		{
-			name:    "missing repos id",
-			argv:    []string{"repos"},
-			wantErr: "error: missing list id for repos",
+			name:      "missing repos id",
+			argv:      []string{"repos"},
+			wantErr:   "repos requires <LIST_ID_OR_NAME>",
+			wantUsage: true,
 		},
 		{name: "unknown command", argv: []string{"stars"}, wantErr: "unknown command \"stars\""},
 		{
-			name:    "extra list args",
-			argv:    []string{"list", "extra"},
-			wantErr: "too many arguments for list",
+			name:      "extra list args",
+			argv:      []string{"list", "extra"},
+			wantErr:   "too many arguments for list",
+			wantUsage: true,
 		},
 		{
-			name:    "extra repos args",
-			argv:    []string{"repos", "UL_1", "extra"},
-			wantErr: "too many arguments for repos",
+			name:      "extra repos args",
+			argv:      []string{"repos", "UL_1", "extra"},
+			wantErr:   "too many arguments for repos",
+			wantUsage: true,
 		},
 		{
-			name:    "conflicting output flags",
-			argv:    []string{"list", "--json", "--tsv"},
-			wantErr: "cannot combine --plain, --json, and --tsv",
+			name:      "conflicting output flags",
+			argv:      []string{"list", "--json", "--tsv"},
+			wantErr:   "cannot combine --plain, --json, --tsv, and --fzf",
+			wantUsage: true,
+		},
+		{
+			name:      "conflicting fzf and json",
+			argv:      []string{"list", "--fzf", "--json"},
+			wantErr:   "cannot combine --plain, --json, --tsv, and --fzf",
+			wantUsage: true,
 		},
 	}
 
@@ -846,7 +1004,8 @@ func TestRunUsageErrorWritesStderrExitUsageAndDoesNotUseService(t *testing.T) {
 				t.Fatalf("usage stdout = %q, want empty", stdout.String())
 			}
 			gotErr := stderr.String()
-			if !strings.Contains(gotErr, tt.wantErr) || !strings.Contains(gotErr, "Usage:") {
+			if !strings.Contains(gotErr, tt.wantErr) ||
+				(tt.wantUsage && !strings.Contains(gotErr, "Usage:")) {
 				t.Fatalf("usage stderr missing diagnostic/help:\n%s", gotErr)
 			}
 			if svc.listCalls != 0 || svc.reposCalls != 0 {
@@ -1086,8 +1245,6 @@ func TestRunUnlistedSortedByStarred(t *testing.T) {
 }
 
 func TestRunWebOpensListURL(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name    string
 		argv    []string
@@ -1107,8 +1264,6 @@ func TestRunWebOpensListURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			svc := fixtureService()
 			var browsed string
 			orig := command.OpenBrowserForTest(func(url string) error {
@@ -1249,6 +1404,388 @@ func TestRunFilterAndSortByLanguage(t *testing.T) {
 	}
 }
 
+func TestRunWebErrors(t *testing.T) {
+	t.Run("list API error", func(t *testing.T) {
+		svc := fixtureService()
+		svc.listErr = errors.New("GitHub GraphQL request failed: forbidden")
+		orig := command.OpenBrowserForTest(func(string) error { return nil })
+		defer command.OpenBrowserForTest(orig)
+
+		var stdout, stderr strings.Builder
+		code := runCommand(
+			context.Background(),
+			[]string{"repos", "Go Tools", "--web"},
+			&stdout,
+			&stderr,
+			svc,
+		)
+
+		if code != command.ExitFailure {
+			t.Fatalf("exit = %d, want ExitFailure; stderr=%q", code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "GitHub GraphQL request failed") {
+			t.Fatalf("stderr = %q, want GraphQL error", stderr.String())
+		}
+	})
+
+	t.Run("open browser error", func(t *testing.T) {
+		svc := fixtureService()
+		orig := command.OpenBrowserForTest(func(string) error {
+			return errors.New("browse failed")
+		})
+		defer command.OpenBrowserForTest(orig)
+
+		var stdout, stderr strings.Builder
+		code := runCommand(
+			context.Background(),
+			[]string{"repos", "Go Tools", "--web"},
+			&stdout,
+			&stderr,
+			svc,
+		)
+
+		if code != command.ExitFailure {
+			t.Fatalf("exit = %d, want ExitFailure; stderr=%q", code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "failed to open browser") {
+			t.Fatalf("stderr = %q, want browser failure diagnostic", stderr.String())
+		}
+	})
+}
+
+func TestRunAllStarredRepos(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	svc.starred = []githubapi.Repository{
+		{
+			NameWithOwner:  "cli/cli",
+			Description:    "GitHub CLI",
+			StargazerCount: 41000,
+			PushedAt:       "2024-05-01T12:00:00Z",
+			URL:            "https://github.com/cli/cli",
+		},
+	}
+	var stdout, stderr strings.Builder
+
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--all", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d, want 1", svc.starredCalls)
+	}
+	if svc.reposCalls != 0 {
+		t.Fatalf("reposCalls = %d, want 0 (--all skips list repos)", svc.reposCalls)
+	}
+	if !strings.Contains(stdout.String(), "cli/cli") {
+		t.Fatalf("stdout = %q, want cli/cli", stdout.String())
+	}
+}
+
+func TestRunJQ(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		argv    []string
+		wantOut string
+	}{
+		{
+			name:    "list name field",
+			argv:    []string{"list", "--jq", ".[].name"},
+			wantOut: "Go Tools\n",
+		},
+		{
+			name:    "repos nameWithOwner field",
+			argv:    []string{"repos", "UL_1", "--jq", ".[].nameWithOwner"},
+			wantOut: "cli/cli\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := fixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			if got := stdout.String(); got != tt.wantOut {
+				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestRunOutputFileError(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	outPath := t.TempDir() + "/missing/out.txt"
+	var stderr strings.Builder
+
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath},
+		io.Discard,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitFailure {
+		t.Fatalf("exit = %d, want ExitFailure", code)
+	}
+	if !strings.Contains(stderr.String(), "failed to open output file") {
+		t.Fatalf("stderr = %q, want output file error diagnostic", stderr.String())
+	}
+}
+
+func TestRunOutputFileExistsWithYesOverwrites(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	dir := t.TempDir()
+	outPath := dir + "/output.txt"
+
+	if err := os.WriteFile(outPath, []byte("old content"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath, "--yes"},
+		io.Discard,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "old content") {
+		t.Fatalf("output file still contains old content after --yes overwrite")
+	}
+}
+
+func TestRunOutputFileExistsNoYesNonTTYFails(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	dir := t.TempDir()
+	outPath := dir + "/output.txt"
+
+	if err := os.WriteFile(outPath, []byte("old content"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"list", "--output", outPath},
+		io.Discard,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitFailure {
+		t.Fatalf("exit = %d, want ExitFailure", code)
+	}
+	if !strings.Contains(stderr.String(), "already exists") {
+		t.Fatalf("stderr = %q, want 'already exists' diagnostic", stderr.String())
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "old content" {
+		t.Fatalf("output file was modified despite failure; got %q", string(data))
+	}
+}
+
+func TestRunDryRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		mkSvc    func() *fakeService
+		argv     []string
+		wantOut  string
+		wantOut2 string
+		checkFn  func(*testing.T, *fakeService)
+	}{
+		{
+			name:    "create",
+			mkSvc:   fixtureService,
+			argv:    []string{"create", "newlist", "--dry-run"},
+			wantOut: `Would create Star List "newlist".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.createCalls != 0 {
+					t.Fatalf("createCalls = %d, want 0", svc.createCalls)
+				}
+			},
+		},
+		{
+			name:    "edit",
+			mkSvc:   fixtureService,
+			argv:    []string{"edit", "Go Tools", "--name", "x", "--dry-run"},
+			wantOut: `Would update Star List "Go Tools".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateCalls != 0 {
+					t.Fatalf("updateCalls = %d, want 0", svc.updateCalls)
+				}
+			},
+		},
+		{
+			name:    "delete",
+			mkSvc:   fixtureService,
+			argv:    []string{"delete", "Go Tools", "--dry-run"},
+			wantOut: `Would delete Star List "Go Tools".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.deleteCalls != 0 {
+					t.Fatalf("deleteCalls = %d, want 0", svc.deleteCalls)
+				}
+			},
+		},
+		{
+			name:    "add",
+			mkSvc:   fixtureService,
+			argv:    []string{"add", "cli/cli", "--to", "Go Tools", "--dry-run"},
+			wantOut: `Would add cli/cli to "Go Tools".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:    "remove",
+			mkSvc:   fixtureService,
+			argv:    []string{"remove", "cli/cli", "--from", "Go Tools", "--dry-run"},
+			wantOut: `Would remove cli/cli from "Go Tools".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:    "move",
+			mkSvc:   sortableFixtureService,
+			argv:    []string{"move", "cli/cli", "--from", "zeta", "--to", "Alpha", "--dry-run"},
+			wantOut: `Would move cli/cli from "zeta" to "Alpha".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:    "copy",
+			mkSvc:   sortableFixtureService,
+			argv:    []string{"copy", "--from", "zeta", "--to", "Alpha", "--dry-run"},
+			wantOut: `Would copy 3 repositories from "zeta" to "Alpha".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.updateRepoListCalls != 0 {
+					t.Fatalf("updateRepoListCalls = %d, want 0", svc.updateRepoListCalls)
+				}
+			},
+		},
+		{
+			name:     "merge",
+			mkSvc:    sortableFixtureService,
+			argv:     []string{"merge", "--from", "zeta", "--to", "Alpha", "--dry-run"},
+			wantOut:  `Would merge 3 repositories from "zeta" to "Alpha".`,
+			wantOut2: `Would delete source Star List "zeta".`,
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.deleteCalls != 0 {
+					t.Fatalf("deleteCalls = %d, want 0", svc.deleteCalls)
+				}
+			},
+		},
+		{
+			name:    "unstar",
+			mkSvc:   fixtureService,
+			argv:    []string{"unstar", "cli/cli", "--dry-run"},
+			wantOut: "Would unstar cli/cli.",
+			checkFn: func(t *testing.T, svc *fakeService) {
+				if svc.removeStarCalls != 0 {
+					t.Fatalf("removeStarCalls = %d, want 0", svc.removeStarCalls)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := tt.mkSvc()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			got := stdout.String()
+			if !strings.Contains(got, tt.wantOut) {
+				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
+			}
+			if tt.wantOut2 != "" && !strings.Contains(got, tt.wantOut2) {
+				t.Fatalf("stdout = %q, want %q", got, tt.wantOut2)
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, svc)
+			}
+		})
+	}
+}
+
+func TestRunUnlistedEmpty(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	svc.starred = []githubapi.Repository{
+		{NameWithOwner: "cli/cli", URL: "https://github.com/cli/cli"},
+	}
+	var stdout, stderr strings.Builder
+
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--unlisted", "--tsv"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d, want 1", svc.starredCalls)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty (all starred repos already in lists)", stdout.String())
+	}
+}
+
 func TestRunWriteFailuresReturnFailure(t *testing.T) {
 	t.Parallel()
 
@@ -1304,5 +1841,652 @@ func TestRunWriteFailuresReturnFailure(t *testing.T) {
 				t.Fatalf("stderr = %q, want %q diagnostic", stderr.String(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestRunNestedHelp(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		argv     []string
+		wantText string
+		wantNot  string
+	}{
+		{
+			name:     "top-level help shows compact",
+			argv:     []string{"--help"},
+			wantText: "gh star-lists <command> --help",
+			wantNot:  "--cache-ttl",
+		},
+		{
+			name:     "repos help shows repos section",
+			argv:     []string{"repos", "--help"},
+			wantText: "--unlisted",
+			wantNot:  "gh star-lists <command> --help",
+		},
+		{
+			name:     "add help shows --to flag",
+			argv:     []string{"add", "--help"},
+			wantText: "--to <LIST_ID_OR_NAME>",
+		},
+		{
+			name:     "remove help shows --from flag",
+			argv:     []string{"remove", "--help"},
+			wantText: "--from <LIST_ID_OR_NAME>",
+		},
+		{
+			name:     "full flag shows full reference",
+			argv:     []string{"--full"},
+			wantText: "--cache-ttl",
+		},
+		{
+			name:     "alias ls help shows list section",
+			argv:     []string{"ls", "--help"},
+			wantText: "gh star-lists list",
+		},
+		{
+			name:     "nil service still works for help",
+			argv:     []string{"--help"},
+			wantText: "gh star-lists",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := &fakeService{
+				listErr:  errors.New("must not call service"),
+				reposErr: errors.New("must not call service"),
+			}
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("help stderr = %q, want empty", stderr.String())
+			}
+			if svc.listCalls != 0 || svc.reposCalls != 0 {
+				t.Fatalf("service calls on help: list=%d repos=%d", svc.listCalls, svc.reposCalls)
+			}
+			if got := stdout.String(); !strings.Contains(got, tt.wantText) {
+				t.Fatalf("stdout missing %q:\n%s", tt.wantText, got)
+			}
+			if tt.wantNot != "" {
+				if got := stdout.String(); strings.Contains(got, tt.wantNot) {
+					t.Fatalf("stdout should not contain %q but does:\n%s", tt.wantNot, got)
+				}
+			}
+		})
+	}
+}
+
+func TestRunNonTTYMissingListSelectorFailsWithUsageError(t *testing.T) {
+	t.Parallel()
+
+	// In test env canPrompt() is false (no TTY), so missing selectors return ExitUsage.
+	tests := []struct {
+		name    string
+		argv    []string
+		wantErr string
+	}{
+		{
+			name:    "add without --to",
+			argv:    []string{"add", "owner/repo"},
+			wantErr: "add requires --to",
+		},
+		{
+			name:    "remove without --from",
+			argv:    []string{"remove", "owner/repo"},
+			wantErr: "remove requires --from",
+		},
+		{
+			name:    "move without flags",
+			argv:    []string{"move", "owner/repo"},
+			wantErr: "move requires --from and --to",
+		},
+		{
+			name:    "copy without flags",
+			argv:    []string{"copy"},
+			wantErr: "copy requires --from and --to",
+		},
+		{
+			name:    "merge without flags",
+			argv:    []string{"merge"},
+			wantErr: "merge requires --from and --to",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := fixtureService()
+			var stdout, stderr strings.Builder
+
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitUsage {
+				t.Fatalf("exit = %d, want ExitUsage; stderr=%q", code, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantErr) {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunPromptForListOnAdd(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
+			{Name: "Rust Libs", ID: "UL_2", RepoCount: 1},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	var promptedLabel string
+	var promptedChoices []string
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			promptedLabel = label
+			promptedChoices = choices
+			return 1, nil // pick "Rust Libs"
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"add", "cli/cli"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.updateRepoListCalls != 1 {
+		t.Fatalf("updateRepoListCalls = %d, want 1", svc.updateRepoListCalls)
+	}
+	if len(svc.updatedListIDs) == 0 || svc.updatedListIDs[0] != "UL_2" {
+		t.Fatalf("updated list IDs = %v, want [UL_2]", svc.updatedListIDs)
+	}
+	if !strings.Contains(promptedLabel, "--to") {
+		t.Fatalf("prompt label = %q, want mention of --to", promptedLabel)
+	}
+	if len(promptedChoices) != 2 {
+		t.Fatalf("prompt choices = %v, want 2 options", promptedChoices)
+	}
+}
+
+func TestRunPromptCancelledExitsCleanly(t *testing.T) {
+	svc := fixtureService()
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			return 0, command.ErrPromptCancelled
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"add", "cli/cli"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess on cancellation; stderr=%q", code, stderr.String())
+	}
+	if svc.updateRepoListCalls != 0 {
+		t.Fatalf(
+			"updateRepoListCalls = %d, want 0 (no mutation on cancel)",
+			svc.updateRepoListCalls,
+		)
+	}
+	if !strings.Contains(stderr.String(), "No changes made") {
+		t.Fatalf("stderr = %q, want 'No changes made' message", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty on cancellation", stdout.String())
+	}
+}
+
+func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "List A", ID: "UL_1", RepoCount: 1},
+			{Name: "List B", ID: "UL_2", RepoCount: 2},
+			{Name: "List C", ID: "UL_3", RepoCount: 3},
+		},
+		reposByList: map[string][]githubapi.Repository{
+			"UL_1": {{NameWithOwner: "cli/cli", ID: "R_1"}},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var toChoices []string
+	callCount := 0
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			callCount++
+			if callCount == 1 {
+				// --from prompt: return index 0 = "List A (UL_1)"
+				return 0, nil
+			}
+			// --to prompt: choices should not include List A
+			toChoices = choices
+			return 0, nil // pick "List B"
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	prevConfirmAction := command.ConfirmActionForTest(func(prompt string) (bool, error) {
+		return true, nil
+	})
+	defer command.ConfirmActionForTest(prevConfirmAction)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"move", "cli/cli"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if callCount != 2 {
+		t.Fatalf("prompt called %d times, want 2 (from + to)", callCount)
+	}
+	// --to choices must not include "List A" (the --from selection)
+	for _, c := range toChoices {
+		if strings.Contains(c, "List A") {
+			t.Fatalf("to choices %v should not include List A (the from selection)", toChoices)
+		}
+	}
+	if len(toChoices) != 2 {
+		t.Fatalf("to choices = %v, want 2 options (List B + List C)", toChoices)
+	}
+}
+
+func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
+			{Name: "Go Tools", ID: "UL_2", RepoCount: 1},
+			{Name: "Rust Libs", ID: "UL_3", RepoCount: 2},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var capturedChoices []string
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			capturedChoices = choices
+			return 0, nil
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"add", "cli/cli"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+
+	if len(capturedChoices) != 3 {
+		t.Fatalf("prompt choices = %v, want 3 choices", capturedChoices)
+	}
+
+	// "Go Tools" is duplicated, so labels should include IDs
+	for _, c := range capturedChoices[:2] {
+		if !strings.Contains(c, "UL_") {
+			t.Fatalf("duplicate name choice %q should contain list ID", c)
+		}
+	}
+
+	// "Rust Libs" is unique, label should be compact without ID
+	if strings.Contains(capturedChoices[2], "UL_") {
+		t.Fatalf("unique name choice %q should not contain list ID", capturedChoices[2])
+	}
+}
+
+func TestRunPromptForReposList(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", ID: "UL_1", RepoCount: 1},
+			{Name: "Rust Libs", ID: "UL_2", RepoCount: 1},
+		},
+		reposByList: map[string][]githubapi.Repository{
+			"UL_2": {{NameWithOwner: "rust-lang/rust", URL: "https://github.com/rust-lang/rust"}},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			if !strings.Contains(label, "Star List") {
+				t.Fatalf("prompt label = %q, want Star List", label)
+			}
+			return 1, nil
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"repos", "--plain"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if len(svc.reposListIDs) != 1 || svc.reposListIDs[0] != "UL_2" {
+		t.Fatalf("reposListIDs = %v, want [UL_2]", svc.reposListIDs)
+	}
+	if !strings.Contains(stdout.String(), "rust-lang/rust") {
+		t.Fatalf("stdout = %q, want selected list repository", stdout.String())
+	}
+}
+
+func TestRunPromptForCreateInputs(t *testing.T) {
+	svc := fixtureService()
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	inputs := []string{"New List", "Prompted description"}
+	prevPromptInput := command.PromptInputForTest(func(label, defaultValue string) (string, error) {
+		if len(inputs) == 0 {
+			t.Fatalf("unexpected input prompt %q", label)
+		}
+		value := inputs[0]
+		inputs = inputs[1:]
+		return value, nil
+	})
+	defer command.PromptInputForTest(prevPromptInput)
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			if label != "Visibility:" {
+				t.Fatalf("visibility prompt label = %q", label)
+			}
+			return 1, nil
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"create"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.createCalls != 1 {
+		t.Fatalf("createCalls = %d, want 1", svc.createCalls)
+	}
+	if svc.createdInput.Name != "New List" ||
+		svc.createdInput.Description != "Prompted description" ||
+		!svc.createdInput.Private {
+		t.Fatalf("createdInput = %+v, want prompted private list", svc.createdInput)
+	}
+}
+
+func TestRunEditNoSelectionShowsNoChanges(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptMulti := command.PromptMultiSelectForTest(
+		func(label string, defaults, choices []string) ([]int, error) {
+			return []int{}, nil
+		},
+	)
+	defer command.PromptMultiSelectForTest(prevPromptMulti)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"edit", "Go Tools"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.updateCalls != 0 {
+		t.Fatalf("updateCalls = %d, want 0 (no mutation on no selection)", svc.updateCalls)
+	}
+	if !strings.Contains(stderr.String(), "No changes made.") {
+		t.Fatalf("stderr = %q, want 'No changes made.'", stderr.String())
+	}
+}
+
+func TestRunPromptForEditFields(t *testing.T) {
+	svc := fixtureService()
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptMulti := command.PromptMultiSelectForTest(
+		func(label string, defaults, choices []string) ([]int, error) {
+			if !strings.Contains(label, "fields") {
+				t.Fatalf("multi prompt label = %q, want fields", label)
+			}
+			return []int{0, 2}, nil
+		},
+	)
+	defer command.PromptMultiSelectForTest(prevPromptMulti)
+	prevPromptInput := command.PromptInputForTest(func(label, defaultValue string) (string, error) {
+		if label != "New name:" {
+			t.Fatalf("input label = %q, want New name", label)
+		}
+		return "Renamed", nil
+	})
+	defer command.PromptInputForTest(prevPromptInput)
+	prevPromptForList := command.PromptForListForTest(
+		func(label, _ string, choices []string) (int, error) {
+			if label != "Visibility:" {
+				t.Fatalf("visibility prompt label = %q", label)
+			}
+			return 0, nil
+		},
+	)
+	defer command.PromptForListForTest(prevPromptForList)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"edit", "Go Tools"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if svc.updateCalls != 1 {
+		t.Fatalf("updateCalls = %d, want 1", svc.updateCalls)
+	}
+	if svc.updatedInput.Name != "Renamed" {
+		t.Fatalf("updated name = %q, want Renamed", svc.updatedInput.Name)
+	}
+	if svc.updatedInput.Private == nil || *svc.updatedInput.Private {
+		t.Fatalf("updated private = %v, want false pointer", svc.updatedInput.Private)
+	}
+	if svc.updatedInput.Description != "" {
+		t.Fatalf(
+			"updated description = %q, want untouched empty value",
+			svc.updatedInput.Description,
+		)
+	}
+}
+
+func TestRunConfirmationPromptNamesTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		argv       []string
+		wantPrompt string
+	}{
+		{
+			name:       "delete names list",
+			argv:       []string{"delete", "Go Tools"},
+			wantPrompt: `"Go Tools"`,
+		},
+		{
+			name:       "unstar names repo",
+			argv:       []string{"unstar", "cli/cli"},
+			wantPrompt: "cli/cli",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := fixtureService()
+			prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+			defer command.CanPromptForTest(prevCanPrompt)
+
+			var capturedPrompt string
+			prevConfirm := command.ConfirmActionForTest(func(prompt string) (bool, error) {
+				capturedPrompt = prompt
+				return true, nil
+			})
+			defer command.ConfirmActionForTest(prevConfirm)
+
+			var stdout, stderr strings.Builder
+			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
+
+			if code != command.ExitSuccess {
+				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+			}
+			if !strings.Contains(capturedPrompt, tt.wantPrompt) {
+				t.Fatalf(
+					"confirm prompt = %q, want it to contain %q",
+					capturedPrompt,
+					tt.wantPrompt,
+				)
+			}
+		})
+	}
+}
+
+func TestRunEditDefaultsPreloaded(t *testing.T) {
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{Name: "Go Tools", Description: "CLI helpers", ID: "UL_1", RepoCount: 3},
+		},
+	}
+
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+	prevPromptMulti := command.PromptMultiSelectForTest(
+		func(label string, defaults, choices []string) ([]int, error) {
+			return []int{0, 1}, nil // select Name and Description
+		},
+	)
+	defer command.PromptMultiSelectForTest(prevPromptMulti)
+
+	var capturedNameDefault, capturedDescDefault string
+	prevPromptInput := command.PromptInputForTest(func(label, defaultValue string) (string, error) {
+		switch label {
+		case "New name:":
+			capturedNameDefault = defaultValue
+			return "Renamed", nil
+		case "New description:":
+			capturedDescDefault = defaultValue
+			return "Updated desc", nil
+		}
+		return defaultValue, nil
+	})
+	defer command.PromptInputForTest(prevPromptInput)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"edit", "Go Tools"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	if capturedNameDefault != "Go Tools" {
+		t.Fatalf("name default = %q, want 'Go Tools'", capturedNameDefault)
+	}
+	if capturedDescDefault != "CLI helpers" {
+		t.Fatalf("description default = %q, want 'CLI helpers'", capturedDescDefault)
+	}
+}
+
+func TestRunNoCacheDisablesCache(t *testing.T) {
+	t.Parallel()
+
+	svc := fixtureService()
+	var stdout, stderr strings.Builder
+
+	code := runCommand(context.Background(), []string{"list", "--no-cache"}, &stdout, &stderr, svc)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
+	}
+	// listCalls must be 1: no cache wrapping means direct service hit
+	if svc.listCalls != 1 {
+		t.Fatalf("listCalls = %d, want 1", svc.listCalls)
+	}
+}
+
+func TestRunNoColorDisablesColor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+	}{
+		{name: "usage error no color", argv: []string{"list", "--bad", "--no-color"}},
+		{name: "repos usage no color", argv: []string{"repos", "--no-color"}},
+	}
+
+	noColorOptions := func(mode format.OutputMode) format.Options {
+		return format.Options{Mode: mode, Width: 120, Color: false}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr strings.Builder
+			code := command.RunWithOptions(
+				context.Background(),
+				tt.argv,
+				&stdout,
+				&stderr,
+				fixtureService(),
+				noColorOptions,
+			)
+
+			if code != command.ExitUsage {
+				t.Fatalf("exit = %d, want ExitUsage", code)
+			}
+			got := stderr.String()
+			if strings.Contains(got, "\x1b[") {
+				t.Fatalf("stderr with --no-color contains ANSI escape:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestRunColorizesHumanDiagnostics(t *testing.T) {
+	colorOptions := func(mode format.OutputMode) format.Options {
+		return format.Options{Mode: mode, Width: 120, Color: true}
+	}
+	var stdout, stderr strings.Builder
+
+	code := command.RunWithOptions(
+		context.Background(),
+		[]string{"list", "--bad"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+		colorOptions,
+	)
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage", code)
+	}
+	if !strings.Contains(stderr.String(), "\x1b[33merror: unknown flag") {
+		t.Fatalf("stderr = %q, want yellow usage diagnostic", stderr.String())
 	}
 }

@@ -10,7 +10,14 @@ import (
 
 func main() {
 	ctx := context.Background()
-	service := githubapi.NewProductionService()
+	parsed, err := command.Parse(os.Args[1:])
+	if err != nil {
+		code := command.Run(ctx, os.Args[1:], os.Stdout, os.Stderr, nil)
+		os.Exit(code)
+	}
+	service := githubapi.NewProductionServiceWithOptions(githubapi.ProductionOptions{
+		Host: parsed.Host,
+	})
 	code := command.Run(ctx, os.Args[1:], os.Stdout, os.Stderr, service)
 	os.Exit(code)
 }

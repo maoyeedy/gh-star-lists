@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
@@ -43,7 +44,7 @@ func BenchmarkSortStarLists(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cp := make([]githubapi.StarList, len(lists))
 		copy(cp, lists)
-		sortStarLists(cp, sortKeys, false)
+		sortStarLists(cp, sortKeys, nil, false)
 	}
 }
 
@@ -55,7 +56,38 @@ func BenchmarkSortRepositories(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cp := make([]githubapi.Repository, len(repos))
 		copy(cp, repos)
-		sortRepositories(cp, sortKeys, true)
+		sortRepositories(cp, sortKeys, nil, true)
+	}
+}
+
+func makeBenchReposForSearch(n int) []githubapi.Repository {
+	langs := []string{"Go", "Rust", "Python", "TypeScript", "C++"}
+	descs := []string{
+		"web framework with routing",
+		"CLI tool for git workflows",
+		"distributed key-value store",
+		"static site generator",
+		"machine learning toolkit",
+	}
+	repos := make([]githubapi.Repository, n)
+	for i := range repos {
+		repos[i] = githubapi.Repository{
+			ID:            fmt.Sprintf("R_%d", i),
+			NameWithOwner: fmt.Sprintf("owner%d/repo-%d", i%500, i),
+			Description:   descs[i%len(descs)],
+			Language:      langs[i%len(langs)],
+			URL:           fmt.Sprintf("https://example.test/repo-%d", i),
+		}
+	}
+	return repos
+}
+
+func BenchmarkSearchRepositories(b *testing.B) {
+	repos := makeBenchReposForSearch(5000)
+	query := "web framework go"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = searchRepositories(repos, query)
 	}
 }
 
@@ -67,6 +99,6 @@ func BenchmarkSortStarListsMultiKey(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cp := make([]githubapi.StarList, len(lists))
 		copy(cp, lists)
-		sortStarLists(cp, sortKeys, false)
+		sortStarLists(cp, sortKeys, nil, false)
 	}
 }

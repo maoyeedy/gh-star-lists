@@ -11,19 +11,25 @@ type fakeCacheInner struct {
 	listCalls    int
 	reposCalls   map[string]int
 	starredCalls int
+	getRepoCalls int
 	lists        []StarList
 	repos        map[string][]Repository
 	starred      []Repository
+	gotRepo      Repository
 	listErr      error
 	reposErr     error
 }
 
-func (f *fakeCacheInner) ListStarLists(context.Context) ([]StarList, error) {
+func (f *fakeCacheInner) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
 
-func (f *fakeCacheInner) ListRepositories(_ context.Context, listID string) ([]Repository, error) {
+func (f *fakeCacheInner) ListRepositories(
+	_ context.Context,
+	listID string,
+	_ ...ListOptions,
+) ([]Repository, error) {
 	if f.reposCalls == nil {
 		f.reposCalls = make(map[string]int)
 	}
@@ -34,9 +40,57 @@ func (f *fakeCacheInner) ListRepositories(_ context.Context, listID string) ([]R
 	return f.repos[listID], nil
 }
 
-func (f *fakeCacheInner) ListStarredRepositories(_ context.Context) ([]Repository, error) {
+func (f *fakeCacheInner) ListStarredRepositories(
+	_ context.Context,
+	_ ...ListOptions,
+) ([]Repository, error) {
 	f.starredCalls++
 	return f.starred, nil
+}
+
+func (f *fakeCacheInner) GetRepository(
+	_ context.Context,
+	nameWithOwner string,
+) (Repository, error) {
+	f.getRepoCalls++
+	if f.gotRepo.NameWithOwner != "" {
+		return f.gotRepo, nil
+	}
+	return Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
+}
+
+func (f *fakeCacheInner) GetRepositoryMemberships(
+	context.Context,
+	string,
+) (string, []string, error) {
+	return "R_1", nil, nil
+}
+
+func (f *fakeCacheInner) CreateStarList(_ context.Context, input StarListInput) (StarList, error) {
+	return StarList{Name: input.Name, ID: "UL_new"}, nil
+}
+
+func (f *fakeCacheInner) UpdateStarList(
+	_ context.Context,
+	input UpdateStarListInput,
+) (StarList, error) {
+	return StarList{Name: input.Name, ID: input.ID}, nil
+}
+
+func (f *fakeCacheInner) DeleteStarList(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeCacheInner) UpdateRepositoryLists(context.Context, string, []string) error {
+	return nil
+}
+
+func (f *fakeCacheInner) AddStar(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeCacheInner) RemoveStar(context.Context, string) error {
+	return nil
 }
 
 func TestCacheServiceHits(t *testing.T) {
@@ -237,5 +291,100 @@ func TestCacheServiceErrorPropagation(t *testing.T) {
 			"inner calls after error = %d, want 2 (errors should not be cached)",
 			inner.listCalls,
 		)
+	}
+}
+
+func TestCacheServiceGetRepositoryCaches(t *testing.T) {
+	inner := &fakeCacheInner{
+		gotRepo: Repository{ID: "R_1", NameWithOwner: "owner/repo", Language: "Go"},
+	}
+	svc := newCacheService(inner)
+	svc.ttl = 10 * time.Minute
+
+	ctx := context.Background()
+
+	repo1, err := svc.GetRepository(ctx, "owner/repo")
+	if err != nil {
+		t.Fatalf("first GetRepository: %v", err)
+	}
+	if repo1.Language != "Go" {
+		t.Fatalf("got language %q, want Go", repo1.Language)
+	}
+	if inner.getRepoCalls != 1 {
+		t.Fatalf("inner calls = %d, want 1", inner.getRepoCalls)
+	}
+
+	repo2, err := svc.GetRepository(ctx, "owner/repo")
+	if err != nil {
+		t.Fatalf("second GetRepository: %v", err)
+	}
+	if repo2.Language != "Go" {
+		t.Fatalf("cached: got language %q, want Go", repo2.Language)
+	}
+	if inner.getRepoCalls != 1 {
+		t.Fatalf("inner calls after cache = %d, want 1 (should not increase)", inner.getRepoCalls)
+	}
+
+	_, err = svc.GetRepository(ctx, "owner/other")
+	if err != nil {
+		t.Fatalf("different repo: %v", err)
+	}
+	if inner.getRepoCalls != 2 {
+		t.Fatalf(
+			"inner calls for different key = %d, want 2 (different key must miss cache)",
+			inner.getRepoCalls,
+		)
+	}
+}
+
+func TestCacheServiceGetRepositoryExpiry(t *testing.T) {
+	inner := &fakeCacheInner{
+		gotRepo: Repository{ID: "R_1", NameWithOwner: "owner/repo"},
+	}
+	svc := newCacheService(inner)
+	svc.ttl = 1 * time.Millisecond
+
+	ctx := context.Background()
+
+	_, err := svc.GetRepository(ctx, "owner/repo")
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	_, err = svc.GetRepository(ctx, "owner/repo")
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if inner.getRepoCalls != 2 {
+		t.Fatalf("inner calls after expiry = %d, want 2", inner.getRepoCalls)
+	}
+}
+
+func TestCacheServiceGetRepositoryInvalidatedByUpdateRepositoryLists(t *testing.T) {
+	inner := &fakeCacheInner{
+		gotRepo: Repository{ID: "R_1", NameWithOwner: "owner/repo"},
+	}
+	svc := newCacheService(inner)
+	svc.ttl = 10 * time.Minute
+
+	ctx := context.Background()
+
+	_, err := svc.GetRepository(ctx, "owner/repo")
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if inner.getRepoCalls != 1 {
+		t.Fatalf("inner calls = %d, want 1", inner.getRepoCalls)
+	}
+
+	_ = svc.UpdateRepositoryLists(ctx, "R_1", nil)
+
+	_, err = svc.GetRepository(ctx, "owner/repo")
+	if err != nil {
+		t.Fatalf("post-invalidate call: %v", err)
+	}
+	if inner.getRepoCalls != 2 {
+		t.Fatalf("inner calls after invalidation = %d, want 2", inner.getRepoCalls)
 	}
 }

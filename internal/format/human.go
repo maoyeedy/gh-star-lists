@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/cli/go-gh/v2/pkg/jq"
 	"github.com/cli/go-gh/v2/pkg/template"
 )
 
@@ -19,8 +20,27 @@ func ansiStyle(enabled bool, code string) func(string) string {
 	}
 }
 
-func bold(enabled bool) func(string) string  { return ansiStyle(enabled, "1") }
-func faint(enabled bool) func(string) string { return ansiStyle(enabled, "2") }
+func Bold(enabled bool) func(string) string      { return ansiStyle(enabled, "1") }
+func Underline(enabled bool) func(string) string { return ansiStyle(enabled, "4") }
+func Red(enabled bool) func(string) string       { return ansiStyle(enabled, "31") }
+func Green(enabled bool) func(string) string     { return ansiStyle(enabled, "32") }
+func Yellow(enabled bool) func(string) string    { return ansiStyle(enabled, "33") }
+func Cyan(enabled bool) func(string) string      { return ansiStyle(enabled, "36") }
+func faint(enabled bool) func(string) string     { return ansiStyle(enabled, "2") }
+
+func writeJSONSliceWithOptions[T any](w io.Writer, options Options, data []T) error {
+	if options.JQ == "" {
+		return writeJSONSlice(w, data)
+	}
+	if data == nil {
+		data = make([]T, 0)
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return jq.Evaluate(bytes.NewReader(jsonData), w, options.JQ)
+}
 
 func writeJSONSlice[T any](w io.Writer, data []T) error {
 	if data == nil {

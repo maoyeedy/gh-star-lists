@@ -1,4 +1,4 @@
-# Plan: TUI v1.4 -- Async repo cache and responsiveness
+# Plan: TUI v1.5 -- Async repo cache and responsiveness
 
 ## Goal
 
@@ -85,24 +85,6 @@ loading placement, left/right pane focus, and compact footer/help behavior.
   keeps modal open with error.
 - Search benchmark: 500+ repo filtering records per-keystroke latency and
   documents whether debounce is needed.
-
-## Additional deferred items from v1.3
-
-These items were observed during v1.3 and are incorporated into this plan:
-
-| Item | Rationale |
-|---|---|
-| Replace `spinnerFrame int` with `bubbles/spinner.Model` | v1.4 adds full async spinner system; the manual frame approach will conflict. Migrate as the first step of v1.4 spinner work. |
-| Hover-aware mouse wheel | Current wheel scrolls the **active** pane regardless of where the cursor is. Wheel should scroll the pane under the mouse pointer. Requires tracking `msg.X` in `MouseWheelMsg` to determine which pane the event is over. |
-| Mouse single-click on list row to auto-drill (load repos) | Today click just focuses the row. A click on an already-focused row could trigger the same load that Enter does. Fits naturally into the v1.4 eager-load model. |
-| Mouse double-click on list row behaves as Enter | Double-click on a list row should load repos and focus the repo pane — same as pressing Enter. Requires detecting two rapid clicks within a threshold. If bubbletea v2 exposes double-click events natively, prefer that; otherwise track timestamps manually. |
-| Search result count indicator | Show `"[N]"` or `"N / total"` at the right edge of the search bar when a query is active. One-line change to `renderListPane`/`renderRepoPane`; deferred because v1.4 changes the repo loading model and the total may be unknown. |
-| Fix `%-8s` language column for long names | "TypeScript", "JavaScript" overflow the 8-char slot. Replace with dynamic column width based on the longest language in the current repo set, or just drop the fixed-width format and space with `lipgloss.Width`. |
-| Align repo metadata columns | Right-pane metadata (Language, Stars, Age) is currently jagged due to variable-width fields. Align into strict columns to match `fzf-browse.sh` aesthetic. |
-| Simplify list pane layout | Remove `|` separator and `Age` from list rows. Show only `Name` and `Count` (e.g. `Dotnet 1`) to reduce visual noise. |
-| Clear `m.selected` on list navigation | Selection set should be scoped to the focused list. When `focusedList` changes (Enter into a different list, or after a refresh), `m.selected` should be cleared. |
-| `repoCursor`/`repoOffset` reset on list change | When the user drills into a different list, cursor should reset to 0. Currently it is preserved from the previous list, which looks like a stale selection. |
-| Suppress browser noise on Linux | Firefox logs to stderr when opening links (especially if closed). Redirect browser stderr to `/dev/null` in `internal/command/run.go` to prevent TUI corruption. |
 
 ## Verification
 

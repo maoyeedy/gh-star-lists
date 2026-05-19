@@ -532,6 +532,15 @@ type updateStarListResponse struct {
 	UpdateUserList starListMutationResponse `json:"updateUserList"`
 }
 
+func parseRepoName(nameWithOwner string) (owner, name string, err error) {
+	var ok bool
+	owner, name, ok = strings.Cut(nameWithOwner, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return "", "", fmt.Errorf("invalid repository %q: expected owner/name", nameWithOwner)
+	}
+	return owner, name, nil
+}
+
 func (s *graphQLService) GetRepository(
 	ctx context.Context,
 	nameWithOwner string,
@@ -539,9 +548,9 @@ func (s *graphQLService) GetRepository(
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
 	}
-	owner, name, ok := strings.Cut(nameWithOwner, "/")
-	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
-		return Repository{}, fmt.Errorf("invalid repository %q: expected owner/name", nameWithOwner)
+	owner, name, err := parseRepoName(nameWithOwner)
+	if err != nil {
+		return Repository{}, err
 	}
 	var result getRepositoryResponse
 	variables := map[string]any{"owner": owner, "name": name, "withTopics": true}
@@ -573,9 +582,9 @@ func (s *graphQLService) GetRepositoryMemberships(
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
-	owner, name, ok := strings.Cut(nameWithOwner, "/")
-	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
-		return "", nil, fmt.Errorf("invalid repository %q: expected owner/name", nameWithOwner)
+	owner, name, err := parseRepoName(nameWithOwner)
+	if err != nil {
+		return "", nil, err
 	}
 	var result repositoryMembershipsResponse
 	variables := map[string]any{"owner": owner, "name": name}

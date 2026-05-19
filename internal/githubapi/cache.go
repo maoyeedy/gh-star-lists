@@ -18,11 +18,6 @@ type reposCacheKey struct {
 	withTopics bool
 }
 
-type cacheRepo struct {
-	data   Repository
-	expiry time.Time
-}
-
 type cacheService struct {
 	inner Service
 
@@ -32,6 +27,11 @@ type cacheService struct {
 	starredEntry map[bool]*cacheEntry[Repository]
 	repoEntry    map[string]*cacheRepo
 	ttl          time.Duration
+}
+
+type cacheRepo struct {
+	data   Repository
+	expiry time.Time
 }
 
 func newCacheService(inner Service) *cacheService {

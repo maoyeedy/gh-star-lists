@@ -222,21 +222,18 @@ func RunWithOptions(
 	if parsed.OutputPath != "" {
 		if _, statErr := os.Stat(parsed.OutputPath); statErr == nil {
 			if !parsed.Yes {
-				if canPrompt() {
-					confirmed, err := confirmAction(fmt.Sprintf("Overwrite %s?", parsed.OutputPath))
-					if err != nil {
-						_ = writeDiagnostic(stderr, "error: %v\n", err)
-						return ExitFailure
-					}
-					if !confirmed {
-						return ExitFailure
-					}
-				} else {
-					_ = writeDiagnostic(
-						stderr,
+				if !canPrompt() {
+					_ = writeDiagnostic(stderr,
 						"error: --output target %s already exists; pass --yes to overwrite\n",
-						parsed.OutputPath,
-					)
+						parsed.OutputPath)
+					return ExitFailure
+				}
+				confirmed, err := confirmAction(fmt.Sprintf("Overwrite %s?", parsed.OutputPath))
+				if err != nil {
+					_ = writeDiagnostic(stderr, "error: %v\n", err)
+					return ExitFailure
+				}
+				if !confirmed {
 					return ExitFailure
 				}
 			}
@@ -1269,10 +1266,8 @@ func resolveList(ctx context.Context, service githubapi.Service, raw string) (re
 	if err != nil {
 		return resolvedList{}, err
 	}
-	for _, l := range lists {
-		if strings.EqualFold(l.Name, raw) || l.ID == raw {
-			return resolvedList{ID: l.ID, URL: l.URL, Name: l.Name}, nil
-		}
+	if l, ok := listByRaw(lists, raw); ok {
+		return resolvedList{ID: l.ID, URL: l.URL, Name: l.Name}, nil
 	}
 	return resolvedList{ID: raw}, nil
 }
@@ -1359,12 +1354,9 @@ func filterRepositories(repos []githubapi.Repository, filters []Filter) []github
 }
 
 func hasTopic(topics []string, want string) bool {
-	for _, topic := range topics {
-		if strings.ToLower(topic) == want {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(topics, func(t string) bool {
+		return strings.ToLower(t) == want
+	})
 }
 
 func sortStarLists(lists []githubapi.StarList, sortKeys []string, sortTerms []SortTerm, desc bool) {
@@ -1552,21 +1544,22 @@ func commandContext(action Action, listID string) string {
 	case ActionUnstar:
 		return fmt.Sprintf("failed to unstar repository %q", listID)
 	default:
-		return "failed to list Star Lists"
+		return "failed to execute command"
 	}
+}
+
+var authMarkers = []string{
+	"authentication",
+	"bad credentials",
+	"gh auth",
+	"oauth",
+	"token",
+	"unauthorized",
+	"401",
 }
 
 func looksLikeAuthError(err error) bool {
 	message := strings.ToLower(err.Error())
-	authMarkers := []string{
-		"authentication",
-		"bad credentials",
-		"gh auth",
-		"oauth",
-		"token",
-		"unauthorized",
-		"401",
-	}
 	for _, marker := range authMarkers {
 		if strings.Contains(message, marker) {
 			return true
@@ -1609,10 +1602,5 @@ func firstOptions(options []format.Options) format.Options {
 }
 
 func argsContainNoColor(args []string) bool {
-	for _, arg := range args {
-		if arg == "--no-color" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, "--no-color")
 }

@@ -1245,8 +1245,6 @@ func TestRunUnlistedSortedByStarred(t *testing.T) {
 }
 
 func TestRunWebOpensListURL(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name    string
 		argv    []string
@@ -1266,8 +1264,6 @@ func TestRunWebOpensListURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			svc := fixtureService()
 			var browsed string
 			orig := command.OpenBrowserForTest(func(url string) error {
@@ -2117,8 +2113,6 @@ func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
 }
 
 func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
-	t.Parallel()
-
 	svc := &fakeService{
 		lists: []githubapi.StarList{
 			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
@@ -2242,8 +2236,6 @@ func TestRunPromptForCreateInputs(t *testing.T) {
 }
 
 func TestRunEditNoSelectionShowsNoChanges(t *testing.T) {
-	t.Parallel()
-
 	svc := &fakeService{
 		lists: []githubapi.StarList{
 			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
@@ -2328,8 +2320,6 @@ func TestRunPromptForEditFields(t *testing.T) {
 }
 
 func TestRunConfirmationPromptNamesTarget(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name       string
 		argv       []string
@@ -2349,8 +2339,6 @@ func TestRunConfirmationPromptNamesTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			svc := fixtureService()
 			prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 			defer command.CanPromptForTest(prevCanPrompt)

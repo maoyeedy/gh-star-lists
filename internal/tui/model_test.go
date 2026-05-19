@@ -1611,3 +1611,180 @@ func TestViewportListPanePgDn(t *testing.T) {
 		t.Errorf("listOffset should have slid, still 0 with cursor %d", m2.listCursor)
 	}
 }
+
+// TestSearchActivatesOnSlash verifies / activates search mode.
+func TestSearchActivatesOnSlash(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	m2 := update(m, keyPress('/'))
+
+	if !m2.searchActive {
+		t.Error("searchActive should be true after /")
+	}
+}
+
+// TestSearchFiltersListsByQuery verifies that typing narrows displayedLists.
+func TestSearchFiltersListsByQuery(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, keyPress('/'))
+
+	// Type "alp" - should match "Alpha" from threeListsSvc.
+	for _, ch := range "alp" {
+		m = update(m, keyPress(ch))
+	}
+
+	if len(m.displayedLists) == 0 {
+		t.Fatal("displayedLists should have at least one match for 'alp'")
+	}
+	if m.displayedLists[0].Name != "Alpha" {
+		t.Errorf("first result = %q, want Alpha", m.displayedLists[0].Name)
+	}
+	// non-matching lists should not be displayed
+	for _, l := range m.displayedLists {
+		if l.Name != "Alpha" {
+			t.Errorf("unexpected match %q for query 'alp'", l.Name)
+		}
+	}
+}
+
+// TestSearchEscClearsFilter verifies Esc restores full list.
+func TestSearchEscClearsFilter(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, keyPress('/'))
+	m = update(m, keyPress('z')) // "z" matches "zeta"
+	if len(m.displayedLists) == 0 {
+		t.Fatal("need at least one match to test clear")
+	}
+
+	m2 := update(m, specialKey(tea.KeyEscape))
+
+	if m2.searchActive {
+		t.Error("searchActive should be false after Esc")
+	}
+	if m2.searchQuery != "" {
+		t.Errorf("searchQuery = %q, want empty after Esc", m2.searchQuery)
+	}
+	if len(m2.displayedLists) != len(svc.lists) {
+		t.Errorf(
+			"displayedLists len = %d after Esc, want %d (all)",
+			len(m2.displayedLists),
+			len(svc.lists),
+		)
+	}
+}
+
+// TestSearchEnterDeactivatesKeepsFilter verifies Enter deactivates search
+// but keeps the current filter.
+func TestSearchEnterDeactivatesKeepsFilter(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, keyPress('/'))
+	// "alpha" uniquely matches only the "Alpha" list (not "zeta" or "beta").
+	for _, ch := range "alpha" {
+		m = update(m, keyPress(ch))
+	}
+
+	m2 := update(m, specialKey(tea.KeyEnter))
+
+	if m2.searchActive {
+		t.Error("searchActive should be false after Enter")
+	}
+	if m2.searchQuery == "" {
+		t.Error("searchQuery should still be non-empty after Enter")
+	}
+	// displayedLists should still be filtered - only "Alpha" matches.
+	if len(m2.displayedLists) >= len(svc.lists) {
+		t.Error("displayedLists should still be filtered after Enter")
+	}
+}
+
+// TestSearchResetsCursorToZero verifies cursor resets on each keystroke.
+func TestSearchResetsCursorToZero(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.listCursor = 2
+	m = update(m, keyPress('/'))
+	m = update(m, keyPress('z'))
+
+	if m.listCursor != 0 {
+		t.Errorf("listCursor = %d after search input, want 0", m.listCursor)
+	}
+}
+
+// TestSearchBackspaceRemovesLastChar verifies Backspace trims the query.
+func TestSearchBackspaceRemovesLastChar(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, keyPress('/'))
+	m = update(m, keyPress('a'))
+	m = update(m, keyPress('l'))
+
+	if m.searchQuery != "al" {
+		t.Fatalf("searchQuery = %q before backspace, want 'al'", m.searchQuery)
+	}
+	m2 := update(m, specialKey(tea.KeyBackspace))
+
+	if m2.searchQuery != "a" {
+		t.Errorf("searchQuery = %q after backspace, want 'a'", m2.searchQuery)
+	}
+}
+
+// TestSearchFilterRepoPane verifies filtering works in the repo pane.
+func TestSearchFilterRepoPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+
+	// Query "a-repo": the exact-name match "owner/a-repo" should appear and
+	// rank first. The fuzzy algorithm may also surface "owner/b-repo" via
+	// single-char edit distance on the "a" token - that is expected behaviour;
+	// what matters is the correct repo is present and ranked at the top.
+	m = update(m, keyPress('/'))
+	for _, ch := range "a-repo" {
+		m = update(m, keyPress(ch))
+	}
+
+	if len(m.displayedRepos) == 0 {
+		t.Fatal("displayedRepos should have at least one match for 'a-repo'")
+	}
+	if m.displayedRepos[0].NameWithOwner != "owner/a-repo" {
+		t.Errorf(
+			"top result = %q, want 'owner/a-repo' (exact match should rank first)",
+			m.displayedRepos[0].NameWithOwner,
+		)
+	}
+}
+
+// TestSearchNoModalOnSlash verifies / is a no-op when a modal is open.
+func TestSearchNoModalOnSlash(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.modal = &modal{kind: modalConfirmYesNo}
+
+	m2 := update(m, keyPress('/'))
+
+	if m2.searchActive {
+		t.Error("searchActive should stay false when modal is open")
+	}
+}

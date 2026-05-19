@@ -27,6 +27,7 @@ type keyMap struct {
 	CopyList   key.Binding
 	MergeList  key.Binding
 	Preview    key.Binding
+	Search     key.Binding
 }
 
 var keys = keyMap{
@@ -54,4 +55,5 @@ var keys = keyMap{
 	CopyList:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy list contents")),
 	MergeList:  key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "merge list (destructive)")),
 	Preview:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "toggle preview")),
+	Search:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 }

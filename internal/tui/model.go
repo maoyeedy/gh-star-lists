@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/search"
 )
 
 type pane int
@@ -69,6 +71,11 @@ type model struct {
 	statusMsg    string
 	statusExpiry time.Time
 	showPreview  bool
+
+	searchActive   bool
+	searchQuery    string
+	displayedLists []githubapi.StarList
+	displayedRepos []githubapi.Repository
 }
 
 func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
@@ -101,8 +108,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lists = msg.lists
 		m.loading = false
 		sortStarLists(m.lists, m.sortLists)
-		if m.listCursor >= len(m.lists) && len(m.lists) > 0 {
-			m.listCursor = len(m.lists) - 1
+		m = m.rebuildDisplayed()
+		if m.listCursor >= len(m.displayedLists) && len(m.displayedLists) > 0 {
+			m.listCursor = len(m.displayedLists) - 1
 		}
 		return m, nil
 
@@ -110,8 +118,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repos = msg.repos
 		m.loading = false
 		sortRepos(m.repos, m.sortRepos)
-		if m.repoCursor >= len(m.repos) && len(m.repos) > 0 {
-			m.repoCursor = len(m.repos) - 1
+		m = m.rebuildDisplayed()
+		if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
+			m.repoCursor = len(m.displayedRepos) - 1
 		}
 		// update focusedList from current lists
 		for i := range m.lists {
@@ -152,6 +161,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modal = updated
 			return m, cmd
 		}
+		if m.searchActive {
+			return m.handleSearchKey(msg)
+		}
 		return m.handleKey(msg)
 	}
 
@@ -185,10 +197,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.PgUp):
 		paneH := max(1, m.height-2)
 		if m.active == paneList {
-			m.listCursor = clampInt(m.listCursor-(paneH-1), 0, len(m.lists)-1)
+			m.listCursor = clampInt(m.listCursor-(paneH-1), 0, len(m.displayedLists)-1)
 			m = m.slideListOffset()
 		} else {
-			m.repoCursor = clampInt(m.repoCursor-(paneH-1), 0, len(m.repos)-1)
+			m.repoCursor = clampInt(m.repoCursor-(paneH-1), 0, len(m.displayedRepos)-1)
 			m = m.slideRepoOffset()
 		}
 		return m, nil
@@ -196,10 +208,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.PgDn):
 		paneH := max(1, m.height-2)
 		if m.active == paneList {
-			m.listCursor = clampInt(m.listCursor+(paneH-1), 0, len(m.lists)-1)
+			m.listCursor = clampInt(m.listCursor+(paneH-1), 0, len(m.displayedLists)-1)
 			m = m.slideListOffset()
 		} else {
-			m.repoCursor = clampInt(m.repoCursor+(paneH-1), 0, len(m.repos)-1)
+			m.repoCursor = clampInt(m.repoCursor+(paneH-1), 0, len(m.displayedRepos)-1)
 			m = m.slideRepoOffset()
 		}
 		return m, nil
@@ -216,10 +228,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.End):
 		if m.active == paneList {
-			m.listCursor = max(0, len(m.lists)-1)
+			m.listCursor = max(0, len(m.displayedLists)-1)
 			m = m.slideListOffset()
 		} else {
-			m.repoCursor = max(0, len(m.repos)-1)
+			m.repoCursor = max(0, len(m.displayedRepos)-1)
 			m = m.slideRepoOffset()
 		}
 		return m, nil
@@ -247,66 +259,67 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, focusCmd
 
 	case key.Matches(msg, keys.EditList):
-		if m.active != paneList || len(m.lists) == 0 {
+		if m.active != paneList || len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		mo, focusCmd := newEditListModal(m.ctx, m.svc, m.lists[m.listCursor])
+		mo, focusCmd := newEditListModal(m.ctx, m.svc, m.displayedLists[m.listCursor])
 		m.modal = mo
 		return m, focusCmd
 
 	case key.Matches(msg, keys.DeleteList):
-		if m.active != paneList || len(m.lists) == 0 {
+		if m.active != paneList || len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		mo, focusCmd := newDeleteListModal(m.ctx, m.svc, m.lists[m.listCursor])
+		mo, focusCmd := newDeleteListModal(m.ctx, m.svc, m.displayedLists[m.listCursor])
 		m.modal = mo
 		return m, focusCmd
 
 	case key.Matches(msg, keys.AddRepo):
-		if m.active != paneRepo || len(m.repos) == 0 || len(m.lists) == 0 {
+		if m.active != paneRepo || len(m.displayedRepos) == 0 || len(m.lists) == 0 {
 			return m, nil
 		}
-		repo := m.repos[m.repoCursor]
+		repo := m.displayedRepos[m.repoCursor]
 		m.modal = newAddRepoModal(m.ctx, m.svc, repo, m.lists)
 		return m, nil
 
 	case key.Matches(msg, keys.RemoveRepo):
-		if m.active != paneRepo || len(m.repos) == 0 || m.focusedList == nil {
+		if m.active != paneRepo || len(m.displayedRepos) == 0 || m.focusedList == nil {
 			return m, nil
 		}
-		repo := m.repos[m.repoCursor]
+		repo := m.displayedRepos[m.repoCursor]
 		m.modal = newRemoveRepoModal(m.ctx, m.svc, repo, m.focusedList.ID)
 		return m, nil
 
 	case key.Matches(msg, keys.MoveRepo):
-		if m.active != paneRepo || len(m.repos) == 0 || m.focusedList == nil || len(m.lists) < 2 {
+		if m.active != paneRepo || len(m.displayedRepos) == 0 ||
+			m.focusedList == nil || len(m.lists) < 2 {
 			return m, nil
 		}
-		repo := m.repos[m.repoCursor]
+		repo := m.displayedRepos[m.repoCursor]
 		m.modal = newMoveRepoModal(m.ctx, m.svc, repo, m.lists, m.focusedList.ID)
 		return m, nil
 
 	case key.Matches(msg, keys.UnstarRepo):
-		if m.active != paneRepo || len(m.repos) == 0 {
+		if m.active != paneRepo || len(m.displayedRepos) == 0 {
 			return m, nil
 		}
-		repo := m.repos[m.repoCursor]
+		repo := m.displayedRepos[m.repoCursor]
 		mo, focusCmd := newUnstarRepoModal(m.ctx, m.svc, repo)
 		m.modal = mo
 		return m, focusCmd
 
 	case key.Matches(msg, keys.CopyList):
-		if m.active != paneList || len(m.lists) == 0 || len(m.lists) < 2 {
+		if m.active != paneList || len(m.displayedLists) == 0 || len(m.lists) < 2 {
 			return m, nil
 		}
-		m.modal = newCopyListModal(m.ctx, m.svc, m.lists[m.listCursor], m.lists)
+		m.modal = newCopyListModal(m.ctx, m.svc, m.displayedLists[m.listCursor], m.lists)
 		return m, nil
 
 	case key.Matches(msg, keys.MergeList):
-		if m.active != paneList || len(m.lists) == 0 || len(m.lists) < 2 {
+		if m.active != paneList || len(m.displayedLists) == 0 || len(m.lists) < 2 {
 			return m, nil
 		}
-		m.modal = newMergeListModal(m.ctx, m.svc, m.lists[m.listCursor], m.lists)
+		m.modal = newMergeListModal(m.ctx, m.svc, m.displayedLists[m.listCursor], m.lists)
 		return m, nil
 
 	case key.Matches(msg, keys.Preview):
@@ -316,6 +329,19 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, true)
 		}
 		return m, nil
+
+	case key.Matches(msg, keys.Search):
+		if m.modal != nil {
+			return m, nil
+		}
+		m.searchActive = true
+		m.searchQuery = ""
+		m.listCursor = 0
+		m.repoCursor = 0
+		m.listOffset = 0
+		m.repoOffset = 0
+		m = m.rebuildDisplayed()
+		return m, nil
 	}
 
 	return m, nil
@@ -323,13 +349,53 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m model) moveCursor(delta int) model {
 	if m.active == paneList {
-		m.listCursor = clampInt(m.listCursor+delta, 0, len(m.lists)-1)
+		m.listCursor = clampInt(m.listCursor+delta, 0, len(m.displayedLists)-1)
 		m = m.slideListOffset()
 	} else {
-		m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.repos)-1)
+		m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1)
 		m = m.slideRepoOffset()
 	}
 	return m
+}
+
+func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, keys.Back):
+		m.searchActive = false
+		m.searchQuery = ""
+		m = m.rebuildDisplayed()
+		m.listCursor = 0
+		m.repoCursor = 0
+		m.listOffset = 0
+		m.repoOffset = 0
+		return m, nil
+	case key.Matches(msg, keys.Enter):
+		m.searchActive = false
+		return m, nil
+	case msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete:
+		m.searchQuery = dropLastRune(m.searchQuery)
+		m = m.rebuildDisplayed()
+		m.listCursor = 0
+		m.repoCursor = 0
+		m.listOffset = 0
+		m.repoOffset = 0
+		return m, nil
+	}
+	// Pass navigation keys to handleKey so arrows/PgDn still work.
+	if key.Matches(msg, keys.Up) || key.Matches(msg, keys.Down) ||
+		key.Matches(msg, keys.PgUp) || key.Matches(msg, keys.PgDn) ||
+		key.Matches(msg, keys.Home) || key.Matches(msg, keys.End) {
+		return m.handleKey(msg)
+	}
+	if msg.Text != "" {
+		m.searchQuery += msg.Text
+		m = m.rebuildDisplayed()
+		m.listCursor = 0
+		m.repoCursor = 0
+		m.listOffset = 0
+		m.repoOffset = 0
+	}
+	return m, nil
 }
 
 func (m model) slideListOffset() model {
@@ -339,7 +405,7 @@ func (m model) slideListOffset() model {
 	} else if m.listCursor >= m.listOffset+paneH {
 		m.listOffset = m.listCursor - paneH + 1
 	}
-	m.listOffset = clampInt(m.listOffset, 0, max(0, len(m.lists)-paneH))
+	m.listOffset = clampInt(m.listOffset, 0, max(0, len(m.displayedLists)-paneH))
 	return m
 }
 
@@ -350,7 +416,7 @@ func (m model) slideRepoOffset() model {
 	} else if m.repoCursor >= m.repoOffset+paneH {
 		m.repoOffset = m.repoCursor - paneH + 1
 	}
-	m.repoOffset = clampInt(m.repoOffset, 0, max(0, len(m.repos)-paneH))
+	m.repoOffset = clampInt(m.repoOffset, 0, max(0, len(m.displayedRepos)-paneH))
 	return m
 }
 
@@ -367,13 +433,39 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
+func (m model) rebuildDisplayed() model {
+	if m.searchQuery == "" {
+		m.displayedLists = m.lists
+		m.displayedRepos = m.repos
+	} else {
+		m.displayedLists = search.FilterStarLists(m.lists, m.searchQuery)
+		m.displayedRepos = search.FilterRepositories(m.repos, m.searchQuery)
+	}
+	return m
+}
+
+func dropLastRune(s string) string {
+	_, size := utf8.DecodeLastRuneInString(s)
+	if size == 0 {
+		return s
+	}
+	return s[:len(s)-size]
+}
+
 func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.active == paneList {
-		if len(m.lists) == 0 {
+		if len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		focused := m.lists[m.listCursor]
-		m.focusedList = &m.lists[m.listCursor]
+		focused := m.displayedLists[m.listCursor]
+		// Find pointer into backing slice so reposLoadedMsg can resolve it.
+		m.focusedList = nil
+		for i := range m.lists {
+			if m.lists[i].ID == focused.ID {
+				m.focusedList = &m.lists[i]
+				break
+			}
+		}
 		m.active = paneRepo
 		m.repos = nil
 		m.repoCursor = 0
@@ -387,10 +479,10 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 
 func (m model) handleOpen() (tea.Model, tea.Cmd) {
 	if m.active == paneList {
-		if len(m.lists) == 0 {
+		if len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		url := m.lists[m.listCursor].URL
+		url := m.displayedLists[m.listCursor].URL
 		if url != "" && m.openBrowser != nil {
 			_ = m.openBrowser(url)
 		}
@@ -400,10 +492,10 @@ func (m model) handleOpen() (tea.Model, tea.Cmd) {
 }
 
 func (m model) openFocusedRepoURL() (tea.Model, tea.Cmd) {
-	if len(m.repos) == 0 {
+	if len(m.displayedRepos) == 0 {
 		return m, nil
 	}
-	url := m.repos[m.repoCursor].URL
+	url := m.displayedRepos[m.repoCursor].URL
 	if url != "" && m.openBrowser != nil {
 		_ = m.openBrowser(url)
 	}
@@ -613,24 +705,44 @@ func (m model) renderFooter() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusExpiry) {
 		return styleSuccess.Render(m.statusMsg)
 	}
+	if m.searchActive {
+		return styleFooter.Render("/:search  esc:clear  enter:done  up/down:navigate")
+	}
 	var hints string
 	if m.active == paneRepo {
-		hints = "a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  pg/g/G:scroll  ?:help  q:quit"
+		hints = "/:search  a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  pg/g/G:scroll  ?:help  q:quit"
 	} else {
-		hints = "n:new  e:edit  d:del  c:copy  C:merge  enter:select  o:open  s:sort  ctrl+r:refresh  pg/g/G:scroll  ?:help  q:quit"
+		hints = "/:search  n:new  e:edit  d:del  c:copy  C:merge  enter:select  o:open  s:sort  ctrl+r:refresh  pg/g/G:scroll  ?:help  q:quit"
 	}
 	return styleFooter.Render(hints)
 }
 
 func (m model) renderListPane(w, h int) string {
-	if len(m.lists) == 0 {
-		return lipgloss.NewStyle().Width(w).Height(h).Render("(no lists)")
+	totalH := h
+	out := make([]string, 0, totalH)
+
+	if m.searchActive && m.active == paneList {
+		bar := styleSuccess.Render("/") + " " + m.searchQuery
+		out = append(out, padRight(bar, w))
+		h--
 	}
-	lines := make([]string, 0, h)
+
+	if len(m.displayedLists) == 0 {
+		label := "(no lists)"
+		if m.searchQuery != "" {
+			label = "(no matches)"
+		}
+		out = append(out, label)
+		for len(out) < totalH {
+			out = append(out, "")
+		}
+		return strings.Join(out, "\n")
+	}
+
 	start := m.listOffset
-	end := min(start+h, len(m.lists))
+	end := min(start+h, len(m.displayedLists))
 	for i := start; i < end; i++ {
-		l := m.lists[i]
+		l := m.displayedLists[i]
 		cursor := "  "
 		name := l.Name
 		if i == m.listCursor {
@@ -647,28 +759,47 @@ func (m model) renderListPane(w, h int) string {
 		if space < 1 {
 			space = 1
 		}
-		row = row + strings.Repeat(" ", space) + right
-		lines = append(lines, row)
+		out = append(out, row+strings.Repeat(" ", space)+right)
 	}
-	for len(lines) < h {
-		lines = append(lines, "")
+	for len(out) < totalH {
+		out = append(out, "")
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(out, "\n")
 }
 
 func (m model) renderRepoPane(w, h int) string {
+	totalH := h
+	out := make([]string, 0, totalH)
+
+	if m.searchActive && m.active == paneRepo {
+		bar := styleSuccess.Render("/") + " " + m.searchQuery
+		out = append(out, padRight(bar, w))
+		h--
+	}
+
 	if m.focusedList == nil {
-		placeholder := "(press enter to view repos)"
-		return lipgloss.NewStyle().Width(w).Height(h).Render(placeholder)
+		out = append(out, "(press enter to view repos)")
+		for len(out) < totalH {
+			out = append(out, "")
+		}
+		return strings.Join(out, "\n")
 	}
-	if len(m.repos) == 0 {
-		return lipgloss.NewStyle().Width(w).Height(h).Render("(no repos)")
+	if len(m.displayedRepos) == 0 {
+		label := "(no repos)"
+		if m.searchQuery != "" {
+			label = "(no matches)"
+		}
+		out = append(out, label)
+		for len(out) < totalH {
+			out = append(out, "")
+		}
+		return strings.Join(out, "\n")
 	}
-	lines := make([]string, 0, h)
+
 	start := m.repoOffset
-	end := min(start+h, len(m.repos))
+	end := min(start+h, len(m.displayedRepos))
 	for i := start; i < end; i++ {
-		r := m.repos[i]
+		r := m.displayedRepos[i]
 		cursor := "  "
 		name := r.NameWithOwner
 		if i == m.repoCursor {
@@ -692,20 +823,19 @@ func (m model) renderRepoPane(w, h int) string {
 		if space < 1 {
 			space = 1
 		}
-		row = row + strings.Repeat(" ", space) + meta
-		lines = append(lines, row)
+		out = append(out, row+strings.Repeat(" ", space)+meta)
 	}
-	for len(lines) < h {
-		lines = append(lines, "")
+	for len(out) < totalH {
+		out = append(out, "")
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(out, "\n")
 }
 
 func (m model) renderPreviewPane(w, h int) string {
-	if m.active != paneRepo || len(m.repos) == 0 {
+	if m.active != paneRepo || len(m.displayedRepos) == 0 {
 		return lipgloss.NewStyle().Width(w).Height(h).Render("(select a repo)")
 	}
-	repo := m.repos[m.repoCursor]
+	repo := m.displayedRepos[m.repoCursor]
 
 	archived := ""
 	if repo.IsArchived {
@@ -801,6 +931,7 @@ func (m model) renderHelp() string {
 		fmt.Sprintf("  %-16s %s", keys.CopyList.Help().Key, keys.CopyList.Help().Desc),
 		fmt.Sprintf("  %-16s %s", keys.MergeList.Help().Key, keys.MergeList.Help().Desc),
 		fmt.Sprintf("  %-16s %s", keys.Preview.Help().Key, keys.Preview.Help().Desc),
+		fmt.Sprintf("  %-16s %s", keys.Search.Help().Key, keys.Search.Help().Desc),
 		"",
 		styleFaint.Render("Press ? to close help"),
 	}

@@ -115,3 +115,11 @@ Pre-resolved. Use `query-docs` directly.
 | `go-gh/v2` | `/cli/go-gh` | GraphQL executor, pagination, terminal, auth |
 | `Masterminds/sprig` | `/masterminds/sprig` | `--template` function availability |
 | `gopkg.in/yaml.v3` | `/yaml/go-yaml` | YAML marshal/unmarshal, struct tags |
+
+### tui
+
+| Library | Context7 ID | Query when… |
+|---------|-------------|-------------|
+| `charm.land/bubbletea/v2` | `/charmbracelet/bubbletea` | TUI framework, models, updates, commands |
+| `charm.land/bubbles/v2` | `/charmbracelet/bubbles` | TUI components (table, input, viewport, etc.) |
+| `charm.land/lipgloss/v2` | `/charmbracelet/lipgloss` | Terminal styling, colors, layouts |

@@ -273,6 +273,7 @@ func RunWithOptions(
 		}
 		if err := runTUI(ctx, service, tui.Options{
 			NoColor:     parsed.NoColor,
+			Mouse:       parsed.Mouse,
 			Stderr:      stderr,
 			OpenBrowser: openBrowser,
 		}); err != nil {

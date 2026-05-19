@@ -47,6 +47,7 @@ type model struct {
 	svc         githubapi.Service
 	openBrowser func(string) error
 	noColor     bool
+	mouse       bool
 	ctx         context.Context
 
 	active      pane
@@ -79,7 +80,10 @@ type model struct {
 	displayedLists []githubapi.StarList
 	displayedRepos []githubapi.Repository
 
-	selected map[string]struct{} // NameWithOwner of checked repos
+	selected       map[string]struct{} // NameWithOwner of checked repos
+	bulkFailedNWOs []string
+
+	spinnerFrame int
 }
 
 func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
@@ -87,6 +91,7 @@ func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
 		svc:         svc,
 		openBrowser: opts.OpenBrowser,
 		noColor:     opts.NoColor,
+		mouse:       opts.Mouse,
 		ctx:         ctx,
 		loading:     true,
 	}
@@ -97,8 +102,16 @@ type invalidatable interface {
 	Invalidate()
 }
 
+type spinnerTickMsg struct{}
+
+func spinnerTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return spinnerTickMsg{}
+	})
+}
+
 func (m model) Init() tea.Cmd {
-	return loadListsCmd(m.ctx, m.svc)
+	return tea.Batch(loadListsCmd(m.ctx, m.svc), spinnerTickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -175,13 +188,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.failed > 0 {
+			names := msg.failedNWOs
+			var failDetail string
+			switch {
+			case len(names) == 0:
+				failDetail = ""
+			case len(names) <= 3:
+				failDetail = " (" + strings.Join(names, ", ") + ")"
+			default:
+				failDetail = " (" + strings.Join(
+					names[:3],
+					", ",
+				) + fmt.Sprintf(
+					", +%d more)",
+					len(names)-3,
+				)
+			}
 			m.statusMsg = fmt.Sprintf(
-				"%d repos %s, %d failed.", msg.succeeded, msg.verb, msg.failed,
+				"%d %s, %d failed%s",
+				msg.succeeded,
+				msg.verb,
+				msg.failed,
+				failDetail,
 			)
 		} else {
 			m.statusMsg = fmt.Sprintf("%d repos %s.", msg.succeeded, msg.verb)
 		}
 		m.statusExpiry = time.Now().Add(2 * time.Second)
+		if msg.failed > 0 {
+			m.bulkFailedNWOs = msg.failedNWOs
+		} else {
+			m.bulkFailedNWOs = nil
+		}
 		m.loading = true
 		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
 		if m.active == paneRepo && m.focusedList != nil {
@@ -191,6 +229,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusExpiredMsg:
 		m.statusMsg = ""
+		return m, nil
+
+	case tea.MouseWheelMsg:
+		if m.modal != nil || m.searchActive {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			m = m.moveCursor(-1)
+		case tea.MouseWheelDown:
+			m = m.moveCursor(1)
+		}
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if m.modal != nil || m.searchActive {
+			return m, nil
+		}
+		m = m.handleMouseClick(msg)
+		return m, nil
+
+	case spinnerTickMsg:
+		if m.loading {
+			m.spinnerFrame = (m.spinnerFrame + 1) % 4
+			return m, spinnerTickCmd()
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -221,13 +285,21 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.active == paneRepo {
 			m.active = paneList
-			m.repos = nil
-			m.focusedList = nil
-			m.repoCursor = 0
-			m.repoOffset = 0
 			return m, nil
 		}
 		return m, tea.Quit
+
+	case key.Matches(msg, keys.Left):
+		if m.active == paneRepo {
+			m.active = paneList
+		}
+		return m, nil
+
+	case key.Matches(msg, keys.Right):
+		if m.active == paneList && m.focusedList != nil && len(m.repos) > 0 {
+			m.active = paneRepo
+		}
+		return m, nil
 
 	case key.Matches(msg, keys.Up):
 		m = m.moveCursor(-1)
@@ -385,9 +457,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Search):
-		if m.modal != nil {
-			return m, nil
-		}
 		m.searchActive = true
 		m.searchQuery = ""
 		m.listCursor = 0
@@ -428,6 +497,31 @@ func (m model) moveCursor(delta int) model {
 	} else {
 		m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1)
 		m = m.slideRepoOffset()
+	}
+	return m
+}
+
+func (m model) handleMouseClick(msg tea.MouseClickMsg) model {
+	contentRow := msg.Y - 1 // row 0 is the header
+	if contentRow < 0 {
+		return m
+	}
+	leftW := 36
+	if m.width > 100 {
+		leftW = m.width * 30 / 100
+	}
+	if msg.X <= leftW {
+		m.active = paneList
+		idx := contentRow + m.listOffset
+		if idx >= 0 && idx < len(m.displayedLists) {
+			m.listCursor = idx
+		}
+	} else if msg.X > leftW+1 && m.focusedList != nil && len(m.displayedRepos) > 0 {
+		m.active = paneRepo
+		idx := contentRow + m.repoOffset
+		if idx >= 0 && idx < len(m.displayedRepos) {
+			m.repoCursor = idx
+		}
 	}
 	return m
 }
@@ -615,15 +709,15 @@ func (m model) View() tea.View {
 	content := m.renderContent()
 	v := tea.NewView(content)
 	v.AltScreen = true
+	if m.mouse {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 
 func (m model) renderContent() string {
 	if m.err != nil {
 		return styleError.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\nPress q to quit."
-	}
-	if m.loading {
-		return "Loading..."
 	}
 	if m.showHelp {
 		return m.renderHelp()
@@ -734,6 +828,14 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-vis)
 }
 
+func padLeft(s string, width int) string {
+	vis := lipgloss.Width(s)
+	if vis >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-vis) + s
+}
+
 func (m model) renderHeader() string {
 	title := "gh star-lists browse"
 	if m.focusedList != nil {
@@ -788,10 +890,9 @@ func (m model) renderFooter() string {
 		if len(m.selected) > 0 {
 			selHint = fmt.Sprintf("  [%d selected]", len(m.selected))
 		}
-		hints = "/:search  space:select" + selHint +
-			"  a:add  x:remove  m:move  u:unstar  p:preview  enter/o:open  esc:back  s:sort  pg/g/G:scroll  ?:help  q:quit"
+		hints = "/ search  space select" + selHint + "  o browser  ? help  q quit"
 	} else {
-		hints = "/:search  n:new  e:edit  d:del  c:copy  C:merge  enter:select  o:open  s:sort  ctrl+r:refresh  pg/g/G:scroll  ?:help  q:quit"
+		hints = "/ search  enter open  s sort  ? help  q quit"
 	}
 	return styleFooter.Render(hints)
 }
@@ -801,15 +902,42 @@ func (m model) renderListPane(w, h int) string {
 	out := make([]string, 0, totalH)
 
 	if m.searchActive && m.active == paneList {
-		bar := styleSuccess.Render("/") + " " + m.searchQuery
+		qDisplay := m.searchQuery
+		prefix := styleSuccess.Render("/") + " "
+		prefixW := 2 // "/" + space
+		if lipgloss.Width(prefix)+lipgloss.Width(qDisplay) > w {
+			// Truncate from the left: show "/ ..." + tail.
+			tail := ""
+			for _, r := range qDisplay {
+				candidate := "..." + string([]rune(tail)) + string(r)
+				if prefixW+lipgloss.Width(candidate) <= w {
+					tail += string(r)
+				}
+			}
+			qDisplay = "..." + tail
+		}
+		bar := prefix + qDisplay
 		out = append(out, padRight(bar, w))
 		h--
+	}
+
+	if m.loading && m.focusedList == nil {
+		frame := []string{"|", "/", "-", "\\"}[m.spinnerFrame]
+		out = append(out, "  Loading "+frame)
+		for len(out) < totalH {
+			out = append(out, "")
+		}
+		return strings.Join(out, "\n")
 	}
 
 	if len(m.displayedLists) == 0 {
 		label := "(no lists)"
 		if m.searchQuery != "" {
-			label = "(no matches)"
+			q := m.searchQuery
+			if utf8.RuneCountInString(q) > 20 {
+				q = string([]rune(q)[:20]) + "..."
+			}
+			label = "(no matches for \"" + q + "\")"
 		}
 		out = append(out, label)
 		for len(out) < totalH {
@@ -826,10 +954,16 @@ func (m model) renderListPane(w, h int) string {
 		name := l.Name
 		if i == m.listCursor {
 			cursor = "> "
-			name = styleSelected.Render(name)
+			if m.active == paneList {
+				name = styleCursorActive.Render(name)
+			} else {
+				name = styleCursorInactive.Render(name)
+			}
 		}
 		age := shortAge(l.LastAddedAt, time.Now().UTC())
-		right := fmt.Sprintf("(%d repos, %s)", l.RepoCount, age)
+		repoStr := padLeft(fmt.Sprintf("%d", l.RepoCount), 4)
+		ageStr := padLeft(age, 8)
+		right := repoStr + " | " + ageStr
 		right = styleFaint.Render(right)
 		row := cursor + name
 		rowW := lipgloss.Width(row)
@@ -851,7 +985,20 @@ func (m model) renderRepoPane(w, h int) string {
 	out := make([]string, 0, totalH)
 
 	if m.searchActive && m.active == paneRepo {
-		bar := styleSuccess.Render("/") + " " + m.searchQuery
+		qDisplay := m.searchQuery
+		prefix := styleSuccess.Render("/") + " "
+		prefixW := 2 // "/" + space
+		if lipgloss.Width(prefix)+lipgloss.Width(qDisplay) > w {
+			tail := ""
+			for _, r := range qDisplay {
+				candidate := "..." + string([]rune(tail)) + string(r)
+				if prefixW+lipgloss.Width(candidate) <= w {
+					tail += string(r)
+				}
+			}
+			qDisplay = "..." + tail
+		}
+		bar := prefix + qDisplay
 		out = append(out, padRight(bar, w))
 		h--
 	}
@@ -863,10 +1010,24 @@ func (m model) renderRepoPane(w, h int) string {
 		}
 		return strings.Join(out, "\n")
 	}
+
+	if m.loading && m.focusedList != nil {
+		frame := []string{"|", "/", "-", "\\"}[m.spinnerFrame]
+		out = append(out, "  Loading "+frame)
+		for len(out) < totalH {
+			out = append(out, "")
+		}
+		return strings.Join(out, "\n")
+	}
+
 	if len(m.displayedRepos) == 0 {
 		label := "(no repos)"
 		if m.searchQuery != "" {
-			label = "(no matches)"
+			q := m.searchQuery
+			if utf8.RuneCountInString(q) > 20 {
+				q = string([]rune(q)[:20]) + "..."
+			}
+			label = "(no matches for \"" + q + "\")"
 		}
 		out = append(out, label)
 		for len(out) < totalH {
@@ -875,6 +1036,7 @@ func (m model) renderRepoPane(w, h int) string {
 		return strings.Join(out, "\n")
 	}
 
+	showMeta := w >= 60
 	hasSel := len(m.selected) > 0
 	start := m.repoOffset
 	end := min(start+h, len(m.displayedRepos))
@@ -892,13 +1054,19 @@ func (m model) renderRepoPane(w, h int) string {
 		}
 		if i == m.repoCursor {
 			cursor = "> "
-			name = styleSelected.Render(name)
+			if m.active == paneRepo {
+				name = styleCursorActive.Render(name)
+			} else {
+				name = styleCursorInactive.Render(name)
+			}
+		}
+		if !showMeta {
+			out = append(out, cursor+name)
+			continue
 		}
 		lang := r.Language
 		if lang == "" {
 			lang = "    "
-		} else if len(lang) > 8 {
-			lang = lang[:8]
 		}
 		stars := formatStars(r.StargazerCount)
 		pushed := shortAge(r.PushedAt, time.Now().UTC())
@@ -907,6 +1075,21 @@ func (m model) renderRepoPane(w, h int) string {
 		row := cursor + name
 		rowW := lipgloss.Width(row)
 		metaW := lipgloss.Width(meta)
+		// Ensure at least 2-space gap; truncate title if needed.
+		available := w - metaW - 2
+		if rowW > available {
+			// Clip name to fit: cursor is 2 bytes, clip name portion.
+			// available - 2 (cursor width) - 3 (...) characters for the name runes
+			maxNameRunes := available - 2 - 3
+			if maxNameRunes < 1 {
+				maxNameRunes = 1
+			}
+			if utf8.RuneCountInString(name) > maxNameRunes {
+				name = string([]rune(name)[:maxNameRunes]) + "..."
+			}
+			row = cursor + name
+			rowW = lipgloss.Width(row)
+		}
 		space := w - rowW - metaW - 2
 		if space < 1 {
 			space = 1
@@ -993,36 +1176,88 @@ func formatStars(n int) string {
 }
 
 func (m model) renderHelp() string {
+	// Narrow terminal fallback: single-column list.
+	if m.width > 0 && m.width < 50 {
+		lines := []string{
+			stylePaneTitle.Render("Key Bindings"),
+			"",
+			fmt.Sprintf("  %-16s %s", "up/k", "move up"),
+			fmt.Sprintf("  %-16s %s", "down/j", "move down"),
+			fmt.Sprintf("  %-16s %s", "pgup", "page up"),
+			fmt.Sprintf("  %-16s %s", "pgdn", "page down"),
+			fmt.Sprintf("  %-16s %s", "g", "top"),
+			fmt.Sprintf("  %-16s %s", "G", "bottom"),
+			fmt.Sprintf("  %-16s %s", "left", "focus lists"),
+			fmt.Sprintf("  %-16s %s", "right", "focus repos"),
+			fmt.Sprintf("  %-16s %s", "enter", "open/select"),
+			fmt.Sprintf("  %-16s %s", "esc", "back/quit"),
+			fmt.Sprintf("  %-16s %s", "/", "search"),
+			fmt.Sprintf("  %-16s %s", "space", "select"),
+			fmt.Sprintf("  %-16s %s", "a", "add repo"),
+			fmt.Sprintf("  %-16s %s", "x", "remove repo"),
+			fmt.Sprintf("  %-16s %s", "m", "move repo"),
+			fmt.Sprintf("  %-16s %s", "u", "unstar repo"),
+			fmt.Sprintf("  %-16s %s", "p", "preview"),
+			fmt.Sprintf("  %-16s %s", "o", "open browser"),
+			fmt.Sprintf("  %-16s %s", "n/e/d", "list CRUD"),
+			fmt.Sprintf("  %-16s %s", "c/C", "copy/merge"),
+			fmt.Sprintf("  %-16s %s", "ctrl+r", "refresh"),
+			fmt.Sprintf("  %-16s %s", "?", "toggle help"),
+			fmt.Sprintf("  %-16s %s", "q", "quit"),
+			"",
+			styleFaint.Render("Press ? to close"),
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	// Two-column table: Navigation | Actions.
+	left := []string{
+		"up/k   move up",
+		"down/j move down",
+		"pgup   page up",
+		"pgdn   page down",
+		"g      top",
+		"G      bottom",
+		"left   focus lists",
+		"right  focus repos",
+		"enter  open/select",
+		"esc    back/quit",
+		"?      toggle help",
+	}
+	right := []string{
+		"/      search",
+		"space  select",
+		"a      add repo",
+		"x      remove repo",
+		"m      move repo",
+		"u      unstar repo",
+		"p      preview",
+		"o      open browser",
+		"n/e/d  list CRUD",
+		"c/C    copy/merge",
+		"ctrl+r refresh",
+		"q      quit",
+	}
+
+	// Pad the shorter column with empty strings.
+	for len(left) < len(right) {
+		left = append(left, "")
+	}
+	for len(right) < len(left) {
+		right = append(right, "")
+	}
+
 	lines := []string{
 		stylePaneTitle.Render("Key Bindings"),
 		"",
-		fmt.Sprintf("  %-16s %s", keys.Up.Help().Key, keys.Up.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Down.Help().Key, keys.Down.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.PgUp.Help().Key, keys.PgUp.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.PgDn.Help().Key, keys.PgDn.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Home.Help().Key, keys.Home.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.End.Help().Key, keys.End.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Enter.Help().Key, keys.Enter.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Back.Help().Key, keys.Back.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Open.Help().Key, keys.Open.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Sort.Help().Key, keys.Sort.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Refresh.Help().Key, keys.Refresh.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Help.Help().Key, keys.Help.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Quit.Help().Key, keys.Quit.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.CreateList.Help().Key, keys.CreateList.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.EditList.Help().Key, keys.EditList.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.DeleteList.Help().Key, keys.DeleteList.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.AddRepo.Help().Key, keys.AddRepo.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.RemoveRepo.Help().Key, keys.RemoveRepo.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.MoveRepo.Help().Key, keys.MoveRepo.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.UnstarRepo.Help().Key, keys.UnstarRepo.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.CopyList.Help().Key, keys.CopyList.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.MergeList.Help().Key, keys.MergeList.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Preview.Help().Key, keys.Preview.Help().Desc),
-		fmt.Sprintf("  %-16s %s", keys.Search.Help().Key, keys.Search.Help().Desc),
-		"",
-		styleFaint.Render("Press ? to close help"),
+		fmt.Sprintf("  %-22s  %s", "Navigation", "Actions"),
+		fmt.Sprintf("  %-22s  %s", "----------", "----------"),
 	}
+	for i := range left {
+		lines = append(lines, fmt.Sprintf("  %-22s  %s", left[i], right[i]))
+	}
+	lines = append(lines, "")
+	lines = append(lines, styleFaint.Render("Press ? to close"))
 	return strings.Join(lines, "\n")
 }
 

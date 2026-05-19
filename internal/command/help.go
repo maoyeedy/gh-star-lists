@@ -22,7 +22,7 @@ Usage:
   gh star-lists copy --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--delete-source] [--yes] [--dry-run]
   gh star-lists merge --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--yes] [--dry-run]
   gh star-lists unstar <REPO> [--yes] [--dry-run]
-  gh star-lists browse [--no-color] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+  gh star-lists browse [--no-color] [--mouse] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
   gh star-lists --help
 
 Commands:
@@ -384,7 +384,7 @@ Examples:
   gh star-lists unstar cli/cli --dry-run
 `,
 
-	ActionBrowse: `browse [--no-color] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+	ActionBrowse: `browse [--no-color] [--mouse] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
 
   Open an interactive two-pane browser for your GitHub star lists.
 
@@ -404,6 +404,7 @@ Examples:
 
   Flags:
     --no-color     Disable colors
+    --mouse        Enable mouse support (click to focus, wheel to scroll; disables terminal text selection)
     --host         Target GitHub hostname (default: github.com)
     --cache-ttl    Cache TTL (default: 5m, 0 to disable)
     --no-cache     Disable response cache
@@ -470,7 +471,7 @@ func UsageText() string {
   gh star-lists copy --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--delete-source] [--yes] [--dry-run]
   gh star-lists merge --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--yes] [--dry-run]
   gh star-lists unstar <REPO> [--yes] [--dry-run]
-  gh star-lists browse [--no-color] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+  gh star-lists browse [--no-color] [--mouse] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
   gh star-lists --help
 `
 }

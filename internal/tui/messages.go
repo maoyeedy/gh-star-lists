@@ -55,9 +55,10 @@ type mutationDoneMsg struct {
 }
 
 type bulkDoneMsg struct {
-	verb      string // "added", "removed", "moved"
-	succeeded int
-	failed    int
+	verb       string // "added", "removed", "moved"
+	succeeded  int
+	failed     int
+	failedNWOs []string
 }
 
 type statusExpiredMsg struct{}
@@ -223,6 +224,7 @@ func bulkAddReposCmd(
 ) tea.Cmd {
 	return func() tea.Msg {
 		succeeded, failed := 0, 0
+		var failedNWOs []string
 		for _, nwo := range nwos {
 			if ctx.Err() != nil {
 				break
@@ -230,6 +232,7 @@ func bulkAddReposCmd(
 			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
 			if err != nil {
 				failed++
+				failedNWOs = append(failedNWOs, nwo)
 				continue
 			}
 			next := make(map[string]struct{}, len(currentIDs)+1)
@@ -240,11 +243,17 @@ func bulkAddReposCmd(
 			newIDs := slices.Sorted(maps.Keys(next))
 			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
 				failed++
+				failedNWOs = append(failedNWOs, nwo)
 			} else {
 				succeeded++
 			}
 		}
-		return bulkDoneMsg{verb: "added", succeeded: succeeded, failed: failed}
+		return bulkDoneMsg{
+			verb:       "added",
+			succeeded:  succeeded,
+			failed:     failed,
+			failedNWOs: failedNWOs,
+		}
 	}
 }
 
@@ -256,6 +265,7 @@ func bulkRemoveReposCmd(
 ) tea.Cmd {
 	return func() tea.Msg {
 		succeeded, failed := 0, 0
+		var failedNWOs []string
 		for _, nwo := range nwos {
 			if ctx.Err() != nil {
 				break
@@ -263,6 +273,7 @@ func bulkRemoveReposCmd(
 			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
 			if err != nil {
 				failed++
+				failedNWOs = append(failedNWOs, nwo)
 				continue
 			}
 			next := make(map[string]struct{}, len(currentIDs))
@@ -273,11 +284,17 @@ func bulkRemoveReposCmd(
 			newIDs := slices.Sorted(maps.Keys(next))
 			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
 				failed++
+				failedNWOs = append(failedNWOs, nwo)
 			} else {
 				succeeded++
 			}
 		}
-		return bulkDoneMsg{verb: "removed", succeeded: succeeded, failed: failed}
+		return bulkDoneMsg{
+			verb:       "removed",
+			succeeded:  succeeded,
+			failed:     failed,
+			failedNWOs: failedNWOs,
+		}
 	}
 }
 
@@ -289,6 +306,7 @@ func bulkMoveReposCmd(
 ) tea.Cmd {
 	return func() tea.Msg {
 		succeeded, failed := 0, 0
+		var failedNWOs []string
 		for _, nwo := range nwos {
 			if ctx.Err() != nil {
 				break
@@ -296,6 +314,7 @@ func bulkMoveReposCmd(
 			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
 			if err != nil {
 				failed++
+				failedNWOs = append(failedNWOs, nwo)
 				continue
 			}
 			next := make(map[string]struct{}, len(currentIDs))
@@ -307,10 +326,16 @@ func bulkMoveReposCmd(
 			newIDs := slices.Sorted(maps.Keys(next))
 			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
 				failed++
+				failedNWOs = append(failedNWOs, nwo)
 			} else {
 				succeeded++
 			}
 		}
-		return bulkDoneMsg{verb: "moved", succeeded: succeeded, failed: failed}
+		return bulkDoneMsg{
+			verb:       "moved",
+			succeeded:  succeeded,
+			failed:     failed,
+			failedNWOs: failedNWOs,
+		}
 	}
 }

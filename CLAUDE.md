@@ -114,6 +114,8 @@
 - [ ] TUI test `fakeService`? Must implement all `githubapi.Service` methods, add `Invalidate()` on `fakeInvalidatableService`
 - [ ] Build passes? `make check`
 
+**`range` over strings is already rune-wise.** Write `for _, r := range s`, never `for _, r := range []rune(s)`. The conversion allocates. `staticcheck` SA6003 flags it.
+
 ## Style & Tooling
 
 - UTF-8 LF (`.editorconfig` enforces). No smart quotes, non-breaking spaces, or exotic whitespace.

@@ -12,6 +12,7 @@ import (
 // Options configures the TUI browser.
 type Options struct {
 	NoColor     bool
+	Mouse       bool
 	Stderr      io.Writer
 	OpenBrowser func(string) error
 }

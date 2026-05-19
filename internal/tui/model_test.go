@@ -282,7 +282,8 @@ func TestDrillIntoListOnEnter(t *testing.T) {
 	}
 }
 
-// TestBackFromRepoPane verifies Esc in repo pane goes back to list pane.
+// TestBackFromRepoPane verifies Esc in repo pane returns focus to list pane
+// while preserving the loaded repos and focusedList (v1.3 behaviour).
 func TestBackFromRepoPane(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
@@ -297,11 +298,11 @@ func TestBackFromRepoPane(t *testing.T) {
 	if m2.active != paneList {
 		t.Errorf("active = %v after esc from repo pane, want paneList", m2.active)
 	}
-	if m2.focusedList != nil {
-		t.Error("focusedList should be nil after back")
+	if m2.focusedList == nil {
+		t.Error("focusedList should be preserved after back")
 	}
-	if len(m2.repos) != 0 {
-		t.Error("repos should be cleared after back")
+	if len(m2.repos) == 0 {
+		t.Error("repos should be preserved after back")
 	}
 }
 
@@ -1943,5 +1944,162 @@ func TestSelectRendersPrefixWhenSelectionNonEmpty(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "[ ]") {
 		t.Errorf("renderRepoPane should contain '[ ]' for unchecked repo, got:\n%s", rendered)
+	}
+}
+
+// TestDropLastRuneMultiByte verifies dropLastRune removes exactly one Unicode
+// code point, not one byte.
+func TestDropLastRuneMultiByte(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"abc\u4e2d", "abc"},       // CJK ideograph (3 bytes)
+		{"\u4e2d\u6587", "\u4e2d"}, // two CJK chars, drop last
+		{"a\U0001F600", "a"},       // emoji (4 bytes)
+		{"", ""},                   // empty -- no panic
+	}
+	for _, tc := range cases {
+		got := dropLastRune(tc.input)
+		if got != tc.want {
+			t.Errorf("dropLastRune(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestSearchWhileFilterActiveActionKeys verifies action keys operate on
+// displayedRepos when a search filter query is set but search input is committed
+// (searchActive == false, searchQuery != "").
+func TestSearchWhileFilterActiveActionKeys(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	// Commit a filter query via Enter (searchActive=false, query kept).
+	m.searchQuery = string([]rune(svc.repos[0].NameWithOwner)[:1]) // first char of first repo
+	m.searchActive = false
+	m = m.rebuildDisplayed()
+	if len(m.displayedRepos) == 0 {
+		t.Skip("filter removed all repos -- fixture mismatch")
+	}
+
+	// Press 'a' (AddRepo): should open a modal targeting displayedRepos[cursor].
+	m2 := update(m, keyPress('a'))
+	if m2.modal == nil {
+		t.Error("expected modal to open when pressing 'a' with filter active")
+	}
+}
+
+// TestNarrowRepoPaneHidesMetadata verifies renderRepoPane omits
+// language/stars/pushed metadata when width is below the threshold (60).
+func TestNarrowRepoPaneHidesMetadata(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	// Render at narrow width (below threshold of 60).
+	out := m.renderRepoPane(40, 10)
+
+	// The meta format uses "*" as the star-count marker. It must be absent.
+	if strings.Contains(out, "*") {
+		t.Errorf("narrow renderRepoPane should not contain star-count marker, got:\n%s", out)
+	}
+}
+
+// TestFooterCoreHintsOnly verifies renderFooter contains core hints and omits
+// old dense markers.
+func TestFooterCoreHintsOnly(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 60
+
+	footer := m.renderFooter()
+	// Core hints must be present.
+	for _, want := range []string{"search", "help", "quit"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer missing %q; got: %s", want, footer)
+		}
+	}
+	// Should not contain the old dense hint markers.
+	for _, banned := range []string{"ctrl+r:refresh", "pg/g/G:scroll"} {
+		if strings.Contains(footer, banned) {
+			t.Errorf("footer contains banned dense hint %q", banned)
+		}
+	}
+}
+
+// TestLoadingRendersInsidePane verifies that while loading repos the layout
+// (list pane) is still visible -- not just a bare "Loading..." string.
+func TestLoadingRendersInsidePane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[0]
+	m.loading = true
+	m.width = 120
+	m.height = 24
+
+	content := m.renderContent()
+	if content == "Loading..." {
+		t.Error("renderContent returned bare Loading... -- pane-local spinner not active")
+	}
+	// The list pane content (at least one list name) should be visible.
+	if !strings.Contains(content, svc.lists[0].Name) {
+		t.Errorf("list pane not rendered during repo load; content:\n%s", content)
+	}
+}
+
+// TestHelpOverlayContainsV12Keys verifies the rendered help overlay references
+// v1.2 additions and new v1.3 Left/Right keys.
+func TestHelpOverlayContainsV12Keys(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m.width = 120
+	m.height = 40
+
+	help := m.renderHelp()
+	for _, want := range []string{"space", "/", "pgup", "g", "left", "right"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("renderHelp missing %q; got:\n%s", want, help)
+		}
+	}
+}
+
+// TestMouseClickFocusesPane synthesizes a MouseClickMsg in the repo pane and
+// asserts that active switches to paneRepo and repoCursor updates.
+func TestMouseClickFocusesPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.focusedList = &m.lists[0]
+	m.width = 120
+	m.height = 24
+	m.active = paneList // start in list pane
+
+	// leftW at width 120: 120*30/100 = 36. Repo pane starts at x=38.
+	// Click row 2 (Y=2 => contentRow=1 => repoIdx = 1+repoOffset = 1).
+	click := tea.MouseClickMsg{X: 50, Y: 2, Button: tea.MouseLeft}
+	m2 := update(m, click)
+
+	if m2.active != paneRepo {
+		t.Errorf("active = %v after click in repo pane, want paneRepo", m2.active)
+	}
+	if m2.repoCursor != 1 {
+		t.Errorf("repoCursor = %d after clicking row 2, want 1", m2.repoCursor)
 	}
 }

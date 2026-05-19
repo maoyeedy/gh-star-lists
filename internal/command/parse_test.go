@@ -900,3 +900,21 @@ func TestParseUsageErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMouseFlag(t *testing.T) {
+	t.Parallel()
+	// --mouse on browse sets Mouse = true
+	p, err := command.Parse([]string{"browse", "--mouse"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !p.Mouse {
+		t.Error("expected Mouse = true")
+	}
+
+	// --mouse on a non-browse action returns an error
+	_, err = command.Parse([]string{"list", "--mouse"})
+	if err == nil {
+		t.Error("expected error for --mouse on non-browse action")
+	}
+}

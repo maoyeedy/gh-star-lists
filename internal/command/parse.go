@@ -97,6 +97,7 @@ type Parsed struct {
 	SortTerms      []SortTerm
 	SortDesc       bool
 	NoColor        bool
+	Mouse          bool
 	Limit          int
 	CacheTTL       *time.Duration
 	Filters        []Filter
@@ -146,6 +147,7 @@ func Parse(argv []string) (Parsed, error) {
 		cacheTTL         *time.Duration
 		noCacheFlag      bool
 		noColorFlag      bool
+		mouseFlag        bool
 		filters          []Filter
 		searchValue      string
 		outputPath       string
@@ -216,6 +218,8 @@ func Parse(argv []string) (Parsed, error) {
 			noCacheFlag = true
 		case "--no-color":
 			noColorFlag = true
+		case "--mouse":
+			mouseFlag = true
 		case "--host":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --host")
@@ -746,6 +750,7 @@ func Parse(argv []string) (Parsed, error) {
 				Action:   ActionBrowse,
 				Host:     hostValue,
 				NoColor:  noColorFlag,
+				Mouse:    mouseFlag,
 				CacheTTL: cacheTTL,
 			}, nil
 		default:
@@ -764,6 +769,9 @@ func Parse(argv []string) (Parsed, error) {
 	}
 	if searchValue != "" {
 		return Parsed{}, usage("--search is only supported for repos")
+	}
+	if mouseFlag {
+		return Parsed{}, usage("--mouse is only supported for browse")
 	}
 	if err := validateFilters(ActionList, filters); err != nil {
 		return Parsed{}, err

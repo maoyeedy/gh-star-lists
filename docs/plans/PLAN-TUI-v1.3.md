@@ -1,157 +1,45 @@
-# Plan: TUI v1.3 -- Polish, edge cases, UX
+# TUI v1.3 — Ship Record
 
-## Goal
+**Status: shipped on feat/tui.**
+**Prerequisite satisfied:** v1.3 is the stated prereq for v1.4 (async repo cache).
 
-Harden v1 quality before v2 ships new features. This is a non-feature release:
-no new commands, no new GitHub API calls. Focus exclusively on correctness,
-robustness, and UX polish.
+---
 
-**Prerequisite:** TUI v1.2 shipped (search, viewport, multi-select).
+## What shipped
 
-## Scope
+### A — Plumbing
+- `--mouse` opt-in flag (`parse.go` → `run.go` → `tui.Options.Mouse`). Wired in `View()` as `v.MouseMode = tea.MouseModeCellMotion` (bubbletea v2 API; no `ProgramOption` equivalent exists).
+- `bulkDoneMsg.failedNWOs []string` added. All three bulk command funcs (`bulkAddReposCmd`, `bulkRemoveReposCmd`, `bulkMoveReposCmd`) collect failed NWOs into the slice. Model stores `bulkFailedNWOs []string`.
 
-### In scope
+### B — Render layer
+- **B1** Active/inactive cursor: `styleCursorActive` (bold cyan) and `styleCursorInactive` (faint) in `styles.go`. Both panes show a ghost cursor when unfocused.
+- **B2** List pane metadata: bracket blob `(N repos, age)` replaced with fixed right-aligned columns `padLeft(N,4) + " | " + padLeft(age,8)`. New `padLeft` helper alongside `padRight`.
+- **B3** Repo pane narrow-aware metadata: hidden entirely below 60-col threshold. 8-byte language clip removed (was a UTF-8 bug). Full language name shown when metadata is visible. 2-space minimum gap enforced; title truncated with `...` if needed.
+- **B4** Search bar truncation: left-ellipsis `... <tail>` when query overflows pane width. Empty-result hint changed to `(no matches for "...")` with query interpolated.
+- **B5** Footer: collapsed to core hints only (`/ search  enter open  s sort  ? help  q quit` / `space select  o browser` for repo pane).
+- **B6** Help overlay: rebuilt as two-column table (Navigation | Actions). Narrow fallback (<50 col) stays single-column. Includes `left`/`right`, `space`, `/`, `pgup`/`pgdn`, `g`/`G`.
+- **B7** Bulk failure toast: lists up to 3 failed NWOs by name; `+N more` for larger batches. Format: `"3 added, 1 failed (owner/repo)"`.
+- **B8** Pane-local loading spinner: full-screen `"Loading..."` removed from `renderContent`. Simple rotating-frame spinner (`| / - \`) renders inline inside the loading pane (`renderListPane` for initial list load; `renderRepoPane` for repo load). Surrounding layout (header, footer, other pane) stays visible. Spinner driven by `spinnerTickMsg` at 100 ms intervals; tick stops when `!m.loading`.
 
-| Area | Work |
-|---|---|
-| Mouse support | Click-to-focus, wheel scroll; opt-in `--mouse` flag to avoid conflict with terminal text selection |
-| Search edge cases | Multi-byte rune handling in `dropLastRune` (already uses `utf8.DecodeLastRuneInString`, should be correct -- verify); very long query truncation in search bar; empty-result hint text |
-| Bulk failure UX | Per-item error toast or summary modal when `bulkDoneMsg.failed > 0`; currently shows a combined count but no per-repo detail |
-| Search + modal guard | Harden the `/` no-op guard when modal is open; add cursor-translation tests for every action key when a filter is active |
-| Narrow layout polish | Right-pane metadata, list metadata, loading state, pane focus, and footer behavior on half-width terminals |
-| Help overlay update | Full key reference including v1.2 additions (PgUp/PgDn, g/G, /, space) |
+### C — Behavior
+- **C1** Esc preserves repos: `Back` branch no longer clears `m.repos`, `m.focusedList`, `m.repoCursor`, `m.repoOffset`. Focus shifts to list pane; loaded repos remain. Updated `TestBackFromRepoPane` to assert preservation.
+- **C1** `Left`/`Right` key bindings: explicit pane focus keys in `keys.go`. `Left` mirrors Esc (focus to list pane, no-op if already there). `Right` moves to repo pane only when `focusedList != nil && len(m.repos) > 0`.
+- **C2** Mouse handlers: `tea.MouseClickMsg` hit-tests list/repo pane bounds using the same `leftW` formula as `renderLayout`; sets focus and cursor. `tea.MouseWheelMsg` calls `moveCursor(±1)` on the active pane. Both guarded against modal and search-active state.
+- **C3** Dead guard removed: unreachable `m.modal != nil` check inside `Search` key handler deleted.
 
-### Out of scope / deferred
+### D — Tests (8 new)
+`TestDropLastRuneMultiByte`, `TestSearchWhileFilterActiveActionKeys`, `TestNarrowRepoPaneHidesMetadata`, `TestFooterCoreHintsOnly`, `TestLoadingRendersInsidePane`, `TestHelpOverlayContainsV12Keys`, `TestMouseClickFocusesPane`, `TestParseMouseFlag`.
 
-- Parallel bulk mutations with `errgroup` (sequential is safer against rate limits)
-- Multi-select for list pane
-- Search operators (`lang:go`, `archived:false`, `topic:cli`)
-- Persistent search history / saved queries
-- Async repo preloading and session repo cache (v1.4)
-- Search performance benchmarking and debounce decisions (v1.4)
-- Cancel in-flight refresh / stale response handling (v1.4)
-- YAML config, themes, or config-driven keybindings
-- `gh star-lists` bare command defaults to TUI
-- Second TUI command variant
+---
 
-## Work areas
+## Implementation notes
 
-### Mouse
+**bubbletea v2 mouse API.** `WithMouseCellMotion()` as a `ProgramOption` does not exist in v2.0.6. Mouse mode is set per-frame in `Model.View()` via `v.MouseMode = tea.MouseModeCellMotion`. This means mouse is enabled/disabled every frame rather than once at program start — acceptable for now; v1.4 may want to confirm there is no flicker.
 
-- Gate on `--mouse` CLI flag threaded through `Options.Mouse bool`.
-- Use `tea.WithMouseCellMotion()` when enabled.
-- Click: `tea.MouseClickMsg` on list row -> set cursor; on repo row -> set cursor.
-- Wheel: `tea.MouseWheelMsg` -> call `moveCursor(+/-1)`.
-- `CLAUDE.md` note: mouse capture prevents terminal text selection -- opt-in only.
+**Spinner approach.** Used a plain `spinnerFrame int` with manual `tea.Tick` rather than `bubbles/spinner.Model`. Simpler for v1.3 scope. v1.4 should migrate to `spinner.Model` when it owns the full async spinner system (the two implementations will conflict if both are present).
 
-### Search edge cases
+**Esc/repos preserved — selection is NOT cleared on pane switch.** `m.selected` survives Left/Right pane transitions. Only explicit Esc-with-selection clears it. If a user selects repos in list A, Esc back, drills into list B, the selection set from list A is still live. This is probably wrong long-term but is unchanged from pre-v1.3 behavior — v1.4 owns session repo state and is the right place to fix it.
 
-- Verify `dropLastRune` handles multi-byte correctly (it uses `utf8.DecodeLastRuneInString` -- likely fine, write a test with CJK input to confirm).
-- Search bar rendering: truncate `m.searchQuery` display if it exceeds pane width.
-- When `displayedLists` or `displayedRepos` is empty after filtering, render a
-  `"(no matches for <query>)"` hint instead of plain `"(no matches)"`.
+**Shared `searchQuery` across panes.** A single `m.searchQuery` field filters both lists and repos. Switching panes carries the query across. Subtle: entering `/` in the repo pane sets `searchActive = true` and the existing query is cleared. There is no independent per-pane search history. Not a regression from v1.2; noted here because the two-pane model makes it more visible.
 
-### Bulk failure UX
-
-- Enhance `bulkDoneMsg` handling: when `failed > 0`, show an expandable detail
-  view or a second toast with failed repo names.
-- Consider: `bulkDoneMsg` carries `[]string` of failed NWOs; toast says
-  "3 added, 1 failed (owner/repo)".
-
-### Narrow layout polish
-
-Current screenshot behavior shows several width failures that come from the
-current row renderers, not from GitHub data:
-
-- `renderRepoPane` always appends a fixed metadata string
-  (`language stars pushed`) and forces only a one-column gap when the pane is
-  too narrow. In half-width terminals this lets metadata crowd the repo title.
-- `renderRepoPane` clips language to 8 bytes, so `TypeScript` becomes
-  `Typescri`. This looks like broken data rather than intentional truncation.
-- Very long repo names can still run through the metadata area. Do not wrap
-  repo rows to two lines; it hurts scanability. Keep one-line rows with
-  truncation or ellipsis, and accept pathological long names as a known edge.
-- `renderListPane` formats list metadata as one bracket blob:
-  `(<n> repos, <age>)`. It is long and visually uneven because ages like
-  `4d ago`, `2mo ago`, and `11d ago` vary in width.
-- `renderContent` replaces the full screen with `Loading...`, which hides the
-  surrounding navigation context during repo loads.
-- Esc from the repo pane clears `focusedList` and `repos`, so returning to the
-  list pane also clears the right pane back to `(press enter to view repos)`.
-- `renderFooter` emits one long hint string per pane. It clips on narrow
-  terminals and tries to show too many commands at once.
-
-Recommended decisions:
-
-- Hide right-side repo metadata below a narrow-width threshold. When metadata is
-  shown, preserve a fixed minimum gap between repo title and metadata.
-- Stop clipping language names to 8 bytes. Either show the full language only
-  when metadata has room, or hide the metadata block entirely at narrow widths.
-- Replace the list bracket blob with fixed right-aligned columns, for example
-  `repos | age`, matching the right pane's table-like metadata style. This is
-  the clearer terminal practice for scannable numeric/status metadata.
-- Use an inline spinner in the pane that is loading. For repo loading, keep the
-  list pane, header, and footer visible and show the spinner in the right pane
-  only. For initial list loading, show the spinner in the list pane. Prefer a
-  spinner over cycling dots because it is the common TUI loading affordance and
-  reads clearly as activity. The all-list async repo loading system belongs to
-  v1.4; v1.3 only fixes where loading is rendered.
-- Add Left/Right pane focus semantics. Right/Enter moves focus to repos;
-  Left/Esc moves focus back to lists while preserving the loaded repo list.
-- Distinguish active and inactive cursors: the active pane gets the strong
-  cursor/highlight; the inactive pane keeps a quieter contextual selection.
-- Collapse the bottom bar to core commands only: search, open/select, help,
-  quit, and the active pane's primary action. Move secondary mutation and
-  navigation commands into `?`.
-- Do not add YAML config, a theme system, or config-driven keybindings in v1.3
-  or as a future follow-up.
-
-### Help overlay
-
-Add a compact, complete reference for commands moved out of the bottom bar:
-
-```
-  Navigation          Actions
-  -------             -------
-  up/k   move up      /      search
-  down/j move down    space  select
-  pgup   page up      a      add repo
-  pgdn   page down    x      remove
-  g      top          m      move
-  G      bottom       u      unstar
-  enter  open/select  p      preview
-  esc    back/clear   s      sort
-  o      open browser ctrl+r refresh
-  ?      toggle help  q      quit
-```
-
-## Test additions
-
-- `TestDropLastRuneMultiByte`: verify `dropLastRune` on CJK strings.
-- `TestSearchWhileFilterActiveActionKeys`: for each action key (a, x, m, u, o),
-  assert the correct backing repo is operated on when a filter is active.
-- `TestNarrowRepoPaneHidesMetadata`: narrow width does not crowd repo titles
-  with right-side metadata.
-- `TestFooterCoreHintsOnly`: footer stays within narrow width by showing only
-  core commands and leaving full command reference to help.
-- `TestBackPreservesRepoPane`: Left/Esc moves focus back to the list pane
-  without clearing the loaded repo list.
-- `TestLoadingRendersInsidePane`: repo loading keeps the surrounding layout
-  visible and renders a pane-local loading indicator.
-- `TestHelpOverlayContainsV12Keys`: rendered help string contains "space", "/",
-  "pgup", "g/G".
-
-## Verification
-
-```
-make check
-make ascii-check
-```
-
-Manual smoke after mouse support:
-```
-go run . browse --mouse
-# Click a list row: cursor moves to clicked row.
-# Wheel up/down: list scrolls.
-# Terminal text selection: click+drag still works (mouse capture is cell-motion only).
-```
+**`%-8s` language format with full language name.** B3 removed the 8-rune clip, but the meta format string is still `"%-8s %6s* %s"`. "TypeScript" (10 chars) overflows the 8-char column, shifting the star count right. Minor visual misalignment; the gap enforcement (`available := w - metaW - 2`) accounts for actual `metaW` via `lipgloss.Width`, so layout does not break, it just looks uneven on long language names.

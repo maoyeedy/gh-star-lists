@@ -86,6 +86,18 @@ This split is mechanical -- no behavior change. Do it as the first PR of v2.
 - Component split: layout, pane, modal, and root model tests keep existing
   behavior unchanged.
 
+## Additional deferred items from v1.3
+
+These items were observed during v1.3 and are added to this plan:
+
+| Item | Rationale |
+|---|---|
+| Per-pane independent search state | `m.searchQuery` is shared. Ideal UX: list pane has its own query, repo pane has its own. Requires splitting `searchQuery`/`searchActive`/`listOffset`/`repoCursor` resets into per-pane state; touches `handleSearchKey`, `rebuildDisplayed`, and all reset sites. Non-trivial model refactor best done alongside the v2 component split. |
+| Toast duration proportional to message length | Bulk failure toasts listing 3+ NWOs need longer than 2 s to read. Scale expiry: 2 s for simple messages, 4 s when `len(failedNWOs) > 0`. |
+| Help overlay scrolling | Two-column help table exceeds terminal height on short windows (<20 rows). Add viewport scrolling (Up/Down while help is open) or paginate. Fits the v2 architecture split where help could become a proper sub-model. |
+| `Right` key when repos are loading | `Right` is a no-op if `len(m.repos) == 0`, even if a load is in-flight. After v1.4's session cache lands, `Right` can move focus to the repo pane showing the in-flight spinner rather than silently doing nothing. |
+| Mouse double-click detection | bubbletea v2.0.6 does not expose double-click events. If a future version does, wire double-click on a list row to trigger drill. Track upstream. |
+
 ## Verification
 
 ```

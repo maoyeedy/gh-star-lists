@@ -11,6 +11,8 @@ type keyMap struct {
 	End     key.Binding
 	Enter   key.Binding
 	Back    key.Binding
+	Left    key.Binding
+	Right   key.Binding
 	Quit    key.Binding
 	Sort    key.Binding
 	Open    key.Binding
@@ -32,14 +34,22 @@ type keyMap struct {
 }
 
 var keys = keyMap{
-	Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "move up")),
-	Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "move down")),
-	PgUp:    key.NewBinding(key.WithKeys("pgup", "ctrl+b"), key.WithHelp("pgup", "page up")),
-	PgDn:    key.NewBinding(key.WithKeys("pgdown", "ctrl+f"), key.WithHelp("pgdn", "page down")),
-	Home:    key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("home/g", "top")),
-	End:     key.NewBinding(key.WithKeys("end", "G"), key.WithHelp("end/G", "bottom")),
-	Enter:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select/open")),
-	Back:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back/quit")),
+	Up:    key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "move up")),
+	Down:  key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "move down")),
+	PgUp:  key.NewBinding(key.WithKeys("pgup", "ctrl+b"), key.WithHelp("pgup", "page up")),
+	PgDn:  key.NewBinding(key.WithKeys("pgdown", "ctrl+f"), key.WithHelp("pgdn", "page down")),
+	Home:  key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("home/g", "top")),
+	End:   key.NewBinding(key.WithKeys("end", "G"), key.WithHelp("end/G", "bottom")),
+	Enter: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select/open")),
+	Back:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back/quit")),
+	Left: key.NewBinding(
+		key.WithKeys("left"),
+		key.WithHelp("left", "focus lists"),
+	),
+	Right: key.NewBinding(
+		key.WithKeys("right"),
+		key.WithHelp("right", "focus repos"),
+	),
 	Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	Sort:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "cycle sort")),
 	Open:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open in browser")),

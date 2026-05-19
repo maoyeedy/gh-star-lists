@@ -24,6 +24,7 @@ const (
 	ActionMerge  Action = "merge"
 	ActionUnstar Action = "unstar"
 	ActionHelp   Action = "help"
+	ActionBrowse Action = "browse"
 )
 
 const (
@@ -48,10 +49,11 @@ const (
 )
 
 var commandAliases = map[string]string{
-	"ls": "list",
-	"rm": "remove",
-	"mv": "move",
-	"cp": "copy",
+	"ls":  "list",
+	"rm":  "remove",
+	"mv":  "move",
+	"cp":  "copy",
+	"tui": "browse",
 }
 
 func canonicalCommand(token string) string {
@@ -60,7 +62,7 @@ func canonicalCommand(token string) string {
 	}
 	switch token {
 	case "list", "repos", "create", "edit", "delete",
-		"add", "remove", "move", "copy", "merge", "unstar":
+		"add", "remove", "move", "copy", "merge", "unstar", "browse":
 		return token
 	}
 	return ""
@@ -693,6 +695,57 @@ func Parse(argv []string) (Parsed, error) {
 				Yes:      yesFlag,
 				DryRun:   dryRunFlag,
 				Host:     hostValue,
+			}, nil
+		case "browse":
+			if len(positionals) > 1 {
+				return Parsed{}, usage(
+					"too many arguments for browse: %s",
+					strings.Join(positionals[1:], " "),
+				)
+			}
+			if jsonFlag || tsvFlag || plainFlag || fzfFlag {
+				return Parsed{}, usage(
+					"--json, --tsv, --plain, and --fzf are not supported for browse",
+				)
+			}
+			if templateStr != "" {
+				return Parsed{}, usage("--template is not supported for browse")
+			}
+			if jqValue != "" {
+				return Parsed{}, usage("--jq is not supported for browse")
+			}
+			if outputPath != "" {
+				return Parsed{}, usage("--output is not supported for browse")
+			}
+			if webFlag {
+				return Parsed{}, usage("--web is not supported for browse")
+			}
+			if unlistedFlag {
+				return Parsed{}, usage("--unlisted is not supported for browse")
+			}
+			if allFlag {
+				return Parsed{}, usage("--all is not supported for browse")
+			}
+			if searchValue != "" {
+				return Parsed{}, usage("--search is not supported for browse")
+			}
+			if limit != 0 {
+				return Parsed{}, usage("--limit is not supported for browse")
+			}
+			if len(filters) > 0 {
+				return Parsed{}, usage("--filter is not supported for browse")
+			}
+			if len(sortKeys) > 0 {
+				return Parsed{}, usage("--sort is not supported for browse")
+			}
+			if sortDesc {
+				return Parsed{}, usage("--desc is not supported for browse")
+			}
+			return Parsed{
+				Action:   ActionBrowse,
+				Host:     hostValue,
+				NoColor:  noColorFlag,
+				CacheTTL: cacheTTL,
 			}, nil
 		default:
 			return Parsed{}, &UnknownCommandError{Command: positionals[0]}

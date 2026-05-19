@@ -12,6 +12,7 @@ import (
 	"github.com/maoyeedy/gh-star-lists/internal/command"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/tui"
 )
 
 type fakeService struct {
@@ -2488,5 +2489,153 @@ func TestRunColorizesHumanDiagnostics(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "\x1b[33merror: unknown flag") {
 		t.Fatalf("stderr = %q, want yellow usage diagnostic", stderr.String())
+	}
+}
+
+func TestRunBrowseNonTTYReturnsUsageError(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage on non-TTY", code)
+	}
+	if !strings.Contains(stderr.String(), "browse requires a terminal") {
+		t.Fatalf("stderr = %q, want TTY error message", stderr.String())
+	}
+}
+
+func TestRunBrowseTUIAliasNonTTYReturnsUsageError(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitUsage {
+		t.Fatalf("tui alias: exit = %d, want ExitUsage on non-TTY", code)
+	}
+}
+
+func TestRunBrowseTTYCallsRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if !called {
+		t.Error("runTUI was not called")
+	}
+}
+
+func TestRunBrowseTUIErrorReturnsFailure(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			return errors.New("tui error")
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitFailure {
+		t.Fatalf("exit = %d, want ExitFailure when TUI errors", code)
+	}
+}
+
+func TestRunBrowseHelp(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"browse", "--help"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if !strings.Contains(stdout.String(), "browse") {
+		t.Fatalf("browse --help stdout = %q, want browse-specific help", stdout.String())
+	}
+}
+
+func TestRunBrowseRejectsOutputFlag(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"browse", "--json"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage for --json on browse", code)
+	}
+}
+
+func TestRunBrowseNoExtraArgsAllowed(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"browse", "unexpected-arg"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage for unexpected positional arg", code)
+	}
+}
+
+func TestRunBrowseNoColorPropagated(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var capturedNoColor bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, opts tui.Options) error {
+			capturedNoColor = opts.NoColor
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	runCommand(
+		context.Background(),
+		[]string{"browse", "--no-color"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if !capturedNoColor {
+		t.Error("NoColor should be true when --no-color flag passed")
 	}
 }

@@ -22,6 +22,7 @@ Usage:
   gh star-lists copy --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--delete-source] [--yes] [--dry-run]
   gh star-lists merge --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--yes] [--dry-run]
   gh star-lists unstar <REPO> [--yes] [--dry-run]
+  gh star-lists browse [--no-color] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
   gh star-lists --help
 
 Commands:
@@ -38,6 +39,7 @@ Commands:
   merge             Merge all repositories from one Star List into another,
                     then delete the source list.
   unstar <REPO>     Unstar a repository.
+  browse            Open interactive two-pane browser (alias: tui).
 
 Output:
   human             Table output optimized for reading (default).
@@ -121,8 +123,9 @@ Commands:
   copy    Copy all repos from one list to another.
   merge   Merge one list into another and delete the source.
   unstar  Unstar a repository.
+  browse  Interactive two-pane browser (alias: tui).
 
-Aliases: ls=list  rm=remove  mv=move  cp=copy
+Aliases: ls=list  rm=remove  mv=move  cp=copy  tui=browse
 
 Examples:
   gh star-lists                                         # list your Star Lists
@@ -380,6 +383,33 @@ Examples:
   gh star-lists unstar cli/cli --yes
   gh star-lists unstar cli/cli --dry-run
 `,
+
+	ActionBrowse: `browse [--no-color] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+
+  Open an interactive two-pane browser for your GitHub star lists.
+
+  Left pane: star lists. Right pane: repositories in the focused list.
+
+  Navigation:
+    up/down, j/k   Move selection
+    enter          Drill into list / open repo in browser
+    esc            Back to list pane / quit
+    q              Quit
+
+  Actions:
+    s              Cycle sort order
+    o              Open focused item in browser
+    ctrl+r         Refresh (clears cache)
+    ?              Toggle expanded help
+
+  Flags:
+    --no-color     Disable colors
+    --host         Target GitHub hostname (default: github.com)
+    --cache-ttl    Cache TTL (default: 5m, 0 to disable)
+    --no-cache     Disable response cache
+
+  Alias: tui
+`,
 }
 
 func applyBold(s string, options format.Options) string {
@@ -440,6 +470,7 @@ func UsageText() string {
   gh star-lists copy --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--delete-source] [--yes] [--dry-run]
   gh star-lists merge --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--yes] [--dry-run]
   gh star-lists unstar <REPO> [--yes] [--dry-run]
+  gh star-lists browse [--no-color] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
   gh star-lists --help
 `
 }

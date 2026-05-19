@@ -20,6 +20,7 @@ import (
 	ghterm "github.com/cli/go-gh/v2/pkg/term"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/tui"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -118,6 +119,16 @@ func PromptMultiSelectForTest(
 func ConfirmActionForTest(fn func(string) (bool, error)) func(string) (bool, error) {
 	prev := confirmAction
 	confirmAction = fn
+	return prev
+}
+
+var runTUI = tui.Run
+
+func RunTUIForTest(
+	fn func(context.Context, githubapi.Service, tui.Options) error,
+) func(context.Context, githubapi.Service, tui.Options) error {
+	prev := runTUI
+	runTUI = fn
 	return prev
 }
 
@@ -252,6 +263,23 @@ func RunWithOptions(
 		stdout = f
 	}
 	switch parsed.Action {
+	case ActionBrowse:
+		if !canPrompt() {
+			_ = writeDiagnostic(
+				stderr,
+				"error: browse requires a terminal; use 'gh star-lists --help' for non-interactive commands\n",
+			)
+			return ExitUsage
+		}
+		if err := runTUI(ctx, service, tui.Options{
+			NoColor:     parsed.NoColor,
+			Stderr:      stderr,
+			OpenBrowser: openBrowser,
+		}); err != nil {
+			_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%v\n", err)
+			return ExitFailure
+		}
+		return ExitSuccess
 	case ActionList:
 		lists, err := service.ListStarLists(ctx, directListOptions(parsed, false))
 		if err != nil {

@@ -7,21 +7,27 @@ themes, disk cache, or new GitHub API surface. This is the final v1 stage:
 solid interaction, bounded async loading, session cache, and clear pending
 states.
 
-**Prerequisite:** TUI v1.3 shipped with narrow-layout polish, pane-local
-loading placement, left/right pane focus, and compact footer/help behavior.
+**Prerequisite:** TUI v1.4 shipped visual polish, eager initial load for the
+first sorted list, spinner migration to `bubbles/spinner.Model`, semantic styles,
+shared geometry helper, and styled repo rows with progressive narrow-width hiding.
 
-## Current state
+## Current state (post-v1.4)
 
-- `model.Init()` loads only star lists.
-- `handleEnter()` loads repositories for one list on demand.
-- `renderRepoPane()` shows `(press enter to view repos)` until the user drills
-  into a list.
-- `m.loading` is global, so list or repo loading replaces the whole screen with
-  `Loading...`.
+- `Init()` loads lists and starts `m.spinner.Tick`; on `listsLoadedMsg` the
+  first sorted list is auto-focused and its repos are fetched immediately.
+- Moving the list cursor to any other list requires Enter to load repos. Only
+  one list's repos are held in memory at a time (`m.repos`).
+- `m.loading` is a single bool shared across list and repo loading. The spinner
+  runs while any load is pending.
 - The in-memory `githubapi.cacheService` caches service calls, but the TUI model
-  does not know which list repos are loaded, loading, stale, or failed.
-- Mutations close the modal immediately and show global loading while refreshes
-  run after the mutation result.
+  has no per-list session state (loaded / in-flight / failed / generation).
+- `starWidth` and `langWidth` in `renderRepoPane` are recomputed from visible
+  rows on every frame during scroll, causing small repeated allocations.
+- Preview pane wheel scroll is a no-op (comment at `model.go`: "no-op until
+  preview scroll is implemented").
+- Single-click on an already-focused list with repos not yet loaded does not
+  trigger `loadReposCmd` (only double-click or Enter does).
+- Mutations close modal immediately and show global loading during refresh.
 
 ## Recommended behavior
 
@@ -41,6 +47,15 @@ loading placement, left/right pane focus, and compact footer/help behavior.
   list load, repo load, or modal mutation is pending.
 - Keep all IO in Bubble Tea `tea.Cmd` functions. Use `tea.Batch` for bounded
   concurrent commands; do not mutate model state from external goroutines.
+- Cache `starWidth` and `langWidth` on the model (invalidated by
+  `reposLoadedMsg` and sort changes) so `renderRepoPane` does not recompute
+  them from visible rows on every scroll frame.
+- Add preview pane scroll: `tea.MouseWheelMsg` over the preview column
+  (currently no-op, comment at `model.go:266`) should scroll the preview block.
+  Requires a `previewOffset int` field and `slidePreviewOffset` helper.
+- Single-click on an already-focused list with unloaded repos: trigger
+  `loadReposCmd` without switching to the repo pane (currently only Enter and
+  double-click do this).
 
 ## Implementation changes
 

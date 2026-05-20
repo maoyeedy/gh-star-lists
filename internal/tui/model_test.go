@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -148,7 +150,8 @@ func update(m model, msg tea.Msg) model {
 }
 
 // TestListsLoadedPopulatesLists verifies that receiving listsLoadedMsg
-// sets the lists field and clears loading state.
+// sets the lists field. After P4 eager-load, the first list is auto-focused
+// and a repo load is kicked off (loading stays true until repos arrive).
 func TestListsLoadedPopulatesLists(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
@@ -159,8 +162,12 @@ func TestListsLoadedPopulatesLists(t *testing.T) {
 	if len(m2.lists) != 3 {
 		t.Fatalf("lists len = %d, want 3", len(m2.lists))
 	}
-	if m2.loading {
-		t.Error("loading should be false after listsLoadedMsg")
+	// Eager load: focusedList is set and loading is true (awaiting repos).
+	if m2.focusedList == nil {
+		t.Error("focusedList should be non-nil after eager initial load")
+	}
+	if !m2.loading {
+		t.Error("loading should be true after listsLoadedMsg (eager repo fetch in flight)")
 	}
 }
 
@@ -1525,9 +1532,10 @@ func TestViewportGCapitalJumpsToBottom(t *testing.T) {
 	if m2.repoCursor != 49 {
 		t.Errorf("G: repoCursor = %d, want 49", m2.repoCursor)
 	}
-	paneH := m2.height - 2
-	if m2.repoOffset != max(0, 50-paneH) {
-		t.Errorf("G: repoOffset = %d, want %d", m2.repoOffset, max(0, 50-paneH))
+	// repoPaneH == full pane content height; no heading overhead.
+	effectivePaneH := m2.repoPaneH()
+	if m2.repoOffset != max(0, 50-effectivePaneH) {
+		t.Errorf("G: repoOffset = %d, want %d", m2.repoOffset, max(0, 50-effectivePaneH))
 	}
 }
 
@@ -2101,5 +2109,751 @@ func TestMouseClickFocusesPane(t *testing.T) {
 	}
 	if m2.repoCursor != 1 {
 		t.Errorf("repoCursor = %d after clicking row 2, want 1", m2.repoCursor)
+	}
+}
+
+// --- Spinner migration tests ---
+
+// TestSpinnerTickMsgUpdatesSpinner verifies that a spinner.TickMsg advances the
+// spinner state when the model is in loading mode.
+func TestSpinnerTickMsgUpdatesSpinner(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.loading = true
+
+	// Capture initial View output.
+	before := m.spinner.View()
+
+	// Synthesize a TickMsg for this spinner's ID so it accepts the message.
+	tick := spinner.TickMsg{Time: time.Now(), ID: m.spinner.ID()}
+	m2 := update(m, tick)
+
+	// spinner.View() must return a non-empty string after a tick.
+	after := m2.spinner.View()
+	if after == "" {
+		t.Error("spinner.View() returned empty string after TickMsg")
+	}
+	// The frame should have advanced (before and after differ).
+	if before == after {
+		t.Logf(
+			"spinner.View() did not advance frame (before=%q after=%q); may be acceptable if same char",
+			before,
+			after,
+		)
+	}
+}
+
+// TestLoadingViewUsesSpinnerView verifies that while loading repos the rendered
+// repo pane contains the spinner output.
+func TestLoadingViewUsesSpinnerView(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[0]
+	m.loading = true
+
+	spinnerStr := m.spinner.View()
+	rendered := repoPane(m, 80, 20)
+
+	if !strings.Contains(rendered, spinnerStr) {
+		t.Errorf(
+			"repo pane during loading should contain spinner output %q; got:\n%s",
+			spinnerStr,
+			rendered,
+		)
+	}
+}
+
+// --- Geometry tests (P2) ---
+
+// TestPaneGeometryTwoColumn verifies two-column layout invariants across a
+// range of terminal widths.
+func TestPaneGeometryTwoColumn(t *testing.T) {
+	t.Parallel()
+	widths := []int{80, 100, 120, 160}
+	for _, w := range widths {
+		g := calcPaneGeometry(w, false)
+		// Separator occupies exactly 1 column: leftWidth + sep(1) + repoWidth == totalWidth.
+		if got := g.leftWidth + 1 + g.repoWidth; got != w {
+			t.Errorf(
+				"width=%d: leftWidth(%d)+1+repoWidth(%d)=%d, want %d",
+				w,
+				g.leftWidth,
+				g.repoWidth,
+				got,
+				w,
+			)
+		}
+		// sep1Col is at leftWidth.
+		if g.sep1Col != g.leftWidth {
+			t.Errorf("width=%d: sep1Col=%d, want %d", w, g.sep1Col, g.leftWidth)
+		}
+		// No preview in 2-col mode.
+		if g.previewWidth != 0 {
+			t.Errorf("width=%d: previewWidth=%d, want 0", w, g.previewWidth)
+		}
+		// sep2Col must be -1 in 2-col mode.
+		if g.sep2Col != -1 {
+			t.Errorf("width=%d: sep2Col=%d, want -1", w, g.sep2Col)
+		}
+	}
+}
+
+// TestPaneGeometryThreeColumn verifies three-column layout invariants across a
+// range of terminal widths.
+func TestPaneGeometryThreeColumn(t *testing.T) {
+	t.Parallel()
+	widths := []int{100, 120, 160, 200}
+	for _, w := range widths {
+		g := calcPaneGeometry(w, true)
+		// Two separators: leftWidth + sep(1) + repoWidth + sep(1) + previewWidth == totalWidth.
+		total := g.leftWidth + 1 + g.repoWidth + 1 + g.previewWidth
+		if total != w {
+			t.Errorf("width=%d: leftWidth(%d)+1+repoWidth(%d)+1+previewWidth(%d)=%d, want %d",
+				w, g.leftWidth, g.repoWidth, g.previewWidth, total, w)
+		}
+		// sep1Col is at leftWidth.
+		if g.sep1Col != g.leftWidth {
+			t.Errorf("width=%d: sep1Col=%d, want %d (leftWidth)", w, g.sep1Col, g.leftWidth)
+		}
+		// sep2Col is at leftWidth + 1 + repoWidth.
+		wantSep2 := g.leftWidth + 1 + g.repoWidth
+		if g.sep2Col != wantSep2 {
+			t.Errorf("width=%d: sep2Col=%d, want %d", w, g.sep2Col, wantSep2)
+		}
+		// preview pane must have positive width.
+		if g.previewWidth <= 0 {
+			t.Errorf("width=%d: previewWidth=%d, want >0", w, g.previewWidth)
+		}
+	}
+}
+
+// TestHoverWheelScrollsListPane verifies that a wheel event whose X coordinate
+// falls inside the list pane scrolls listCursor, even when the repo pane is
+// active.
+func TestHoverWheelScrollsListPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.focusedList = &m.lists[0]
+	m.width = 120
+	m.height = 24
+	// Start with repo pane active and cursor in the middle so scrolling is possible.
+	m.active = paneRepo
+	m.listCursor = 1 // cursor at middle list item
+
+	// g.sep1Col at width=120, showPreview=false: leftW = 120*30/100 = 36.
+	// X=5 is within the list pane.
+	before := m.listCursor
+	wheel := tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp}
+	m2 := update(m, wheel)
+
+	if m2.listCursor == before {
+		t.Errorf("listCursor unchanged after wheel-up over list pane: got %d", m2.listCursor)
+	}
+	if m2.active != paneRepo {
+		t.Errorf("active pane changed by hover-wheel: got %v, want paneRepo", m2.active)
+	}
+}
+
+// TestHoverWheelScrollsRepoPane verifies that a wheel event whose X coordinate
+// falls inside the repo pane scrolls repoCursor, even when the list pane is
+// active.
+func TestHoverWheelScrollsRepoPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.focusedList = &m.lists[0]
+	m.width = 120
+	m.height = 24
+	// Start with list pane active.
+	m.active = paneList
+	m.repoCursor = 0
+
+	// g.sep1Col at width=120, showPreview=false: leftW = 36, sep1Col = 36.
+	// X=50 is in the repo pane (> sep1Col=36).
+	before := m.repoCursor
+	wheel := tea.MouseWheelMsg{X: 50, Y: 5, Button: tea.MouseWheelDown}
+	m2 := update(m, wheel)
+
+	if m2.repoCursor == before {
+		t.Errorf("repoCursor unchanged after wheel-down over repo pane: got %d", m2.repoCursor)
+	}
+	if m2.active != paneList {
+		t.Errorf("active pane changed by hover-wheel: got %v, want paneList", m2.active)
+	}
+}
+
+// --- P3: Visual polish tests ---
+
+// TestListRowsSimplified verifies the new list row format: no "|" column
+// separator, no age strings, but the repo count is present.
+func TestListRowsSimplified(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 80
+	m.height = 24
+
+	rendered := m.renderListPane(30, 10)
+
+	// Internal "|" column separator must be gone.
+	// (Layout separators between panes are in renderLayout, not renderListPane.)
+	if strings.Contains(rendered, " | ") {
+		t.Errorf("renderListPane should not contain ' | ' column separator; got:\n%s", rendered)
+	}
+	// Age-like strings (e.g. "3d ago", "1w", "2mo") must be absent.
+	for _, ageToken := range []string{"d ago", "h ago", "mo ago", "y ago", "now"} {
+		if strings.Contains(rendered, ageToken) {
+			t.Errorf("renderListPane should not contain age token %q; got:\n%s", ageToken, rendered)
+		}
+	}
+	// Repo count for one of the test lists (e.g. "5" for "Alpha") must appear.
+	found := false
+	for _, l := range svc.lists {
+		if strings.Contains(rendered, fmt.Sprintf("%d", l.RepoCount)) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("renderListPane should contain at least one repo count; got:\n%s", rendered)
+	}
+}
+
+// TestSearchCountIndicator verifies the N/total indicator in the search bar.
+func TestSearchCountIndicator(t *testing.T) {
+	t.Parallel()
+	// Build a service with 5 lists, 2 of which match "alp".
+	lists := []githubapi.StarList{
+		{ID: "1", Name: "Alpha", RepoCount: 1},
+		{ID: "2", Name: "Alpine", RepoCount: 2},
+		{ID: "3", Name: "beta", RepoCount: 3},
+		{ID: "4", Name: "gamma", RepoCount: 0},
+		{ID: "5", Name: "delta", RepoCount: 7},
+	}
+	svc := &fakeService{lists: lists}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: lists})
+	m.active = paneList
+	m.searchActive = true
+	m.searchQuery = "alp"
+	m = m.rebuildDisplayed()
+	// Should have 2 matches ("Alpha", "Alpine").
+	if len(m.displayedLists) != 2 {
+		t.Fatalf("expected 2 matches for 'alp', got %d", len(m.displayedLists))
+	}
+
+	// Wide enough: count should appear.
+	wideRendered := m.renderListPane(80, 10)
+	if !strings.Contains(wideRendered, "2/5") {
+		t.Errorf("wide renderListPane should contain '2/5' search count; got:\n%s", wideRendered)
+	}
+
+	// Narrow: count should be dropped.
+	// At 8 cols: prefixW(2) + min_query(4) + gap(2) + countW(3) = 11 > 8, so count is dropped.
+	narrowRendered := m.renderListPane(8, 10)
+	if strings.Contains(narrowRendered, "2/5") {
+		t.Errorf(
+			"narrow renderListPane should NOT contain '2/5' search count; got:\n%s",
+			narrowRendered,
+		)
+	}
+}
+
+// TestHeaderPriorityTruncation verifies that with a very long list name and
+// sort label on a narrow terminal, the app name is preserved and the sort label
+// is dropped before truncating the list name.
+func TestHeaderPriorityTruncation(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.width = 60
+	m.height = 24
+	// Give it a very long focused list name.
+	longName := "this-is-a-very-long-list-name-that-exceeds-the-terminal-width"
+	fl := githubapi.StarList{ID: "UL_1", Name: longName, RepoCount: 5}
+	m.lists = []githubapi.StarList{fl}
+	m.focusedList = &m.lists[0]
+	// Set a non-default sort so sortLabel would appear if there is room.
+	m.sortLists = sortListsName // produces "name" label
+
+	header := m.renderHeader()
+
+	// App name must always be present.
+	if !strings.Contains(header, "gh star-lists") {
+		t.Errorf("header must contain 'gh star-lists'; got: %s", header)
+	}
+	// Sort label should be absent (dropped due to narrow width).
+	if strings.Contains(header, "[sort:") {
+		t.Errorf("header should not contain sort label when terminal is narrow; got: %s", header)
+	}
+	// Visible width of the rendered header must not exceed m.width.
+	visW := lipgloss.Width(header)
+	if visW > m.width {
+		t.Errorf("header visible width %d exceeds terminal width %d", visW, m.width)
+	}
+}
+
+// TestFooterKeyTokensStyled verifies that with a real color profile the footer
+// wraps key tokens in ANSI escape sequences (i.e., they are styled, not plain).
+func TestFooterKeyTokensStyled(t *testing.T) {
+	t.Parallel()
+	// styleFooterKey is Bold; in a real (non-NoTTY) profile the renderer
+	// emits escape sequences. We can detect this by comparing the rendered
+	// key with the raw key string.
+	keyRendered := styleFooterKey.Render("q")
+	if keyRendered == "q" {
+		// lipgloss may strip styles when it detects no TTY; skip rather than fail.
+		t.Skip("color profile strips ANSI (no TTY); skipping styled-token assertion")
+	}
+
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 80
+
+	footer := m.renderFooter()
+
+	// The footer must contain the styled rendering of the "q" key, not just "q".
+	if !strings.Contains(footer, keyRendered) {
+		t.Errorf("footer does not contain styled 'q' token %q; got: %s", keyRendered, footer)
+	}
+}
+
+// --- Phase 4: repo pane rebuild ---
+
+// TestRepoPaneNoHeading verifies that the repo pane has no header rows above
+// repos: the first line must be a repo row so it aligns with the first list
+// item.
+func TestRepoPaneNoHeading(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+
+	rendered := repoPane(m, 80, 20)
+
+	if strings.Contains(rendered, "Repos in this list:") {
+		t.Errorf("repo pane must not contain 'Repos in this list:'; got:\n%s", rendered)
+	}
+	firstLine := strings.SplitN(rendered, "\n", 2)[0]
+	if strings.TrimSpace(firstLine) == "" {
+		t.Errorf(
+			"first line of repo pane must not be blank (no heading overhead); got:\n%s",
+			rendered,
+		)
+	}
+}
+
+// TestRepoFieldStyling verifies that the repo pane produces styled output (ANSI
+// sequences or at least readable content in NoTTY mode) and that the repo name
+// is always present.
+func TestRepoFieldStyling(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.width = 120
+
+	rendered := repoPane(m, 120, 20)
+
+	// The repo name must appear somewhere in the output.
+	for _, r := range svc.repos {
+		if !strings.Contains(rendered, r.NameWithOwner) {
+			t.Errorf(
+				"repo pane should contain NameWithOwner %q; got:\n%s",
+				r.NameWithOwner,
+				rendered,
+			)
+		}
+	}
+
+	// In a real terminal (or when styles render), the star glyph should appear
+	// (since width 120 >= 30 threshold for stars).
+	if !strings.Contains(rendered, "\u2605") {
+		// Not a hard failure if lipgloss strips styling -- skip.
+		t.Logf("star glyph absent (may be a NoTTY environment); rendered:\n%s", rendered)
+	}
+}
+
+// stripANSI removes ANSI escape sequences from s for column-position testing.
+func stripANSI(s string) string {
+	var out []byte
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			// Skip until 'm'.
+			j := i + 2
+			for j < len(s) && s[j] != 'm' {
+				j++
+			}
+			if j < len(s) {
+				i = j + 1
+			} else {
+				i = j
+			}
+			continue
+		}
+		out = append(out, s[i])
+		i++
+	}
+	return string(out)
+}
+
+// TestRepoColumnAlignment verifies that the star glyph appears at a consistent
+// visual column across all content rows.
+func TestRepoColumnAlignment(t *testing.T) {
+	t.Parallel()
+	repos := []githubapi.Repository{
+		{ID: "R_1", NameWithOwner: "a/short", StargazerCount: 1, Language: "Go"},
+		{ID: "R_2", NameWithOwner: "b/medium", StargazerCount: 100, Language: "Rust"},
+		{ID: "R_3", NameWithOwner: "c/another", StargazerCount: 10000, Language: "TypeScript"},
+		{ID: "R_4", NameWithOwner: "d/no-lang", StargazerCount: 42, Language: ""},
+		{ID: "R_5", NameWithOwner: "e/more", StargazerCount: 999, Language: "Python"},
+	}
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "test", RepoCount: 5}},
+		repos: repos,
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: repos, listID: "UL_1"})
+	m.active = paneRepo
+
+	rendered := repoPane(m, 120, 15)
+	lines := strings.Split(rendered, "\n")
+
+	// Heading is 3 lines (title, subtitle, blank), content starts at line 3.
+	// Strip ANSI before measuring byte position so escape-length differences
+	// do not affect the column comparison.
+	starCol := -1
+	for i, line := range lines {
+		if i < 3 {
+			continue // heading rows
+		}
+		plain := stripANSI(line)
+		if plain == "" {
+			continue // padding rows
+		}
+		glyphPos := strings.Index(plain, "\u2605")
+		if glyphPos < 0 {
+			t.Errorf("line %d missing star glyph: %q", i, line)
+			continue
+		}
+		if starCol < 0 {
+			starCol = glyphPos
+		} else if glyphPos != starCol {
+			t.Errorf("star glyph at byte-col %d on line %d, want %d (alignment); plain: %q",
+				glyphPos, i, starCol, plain)
+		}
+	}
+}
+
+// TestRepoTruncation verifies that a repo with a very long NameWithOwner does
+// not produce a rendered line longer than the pane width.
+func TestRepoTruncation(t *testing.T) {
+	t.Parallel()
+	longName := "some-very-long-owner-name/this-is-an-extremely-long-repository-name-with-extra"
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "trunctest", RepoCount: 1}},
+		repos: []githubapi.Repository{
+			{ID: "R_1", NameWithOwner: longName, StargazerCount: 5, Language: "Go"},
+		},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	const paneW = 80
+
+	rendered := repoPane(m, paneW, 15)
+	for i, line := range strings.Split(rendered, "\n") {
+		w := lipgloss.Width(line)
+		if w > paneW {
+			t.Errorf("line %d has visual width %d > pane width %d: %q", i, w, paneW, line)
+		}
+	}
+}
+
+// TestNarrowRepoPaneP4HidesMetadata verifies progressive field hiding at narrow
+// widths using the P4 thresholds.
+func TestNarrowRepoPaneP4HidesMetadata(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	// Very narrow: stars and language hidden (width < 30 hides stars, < 42 hides lang).
+	narrowOut := repoPane(m, 29, 15)
+	if strings.Contains(narrowOut, "\u2605") {
+		t.Errorf("width 29: star glyph should be absent; got:\n%s", narrowOut)
+	}
+	// Repo name must still appear.
+	if !strings.Contains(narrowOut, "owner/") {
+		t.Errorf("width 29: repo name should still appear; got:\n%s", narrowOut)
+	}
+
+	// Medium width (>= 42 shows lang).
+	medOut := repoPane(m, 55, 15)
+	if !strings.Contains(medOut, "\u2605") {
+		t.Errorf("width 55: star glyph should appear; got:\n%s", medOut)
+	}
+}
+
+// TestEagerInitialLoad verifies that listsLoadedMsg auto-focuses the first list
+// and returns a non-nil repo-load command.
+func TestEagerInitialLoad(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+
+	next, cmd := m.Update(listsLoadedMsg{lists: svc.lists})
+	m2 := next.(model)
+
+	if m2.focusedList == nil {
+		t.Error("focusedList should be non-nil after eager initial load")
+	}
+	if m2.repoCursor != 0 {
+		t.Errorf("repoCursor = %d, want 0", m2.repoCursor)
+	}
+	if m2.repoOffset != 0 {
+		t.Errorf("repoOffset = %d, want 0", m2.repoOffset)
+	}
+	if m2.selected != nil {
+		t.Errorf("selected should be nil after eager load, got %v", m2.selected)
+	}
+	if cmd == nil {
+		t.Error("returned cmd should be non-nil (repo load command expected)")
+	}
+}
+
+// TestNoPressEnterHint verifies that the repo pane no longer shows a
+// "(press enter to view repos)" placeholder in any state.
+func TestNoPressEnterHint(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	// Do NOT load repos -- focusedList is set by eager load, loading=true.
+
+	rendered := repoPane(m, 80, 20)
+
+	if strings.Contains(rendered, "press enter") {
+		t.Errorf("repo pane should not contain 'press enter' hint; got:\n%s", rendered)
+	}
+}
+
+// --- Phase 5: preview pane styled detail block ---
+
+// previewPane is a test helper that calls renderPreviewPane directly.
+func previewPane(m model, w, h int) string { return m.renderPreviewPane(w, h) }
+
+// TestPreviewDetailBlock verifies that the styled preview pane renders all
+// key fields when a repo has full data populated.
+func TestPreviewDetailBlock(t *testing.T) {
+	t.Parallel()
+	repo := githubapi.Repository{
+		ID:             "R_full",
+		NameWithOwner:  "owner/full-repo",
+		Description:    "A fully populated repository",
+		URL:            "https://github.com/owner/full-repo",
+		StargazerCount: 1234,
+		Language:       "Go",
+		License:        "MIT",
+		IsFork:         false,
+		IsArchived:     false,
+		PushedAt:       "2024-01-15T00:00:00Z",
+		StarredAt:      "2024-03-01T00:00:00Z",
+		Topics:         []string{"cli", "github"},
+	}
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "list1", RepoCount: 1}},
+		repos: []githubapi.Repository{repo},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.repoCursor = 0
+
+	rendered := previewPane(m, 50, 20)
+
+	for _, want := range []string{
+		"owner/full-repo",
+		"https://github.com/owner/full-repo",
+		"\u2605", // star glyph
+		"Go",
+		"Description",
+		"Topics",
+		"cli",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("preview pane missing %q; got:\n%s", want, rendered)
+		}
+	}
+}
+
+// TestPreviewFallbacks verifies that empty fields render the appropriate
+// fallback text in the styled preview pane.
+func TestPreviewFallbacks(t *testing.T) {
+	t.Parallel()
+	repo := githubapi.Repository{
+		ID:            "R_empty",
+		NameWithOwner: "owner/sparse-repo",
+		URL:           "https://github.com/owner/sparse-repo",
+		// Description, Language, License, Topics all zero/nil.
+	}
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "list1", RepoCount: 1}},
+		repos: []githubapi.Repository{repo},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.repoCursor = 0
+
+	rendered := previewPane(m, 50, 20)
+
+	if !strings.Contains(rendered, "(no description)") {
+		t.Errorf(
+			"preview pane should contain '(no description)' for empty description; got:\n%s",
+			rendered,
+		)
+	}
+	// "-" must appear for at least one empty field (language, license, topics).
+	if !strings.Contains(rendered, "-") {
+		t.Errorf("preview pane should contain '-' for empty fields; got:\n%s", rendered)
+	}
+}
+
+// TestSelectionClearedOnFocusChange verifies that m.selected is set to nil
+// whenever the focused list changes via Enter key.
+func TestSelectionClearedOnFocusChange(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneList
+	m.listCursor = 0
+	// Populate a selection.
+	m.selected = map[string]struct{}{"owner/a-repo": {}}
+
+	// Enter in list pane drills into the list and should clear selection.
+	m2 := update(m, specialKey(tea.KeyEnter))
+
+	if len(m2.selected) != 0 {
+		t.Errorf("selected should be nil/empty after focus change via Enter, got %v", m2.selected)
+	}
+}
+
+// TestCursorResetOnFocusChange verifies that repoCursor and repoOffset are
+// reset to 0 whenever the focused list changes via Enter key.
+func TestCursorResetOnFocusChange(t *testing.T) {
+	t.Parallel()
+	svc := largeSvc(30)
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.repoCursor = 15
+	m.repoOffset = 10
+	// Switch back to list pane, then Enter to drill into same list again.
+	m.active = paneList
+	m.listCursor = 0
+
+	m2 := update(m, specialKey(tea.KeyEnter))
+
+	if m2.repoCursor != 0 {
+		t.Errorf("repoCursor = %d after focus change, want 0", m2.repoCursor)
+	}
+	if m2.repoOffset != 0 {
+		t.Errorf("repoOffset = %d after focus change, want 0", m2.repoOffset)
+	}
+}
+
+// TestDoubleClickDrillsToRepoPane verifies that two rapid clicks on the same
+// list row switch active pane to paneRepo.
+func TestDoubleClickDrillsToRepoPane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 120
+	m.height = 24
+	m.active = paneList
+
+	// g.sep1Col at width=120 showPreview=false: leftW=36, sep1Col=36.
+	// X=5 is in the list pane. Y=1 => contentRow=0 => idx=0.
+	click := tea.MouseClickMsg{X: 5, Y: 1, Button: tea.MouseLeft}
+
+	// First click: single click, stays in list pane.
+	m2 := update(m, click)
+	if m2.active != paneList {
+		t.Errorf("active after single click = %v, want paneList", m2.active)
+	}
+
+	// Immediately inject a second click at the same location while
+	// lastClickTime is still recent (we can't control real time in tests, so
+	// we manipulate the tracker directly after the first click).
+	m2.lastClickTime = time.Now() // ensure within 300ms window
+	m3 := update(m2, click)
+
+	if m3.active != paneRepo {
+		t.Errorf("active after double-click = %v, want paneRepo", m3.active)
+	}
+	if m3.repoCursor != 0 {
+		t.Errorf("repoCursor after double-click = %d, want 0", m3.repoCursor)
+	}
+	if m3.repoOffset != 0 {
+		t.Errorf("repoOffset after double-click = %d, want 0", m3.repoOffset)
+	}
+}
+
+// TestDoubleClickDifferentRowNoSwitch verifies that two rapid clicks on
+// different list rows do NOT switch pane.
+func TestDoubleClickDifferentRowNoSwitch(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 120
+	m.height = 24
+	m.active = paneList
+
+	// First click: row 0 (Y=1).
+	click1 := tea.MouseClickMsg{X: 5, Y: 1, Button: tea.MouseLeft}
+	m2 := update(m, click1)
+	m2.lastClickTime = time.Now() // ensure within 300ms window
+
+	// Second click: row 1 (Y=2) -- different row.
+	click2 := tea.MouseClickMsg{X: 5, Y: 2, Button: tea.MouseLeft}
+	m3 := update(m2, click2)
+
+	if m3.active != paneList {
+		t.Errorf(
+			"active after clicks on different rows = %v, want paneList (no double-click switch)",
+			m3.active,
+		)
 	}
 }

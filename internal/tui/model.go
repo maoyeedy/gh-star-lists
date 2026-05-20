@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
@@ -83,7 +84,12 @@ type model struct {
 	selected       map[string]struct{} // NameWithOwner of checked repos
 	bulkFailedNWOs []string
 
-	spinnerFrame int
+	// Double-click tracking for list-pane rows.
+	lastClickPane  int
+	lastClickIndex int
+	lastClickTime  time.Time
+
+	spinner spinner.Model
 }
 
 func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
@@ -94,6 +100,7 @@ func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
 		mouse:       opts.Mouse,
 		ctx:         ctx,
 		loading:     true,
+		spinner:     spinner.New(spinner.WithSpinner(spinner.Line)),
 	}
 }
 
@@ -102,16 +109,8 @@ type invalidatable interface {
 	Invalidate()
 }
 
-type spinnerTickMsg struct{}
-
-func spinnerTickCmd() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
-		return spinnerTickMsg{}
-	})
-}
-
 func (m model) Init() tea.Cmd {
-	return tea.Batch(loadListsCmd(m.ctx, m.svc), spinnerTickCmd())
+	return tea.Batch(loadListsCmd(m.ctx, m.svc), m.spinner.Tick)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -128,6 +127,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.rebuildDisplayed()
 		if m.listCursor >= len(m.displayedLists) && len(m.displayedLists) > 0 {
 			m.listCursor = len(m.displayedLists) - 1
+		}
+		// Eager initial load: auto-focus first list and kick off repo fetch.
+		if m.focusedList == nil && len(m.lists) > 0 {
+			m.focusedList = &m.lists[0]
+			m.repoCursor = 0
+			m.repoOffset = 0
+			m.selected = nil
+			m.loading = true
+			return m, loadReposCmd(m.ctx, m.svc, m.lists[0].ID, m.showPreview)
 		}
 		return m, nil
 
@@ -235,12 +243,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal != nil || m.searchActive {
 			return m, nil
 		}
+		var delta int
 		switch msg.Button {
 		case tea.MouseWheelUp:
-			m = m.moveCursor(-1)
+			delta = -1
 		case tea.MouseWheelDown:
-			m = m.moveCursor(1)
+			delta = 1
+		default:
+			return m, nil
 		}
+		// Scroll the pane under the pointer, regardless of which pane is active.
+		g := calcPaneGeometry(m.width, m.showPreview)
+		if msg.X < g.sep1Col {
+			// List pane.
+			m.listCursor = clampInt(m.listCursor+delta, 0, len(m.displayedLists)-1)
+			m = m.slideListOffset()
+		} else if !m.showPreview || g.sep2Col < 0 || msg.X < g.sep2Col {
+			// Repo pane.
+			m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1)
+			m = m.slideRepoOffset()
+		}
+		// Wheel over preview pane: no-op until preview scroll is implemented.
 		return m, nil
 
 	case tea.MouseClickMsg:
@@ -250,10 +273,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.handleMouseClick(msg)
 		return m, nil
 
-	case spinnerTickMsg:
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
 		if m.loading {
-			m.spinnerFrame = (m.spinnerFrame + 1) % 4
-			return m, spinnerTickCmd()
+			return m, cmd
 		}
 		return m, nil
 
@@ -278,6 +302,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, keys.Back):
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
 		// Clear selection first if any; second Esc then navigates back / quits.
 		if len(m.selected) > 0 {
 			m.selected = nil
@@ -506,23 +534,54 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) model {
 	if contentRow < 0 {
 		return m
 	}
-	leftW := 36
-	if m.width > 100 {
-		leftW = m.width * 30 / 100
-	}
-	if msg.X <= leftW {
+	g := calcPaneGeometry(m.width, m.showPreview)
+	if msg.X < g.sep1Col {
+		// List pane click.
 		m.active = paneList
 		idx := contentRow + m.listOffset
-		if idx >= 0 && idx < len(m.displayedLists) {
-			m.listCursor = idx
+		if idx < 0 || idx >= len(m.displayedLists) {
+			return m
 		}
-	} else if msg.X > leftW+1 && m.focusedList != nil && len(m.displayedRepos) > 0 {
-		m.active = paneRepo
-		idx := contentRow + m.repoOffset
-		if idx >= 0 && idx < len(m.displayedRepos) {
-			m.repoCursor = idx
+		m.listCursor = idx
+
+		// Double-click detection: two clicks on same pane+row within 300ms drills to repo pane.
+		now := time.Now()
+		if m.lastClickPane == int(paneList) && m.lastClickIndex == idx &&
+			!m.lastClickTime.IsZero() && now.Sub(m.lastClickTime) < 300*time.Millisecond {
+			// Double-click: drill into the list (same logic as Enter).
+			if idx < len(m.displayedLists) {
+				focused := m.displayedLists[idx]
+				m.focusedList = nil
+				for i := range m.lists {
+					if m.lists[i].ID == focused.ID {
+						m.focusedList = &m.lists[i]
+						break
+					}
+				}
+				m.active = paneRepo
+				m.repoCursor = 0
+				m.repoOffset = 0
+				m.selected = nil
+			}
+			// Reset tracker.
+			m.lastClickTime = time.Time{}
+		} else {
+			// Single click: record for double-click detection.
+			m.lastClickPane = int(paneList)
+			m.lastClickIndex = idx
+			m.lastClickTime = now
+		}
+	} else if msg.X > g.sep1Col && (g.sep2Col < 0 || msg.X < g.sep2Col) {
+		// Repo pane click.
+		if m.focusedList != nil && len(m.displayedRepos) > 0 {
+			m.active = paneRepo
+			idx := contentRow + m.repoOffset
+			if idx >= 0 && idx < len(m.displayedRepos) {
+				m.repoCursor = idx
+			}
 		}
 	}
+	// Clicks in the preview pane (msg.X > g.sep2Col when showPreview) are no-ops for now.
 	return m
 }
 
@@ -577,8 +636,14 @@ func (m model) slideListOffset() model {
 	return m
 }
 
+// repoPaneH returns the effective number of scrollable repo rows in the repo
+// pane (full pane content height; no heading overhead).
+func (m model) repoPaneH() int {
+	return max(1, m.height-2)
+}
+
 func (m model) slideRepoOffset() model {
-	paneH := max(1, m.height-2)
+	paneH := m.repoPaneH()
 	if m.repoCursor < m.repoOffset {
 		m.repoOffset = m.repoCursor
 	} else if m.repoCursor >= m.repoOffset+paneH {
@@ -638,6 +703,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		m.repos = nil
 		m.repoCursor = 0
 		m.repoOffset = 0
+		m.selected = nil
 		m.loading = true
 		return m, loadReposCmd(m.ctx, m.svc, focused.ID, m.showPreview)
 	}
@@ -737,23 +803,13 @@ func (m model) renderLayout() string {
 
 	contentH := m.height - 2
 
+	g := calcPaneGeometry(m.width, m.showPreview)
+
 	if m.showPreview {
 		// Three-column layout: lists | repos | preview
-		leftW := 28
-		midW := 36
-		if m.width > 120 {
-			leftW = m.width * 22 / 100
-			midW = m.width * 28 / 100
-		}
-		sepW := 1
-		previewW := m.width - leftW - midW - 2*sepW
-		if previewW < 20 {
-			previewW = 20
-		}
-
-		leftPane := m.renderListPane(leftW, contentH)
-		midPane := m.renderRepoPane(midW, contentH)
-		previewPane := m.renderPreviewPane(previewW, contentH)
+		leftPane := m.renderListPane(g.leftWidth, contentH)
+		midPane := m.renderRepoPane(g.repoWidth, contentH)
+		previewPane := m.renderPreviewPane(g.previewWidth, contentH)
 
 		sep := "|"
 		rows := make([]string, contentH)
@@ -772,8 +828,8 @@ func (m model) renderLayout() string {
 			if i < len(previewLines) {
 				r = previewLines[i]
 			}
-			l = padRight(l, leftW)
-			mid = padRight(mid, midW)
+			l = padRight(l, g.leftWidth)
+			mid = padRight(mid, g.repoWidth)
 			rows[i] = l + sep + mid + sep + r
 		}
 
@@ -782,19 +838,9 @@ func (m model) renderLayout() string {
 		return header + "\n" + strings.Join(rows, "\n") + "\n" + footer
 	}
 
-	// Original two-column layout (unchanged).
-	leftW := 36
-	if m.width > 100 {
-		leftW = m.width * 30 / 100
-	}
-	sepW := 1
-	rightW := m.width - leftW - sepW
-	if rightW < 10 {
-		rightW = 10
-	}
-
-	leftPane := m.renderListPane(leftW, contentH)
-	rightPane := m.renderRepoPane(rightW, contentH)
+	// Two-column layout.
+	leftPane := m.renderListPane(g.leftWidth, contentH)
+	rightPane := m.renderRepoPane(g.repoWidth, contentH)
 
 	separator := "|"
 	rows := make([]string, contentH)
@@ -810,7 +856,7 @@ func (m model) renderLayout() string {
 		if i < len(rightLines) {
 			r = rightLines[i]
 		}
-		l = padRight(l, leftW)
+		l = padRight(l, g.leftWidth)
 		rows[i] = l + separator + r
 	}
 
@@ -837,15 +883,64 @@ func padLeft(s string, width int) string {
 }
 
 func (m model) renderHeader() string {
-	title := "gh star-lists browse"
-	if m.focusedList != nil {
-		title = fmt.Sprintf("gh star-lists browse > %s", m.focusedList.Name)
-	}
+	const appName = "gh star-lists"
+	appW := lipgloss.Width(appName)
+
+	// Build separator and list name segments.
+	sep := styleSeparator.Render(" > ")
+	sepW := lipgloss.Width(sep)
+
+	// Sort label (only when non-default).
 	sortLabel := m.currentSortLabel()
+	sortSuffix := ""
+	sortSuffixW := 0
 	if sortLabel != "" {
-		title = fmt.Sprintf("%s  [sort: %s]", title, sortLabel)
+		sortSuffix = "  [sort: " + sortLabel + "]"
+		sortSuffixW = lipgloss.Width(sortSuffix)
 	}
-	return stylePaneTitle.Render(title)
+
+	if m.focusedList == nil {
+		// No list focused: just app name, no sort label.
+		return styleAppTitle.Render(appName)
+	}
+
+	// Available budget after app name + separator.
+	budget := m.width - appW - sepW
+	if budget < 0 {
+		budget = 0
+	}
+
+	// Try to fit: list name + sort suffix.
+	listName := m.focusedList.Name
+	listNameW := lipgloss.Width(listName)
+
+	if listNameW+sortSuffixW <= budget {
+		// Everything fits.
+		return styleAppTitle.Render(appName) +
+			sep +
+			stylePaneTitle.Render(listName) +
+			stylePaneSubtitle.Render(sortSuffix)
+	}
+
+	// Sort label doesn't fit: drop it, try list name alone.
+	if listNameW <= budget {
+		return styleAppTitle.Render(appName) +
+			sep +
+			stylePaneTitle.Render(listName)
+	}
+
+	// Truncate list name to budget.
+	const ellipsis = "..."
+	ellipsisW := len(ellipsis)
+	// Trim runes until visual width fits.
+	runes := []rune(listName)
+	for len(runes) > 0 && lipgloss.Width(string(runes))+ellipsisW > budget {
+		runes = runes[:len(runes)-1]
+	}
+	truncated := string(runes) + ellipsis
+	return styleAppTitle.Render(appName) +
+		sep +
+		stylePaneTitle.Render(truncated)
 }
 
 func (m model) currentSortLabel() string {
@@ -877,24 +972,53 @@ func (m model) currentSortLabel() string {
 	}
 }
 
+// renderHint renders a single (key, description) pair with styling.
+func renderHint(k, desc string) string {
+	return styleFooterKey.Render(k) + " " + styleFooterText.Render(desc)
+}
+
+// joinHints joins rendered hint pairs with two spaces between them.
+func joinHints(hints []string) string {
+	return strings.Join(hints, "  ")
+}
+
 func (m model) renderFooter() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusExpiry) {
 		return styleSuccess.Render(m.statusMsg)
 	}
 	if m.searchActive {
-		return styleFooter.Render("/:search  esc:clear  enter:done  up/down:navigate")
+		return joinHints([]string{
+			renderHint("/", "search"),
+			renderHint("esc", "clear"),
+			renderHint("enter", "done"),
+			renderHint("up/down", "navigate"),
+		})
 	}
-	var hints string
 	if m.active == paneRepo {
-		selHint := ""
-		if len(m.selected) > 0 {
-			selHint = fmt.Sprintf("  [%d selected]", len(m.selected))
+		hints := []string{
+			renderHint("/", "search"),
+			renderHint("space", "select"),
 		}
-		hints = "/ search  space select" + selHint + "  o browser  ? help  q quit"
-	} else {
-		hints = "/ search  enter open  s sort  ? help  q quit"
+		if len(m.selected) > 0 {
+			hints = append(
+				hints,
+				styleFooterText.Render(fmt.Sprintf("[%d selected]", len(m.selected))),
+			)
+		}
+		hints = append(hints,
+			renderHint("o", "browser"),
+			renderHint("?", "help"),
+			renderHint("q", "quit"),
+		)
+		return joinHints(hints)
 	}
-	return styleFooter.Render(hints)
+	return joinHints([]string{
+		renderHint("/", "search"),
+		renderHint("enter", "open"),
+		renderHint("s", "sort"),
+		renderHint("?", "help"),
+		renderHint("q", "quit"),
+	})
 }
 
 func (m model) renderListPane(w, h int) string {
@@ -902,28 +1026,59 @@ func (m model) renderListPane(w, h int) string {
 	out := make([]string, 0, totalH)
 
 	if m.searchActive && m.active == paneList {
+		// Build search bar with optional N/total count on the right.
+		prefix := styleSearchPrompt.Render("/") + " "
+		prefixW := lipgloss.Width(prefix)
+
+		countStr := ""
+		countW := 0
+		total := len(m.lists)
+		displayed := len(m.displayedLists)
+		candidate := fmt.Sprintf("%d/%d", displayed, total)
+		candidateW := lipgloss.Width(candidate)
+		// Show count only when at least 4 columns remain for the query after prefix + count + gap.
+		if prefixW+4+2+candidateW <= w {
+			countStr = stylePaneSubtitle.Render(candidate)
+			countW = candidateW
+		}
+
+		// Remaining width for query display.
+		queryBudget := w - prefixW - countW
+		if countW > 0 {
+			queryBudget -= 2 // gap between query and count
+		}
+		if queryBudget < 0 {
+			queryBudget = 0
+		}
+
 		qDisplay := m.searchQuery
-		prefix := styleSuccess.Render("/") + " "
-		prefixW := 2 // "/" + space
-		if lipgloss.Width(prefix)+lipgloss.Width(qDisplay) > w {
-			// Truncate from the left: show "/ ..." + tail.
+		if lipgloss.Width(qDisplay) > queryBudget {
+			// Truncate from left.
 			tail := ""
 			for _, r := range qDisplay {
-				candidate := "..." + string([]rune(tail)) + string(r)
-				if prefixW+lipgloss.Width(candidate) <= w {
+				candidate := "..." + tail + string(r)
+				if lipgloss.Width(candidate) <= queryBudget {
 					tail += string(r)
 				}
 			}
 			qDisplay = "..." + tail
 		}
+
 		bar := prefix + qDisplay
+		if countStr != "" {
+			barW := lipgloss.Width(bar)
+			gap := w - barW - countW
+			if gap < 1 {
+				gap = 1
+			}
+			bar = bar + strings.Repeat(" ", gap) + countStr
+		}
 		out = append(out, padRight(bar, w))
 		h--
 	}
 
 	if m.loading && m.focusedList == nil {
-		frame := []string{"|", "/", "-", "\\"}[m.spinnerFrame]
-		out = append(out, "  Loading "+frame)
+		out = append(out, "  Loading "+m.spinner.View())
 		for len(out) < totalH {
 			out = append(out, "")
 		}
@@ -946,13 +1101,39 @@ func (m model) renderListPane(w, h int) string {
 		return strings.Join(out, "\n")
 	}
 
+	const cursorWidth = 2 // "> " or "  "
 	start := m.listOffset
 	end := min(start+h, len(m.displayedLists))
 	for i := start; i < end; i++ {
 		l := m.displayedLists[i]
 		cursor := "  "
+		isCursor := i == m.listCursor
+
+		// Format count right-side.
+		countRaw := fmt.Sprintf("%d", l.RepoCount)
+		countStyled := stylePaneSubtitle.Render(countRaw)
+		countW := lipgloss.Width(countRaw)
+
+		// Available for name: total - cursor - spacer(1) - count.
+		maxNameW := w - cursorWidth - 1 - countW
+		if maxNameW < 1 {
+			maxNameW = 1
+		}
+
 		name := l.Name
-		if i == m.listCursor {
+		nameW := lipgloss.Width(name)
+		if nameW > maxNameW {
+			// Truncate with ellipsis.
+			const ellipsis = "..."
+			ellipsisW := lipgloss.Width(ellipsis)
+			runes := []rune(name)
+			for len(runes) > 0 && lipgloss.Width(string(runes))+ellipsisW > maxNameW {
+				runes = runes[:len(runes)-1]
+			}
+			name = string(runes) + ellipsis
+		}
+
+		if isCursor {
 			cursor = "> "
 			if m.active == paneList {
 				name = styleCursorActive.Render(name)
@@ -960,19 +1141,14 @@ func (m model) renderListPane(w, h int) string {
 				name = styleCursorInactive.Render(name)
 			}
 		}
-		age := shortAge(l.LastAddedAt, time.Now().UTC())
-		repoStr := padLeft(fmt.Sprintf("%d", l.RepoCount), 4)
-		ageStr := padLeft(age, 8)
-		right := repoStr + " | " + ageStr
-		right = styleFaint.Render(right)
+
 		row := cursor + name
 		rowW := lipgloss.Width(row)
-		rightW := lipgloss.Width(right)
-		space := w - rowW - rightW - 2
+		space := w - rowW - countW
 		if space < 1 {
 			space = 1
 		}
-		out = append(out, row+strings.Repeat(" ", space)+right)
+		out = append(out, row+strings.Repeat(" ", space)+countStyled)
 	}
 	for len(out) < totalH {
 		out = append(out, "")
@@ -980,10 +1156,15 @@ func (m model) renderListPane(w, h int) string {
 	return strings.Join(out, "\n")
 }
 
+// starGlyph is the Unicode star character (U+2605) used in star count display.
+// Must be a Unicode escape (not a raw rune) to satisfy ascii-check.
+const starGlyph = "\u2605"
+
 func (m model) renderRepoPane(w, h int) string {
 	totalH := h
 	out := make([]string, 0, totalH)
 
+	// Search bar (active search in repo pane).
 	if m.searchActive && m.active == paneRepo {
 		qDisplay := m.searchQuery
 		prefix := styleSuccess.Render("/") + " "
@@ -1003,23 +1184,25 @@ func (m model) renderRepoPane(w, h int) string {
 		h--
 	}
 
+	// No list focused yet.
 	if m.focusedList == nil {
-		out = append(out, "(press enter to view repos)")
+		out = append(out, styleFaint.Render("(no list selected)"))
 		for len(out) < totalH {
 			out = append(out, "")
 		}
 		return strings.Join(out, "\n")
 	}
 
-	if m.loading && m.focusedList != nil {
-		frame := []string{"|", "/", "-", "\\"}[m.spinnerFrame]
-		out = append(out, "  Loading "+frame)
+	// Loading state.
+	if m.loading {
+		out = append(out, "  Loading "+m.spinner.View())
 		for len(out) < totalH {
 			out = append(out, "")
 		}
 		return strings.Join(out, "\n")
 	}
 
+	// Empty state.
 	if len(m.displayedRepos) == 0 {
 		label := "(no repos)"
 		if m.searchQuery != "" {
@@ -1029,77 +1212,202 @@ func (m model) renderRepoPane(w, h int) string {
 			}
 			label = "(no matches for \"" + q + "\")"
 		}
-		out = append(out, label)
+		out = append(out, styleFaint.Render(label))
 		for len(out) < totalH {
 			out = append(out, "")
 		}
 		return strings.Join(out, "\n")
 	}
 
-	showMeta := w >= 60
+	// ---- Width-based feature flags ----
+	showBadges := w >= 55
+	showLang := w >= 42
+	showStars := w >= 30
+
 	hasSel := len(m.selected) > 0
+
+	// ---- Column widths from visible rows ----
 	start := m.repoOffset
 	end := min(start+h, len(m.displayedRepos))
+
+	const (
+		cursorW = 2 // "> " or "  "
+		markerW = 4 // "[x] " or "[ ] " - only when hasSel
+	)
+
+	// Compute star and language column widths from visible rows.
+	starWidth := 4 // minimum: "0 " + glyph = 3, but keep at least 4
+	langWidth := 4 // minimum
+	if showStars || showLang {
+		for i := start; i < end; i++ {
+			r := m.displayedRepos[i]
+			if showStars {
+				countStr := fmt.Sprintf("%d", r.StargazerCount)
+				w2 := len(countStr) + 2 // count + " " + glyph
+				if w2 > starWidth {
+					starWidth = w2
+				}
+			}
+			if showLang && r.Language != "" {
+				lw := lipgloss.Width(r.Language)
+				if lw > langWidth {
+					langWidth = lw
+				}
+			}
+		}
+	}
+	if langWidth > 12 {
+		langWidth = 12
+	}
+
 	for i := start; i < end; i++ {
 		r := m.displayedRepos[i]
-		cursor := "  "
-		name := r.NameWithOwner
+		isCursor := i == m.repoCursor
 		_, checked := m.selected[r.NameWithOwner]
+
+		// -- Cursor prefix (2 chars) --
+		var cursorStr string
+		if isCursor {
+			if m.active == paneRepo {
+				cursorStr = styleCursorActive.Render("> ")
+			} else {
+				cursorStr = styleCursorInactive.Render("> ")
+			}
+		} else {
+			cursorStr = "  "
+		}
+
+		// -- Selection marker (4 chars, only when hasSel) --
+		var markerStr string
 		if hasSel {
 			if checked {
-				name = styleChecked.Render("[x] " + name)
+				markerStr = styleChecked.Render("[x]") + " "
 			} else {
-				name = "[ ] " + name
+				markerStr = styleFaint.Render("[ ]") + " "
 			}
 		}
-		if i == m.repoCursor {
-			cursor = "> "
+
+		// -- Stars field --
+		var starsStr string
+		if showStars {
+			countRaw := fmt.Sprintf("%d", r.StargazerCount)
+			// Right-align count within (starWidth - 2) then append " " + glyph.
+			countFieldW := starWidth - 2 // space + glyph
+			if countFieldW < 1 {
+				countFieldW = 1
+			}
+			paddedCount := padLeft(countRaw, countFieldW)
+			starsStr = styleRepoStars.Render(paddedCount+" "+starGlyph) + "  "
+		}
+
+		// -- Language field --
+		var langStr string
+		if showLang {
+			lang := r.Language
+			if lang == "" {
+				langStr = styleFaint.Render(padRight("-", langWidth)) + "  "
+			} else {
+				lw := lipgloss.Width(lang)
+				if lw > langWidth {
+					// Truncate with ellipsis.
+					runes := []rune(lang)
+					for len(runes) > 0 && lipgloss.Width(string(runes))+3 > langWidth {
+						runes = runes[:len(runes)-1]
+					}
+					lang = string(runes) + "..."
+				}
+				langStr = styleRepoLanguage.Render(padRight(lang, langWidth)) + "  "
+			}
+		}
+
+		// -- Compute remaining width for name (and optional badges + age) --
+		fixedW := cursorW
+		if hasSel {
+			fixedW += markerW
+		}
+		if showStars {
+			fixedW += starWidth + 2 // field + two spaces separator
+		}
+		if showLang {
+			fixedW += langWidth + 2 // field + two spaces separator
+		}
+		nameAvail := w - fixedW
+		if nameAvail < 12 {
+			nameAvail = 12
+		}
+
+		// -- Badges --
+		var badgesRaw string
+		if showBadges {
+			if r.IsFork {
+				badgesRaw += " fork"
+			}
+			if r.IsArchived {
+				badgesRaw += " archived"
+			}
+		}
+
+		// -- Name: truncate raw, then style --
+		nameRaw := r.NameWithOwner
+		// Reserve space for badges if they exist.
+		badgesW := lipgloss.Width(badgesRaw)
+		nameMaxW := nameAvail
+		if badgesW > 0 && nameAvail > badgesW+6 {
+			nameMaxW = nameAvail - badgesW
+		} else {
+			// Not enough room for badges.
+			badgesRaw = ""
+		}
+
+		if lipgloss.Width(nameRaw) > nameMaxW {
+			const ellipsis = "..."
+			runes := []rune(nameRaw)
+			for len(runes) > 0 && lipgloss.Width(string(runes))+lipgloss.Width(ellipsis) > nameMaxW {
+				runes = runes[:len(runes)-1]
+			}
+			nameRaw = string(runes) + ellipsis
+		}
+
+		var nameStr string
+		if isCursor {
 			if m.active == paneRepo {
-				name = styleCursorActive.Render(name)
+				nameStr = styleRepoNameFocused.Render(nameRaw)
 			} else {
-				name = styleCursorInactive.Render(name)
+				nameStr = styleRepoNameInactive.Render(nameRaw)
 			}
+		} else {
+			nameStr = styleRepoName.Render(nameRaw)
 		}
-		if !showMeta {
-			out = append(out, cursor+name)
-			continue
+
+		var badgesStr string
+		if badgesRaw != "" {
+			badgesStr = styleRepoBadge.Render(badgesRaw)
 		}
-		lang := r.Language
-		if lang == "" {
-			lang = "    "
-		}
-		stars := formatStars(r.StargazerCount)
-		pushed := shortAge(r.PushedAt, time.Now().UTC())
-		meta := fmt.Sprintf("%-8s %6s* %s", lang, stars, pushed)
-		meta = styleFaint.Render(meta)
-		row := cursor + name
-		rowW := lipgloss.Width(row)
-		metaW := lipgloss.Width(meta)
-		// Ensure at least 2-space gap; truncate title if needed.
-		available := w - metaW - 2
-		if rowW > available {
-			// Clip name to fit: cursor is 2 bytes, clip name portion.
-			// available - 2 (cursor width) - 3 (...) characters for the name runes
-			maxNameRunes := available - 2 - 3
-			if maxNameRunes < 1 {
-				maxNameRunes = 1
-			}
-			if utf8.RuneCountInString(name) > maxNameRunes {
-				name = string([]rune(name)[:maxNameRunes]) + "..."
-			}
-			row = cursor + name
-			rowW = lipgloss.Width(row)
-		}
-		space := w - rowW - metaW - 2
-		if space < 1 {
-			space = 1
-		}
-		out = append(out, row+strings.Repeat(" ", space)+meta)
+
+		// -- Assemble row --
+		row := cursorStr + markerStr + starsStr + langStr + nameStr + badgesStr
+
+		out = append(out, row)
 	}
+
 	for len(out) < totalH {
 		out = append(out, "")
 	}
 	return strings.Join(out, "\n")
+}
+
+// truncateToWidth truncates a raw (unstyled) string so its visual width is at
+// most maxW. Returns the (possibly shortened) string.
+func truncateToWidth(s string, maxW int) string {
+	if lipgloss.Width(s) <= maxW {
+		return s
+	}
+	const ellipsis = "..."
+	runes := []rune(s)
+	for len(runes) > 0 && lipgloss.Width(string(runes))+lipgloss.Width(ellipsis) > maxW {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes) + ellipsis
 }
 
 func (m model) renderPreviewPane(w, h int) string {
@@ -1108,60 +1416,97 @@ func (m model) renderPreviewPane(w, h int) string {
 	}
 	repo := m.displayedRepos[m.repoCursor]
 
-	archived := ""
-	if repo.IsArchived {
-		archived = "  [archived]"
-	}
-	fork := ""
-	if repo.IsFork {
-		fork = "  [fork]"
+	maxW := w - 2
+	if maxW < 1 {
+		maxW = 1
 	}
 
-	lang := repo.Language
-	if lang == "" {
-		lang = "-"
-	}
-	license := repo.License
-	if license == "" {
-		license = "-"
-	}
-	pushed := shortAge(repo.PushedAt, time.Now().UTC())
-	starredAt := repo.StarredAt
-	if starredAt == "" {
-		starredAt = "-"
-	}
+	now := time.Now().UTC()
+	var lines []string
 
-	topics := "-"
-	if len(repo.Topics) > 0 {
-		topics = strings.Join(repo.Topics, ", ")
-	}
+	// ---- Line 1: NameWithOwner ----
+	lines = append(lines, stylePaneTitle.Render(truncateToWidth(repo.NameWithOwner, maxW)))
 
-	lines := []string{
-		styleSelected.Render(repo.NameWithOwner) + archived + fork,
-		styleFaint.Render(repo.URL),
-		"",
-	}
-	if repo.Description != "" {
-		lines = append(lines, repo.Description, "")
-	}
-	lines = append(lines,
-		styleFaint.Render("Language:")+" "+lang,
-		styleFaint.Render("License: ")+" "+license,
-		styleFaint.Render("Pushed:  ")+" "+pushed,
-		styleFaint.Render("Starred: ")+" "+starredAt,
-		styleFaint.Render("Topics:  ")+" "+topics,
+	// ---- Line 2: URL ----
+	lines = append(lines, styleRepoURL.Render(truncateToWidth(repo.URL, maxW)))
+
+	// ---- Blank line ----
+	lines = append(lines, "")
+
+	// ---- Line 4: stars  language  badge ----
+	starsStr := styleRepoStars.Render(
+		fmt.Sprintf("%s %s", formatStars(repo.StargazerCount), starGlyph),
 	)
 
-	// Pad to height.
-	result := strings.Join(lines, "\n")
-	resultLines := strings.Split(result, "\n")
-	for len(resultLines) < h {
-		resultLines = append(resultLines, "")
+	langStr := ""
+	if repo.Language != "" {
+		langStr = "  " + styleRepoLanguage.Render(repo.Language)
+	} else {
+		langStr = "  " + styleEmptyState.Render("-")
 	}
-	if len(resultLines) > h {
-		resultLines = resultLines[:h]
+
+	var badge string
+	switch {
+	case repo.IsArchived:
+		badge = "  " + styleRepoBadge.Render("archived")
+	case repo.IsFork:
+		badge = "  " + styleRepoBadge.Render("fork")
+	default:
+		badge = "  " + styleRepoBadge.Render("source")
 	}
-	return strings.Join(resultLines, "\n")
+
+	lines = append(lines, starsStr+langStr+badge)
+
+	// ---- Blank line ----
+	lines = append(lines, "")
+
+	// ---- Description label + text ----
+	lines = append(lines, stylePaneSubtitle.Render("Description"))
+	if repo.Description != "" {
+		lines = append(lines, styleRepoName.Render(truncateToWidth(repo.Description, maxW)))
+	} else {
+		lines = append(lines, styleEmptyState.Render("(no description)"))
+	}
+
+	// ---- Blank line ----
+	lines = append(lines, "")
+
+	// ---- License ----
+	licenseVal := repo.License
+	if licenseVal == "" {
+		licenseVal = styleEmptyState.Render("-")
+	}
+	lines = append(lines, stylePaneSubtitle.Render("License:")+" "+licenseVal)
+
+	// ---- Pushed ----
+	lines = append(lines, stylePaneSubtitle.Render("Pushed:")+" "+shortAge(repo.PushedAt, now))
+
+	// ---- Starred ----
+	starredVal := repo.StarredAt
+	if starredVal == "" {
+		starredVal = styleEmptyState.Render("-")
+	} else {
+		starredVal = shortAge(repo.StarredAt, now)
+	}
+	lines = append(lines, stylePaneSubtitle.Render("Starred:")+" "+starredVal)
+
+	// ---- Topics ----
+	topicsVal := ""
+	if len(repo.Topics) > 0 {
+		topicsVal = truncateToWidth(strings.Join(repo.Topics, ", "), maxW)
+	} else {
+		topicsVal = styleEmptyState.Render("-")
+	}
+	lines = append(lines, stylePaneSubtitle.Render("Topics:")+" "+topicsVal)
+
+	// Pad / truncate to height.
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func formatStars(n int) string {

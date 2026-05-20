@@ -1,144 +1,53 @@
-# Plan: TUI v1.4 — Visual polish and interaction refinement
+# TUI v1.4 — Ship Record
 
-## Goal
+## What shipped
 
-Polish the TUI with visual rendering fixes, mouse interaction improvements, and state management fixes deferred from v1.3. No async repo preloader, session cache, request generation, or bounded concurrency — those remain in v1.5.
+v1.4 upgraded `go run . browse` from a sparse plaintext TUI to a visually structured terminal workbench matching the clarity of the fzf reference. All changes are in rendering, styling, and small interaction quality — async preload, session cache, request generation, and stale-response filtering remain deferred to v1.5.
 
-**Prerequisite:** TUI v1.3 shipped with narrow-layout polish, pane-local loading, left/right focus, and compact footer/help.
+**Styles and spinner (P1)**
+- Expanded `internal/tui/styles.go` from 9 generic styles to 24 semantic style variables covering every palette role: app title, pane chrome, repo fields (stars, language, name variants, URL, badge), search prompt, empty/loading state, footer key/text, and modal chrome. Names are semantic (`styleRepoStars`) not color-named.
+- Migrated hand-rolled spinner (`spinnerFrame`, `spinnerTickMsg`, `spinnerTickCmd`) to `bubbles/spinner.Model` with `spinner.Line` (preserves `|/-\` look). Spinner ticks only while loading state is active.
 
-## Scope boundary (NOT in v1.4 — deferred to v1.5)
+**Shared geometry (P2)**
+- Replaced three drifting width-math sites (one per layout branch + mouse handler) with a single `calcPaneGeometry(totalWidth, showPreview) paneGeometry` helper in `internal/tui/geometry.go`. Render layout and mouse hit-testing now agree on pane boundaries in both two- and three-pane modes.
+- Mouse wheel now scrolls the pane under the pointer (by X coordinate) instead of the active pane.
 
-- Background repo preloader or bounded concurrent loading
-- Per-list session cache with loading/loaded/error states
-- Request generation and stale-response filtering
-- Topic-aware cache keys
-- `ctrl+r` service cache invalidation
-- Mutation modal pending spinner with affected-cache reload
-- Filter debounce benchmarking
+**Header, footer, list pane (P3)**
+- Header restyle: `styleAppTitle` ("gh star-lists", always shown), `styleSeparator` (" > "), `stylePaneTitle` (list name), `stylePaneSubtitle` ("[sort: X]"). Priority truncation: sort label drops first, list name truncated second, app name never truncated.
+- Footer restyle: key tokens use `styleFooterKey` (bold), descriptions use `styleFooterText` (faint). Hints hide rather than wrap at narrow widths.
+- List rows simplified: cursor + name + elastic space + right-aligned muted count. Age column and internal `|` separator removed.
+- Search bar shows `N/total` count indicator right-aligned (hidden when too narrow to fit).
 
-## Work items
+**Repo pane rebuild + eager initial load (P4, with post-ship refinements)**
+- `renderRepoPane` rebuilt with field-level styled columns: cursor, optional `[x]`/`[ ]` selection marker, right-aligned stars + escaped `★` glyph (`styleRepoStars`), left-aligned language clamped [4,12] chars (`styleRepoLanguage`), `NameWithOwner` (default / bold-accent / faint by focus/activity), muted fork/archived badges.
+- Pushed age ("last updated") removed entirely from the repo list — it cluttered the right edge without adding scanning value. No flag or config is provided to re-enable it. The preview pane still shows "Pushed:" for repos where it is relevant.
+- Column widths (star field width, language field width) computed from currently visible rows after filter/scroll, not all repos.
+- Narrow-width progressive hiding: badges (<55), language (<42), stars (<30). Repo name and cursor always survive; minimum 12 columns reserved for names.
+- Contextual right-pane heading: accented list name followed by a blank spacer line. The "Repos in this list: N" count subtitle was removed — the count adds noise without aiding navigation.
+- Eager initial load: `listsLoadedMsg` now auto-focuses the first sorted list, resets cursor/offset/selection, and triggers `loadReposCmd` immediately. The `(press enter to view repos)` placeholder is removed.
 
-### W1 — Migrate to `bubbles/spinner.Model`
+**Preview pane + interaction fixes (P5)**
+- `renderPreviewPane` rebuilt as a styled detail block: `stylePaneTitle` for NameWithOwner, `styleRepoURL` for URL, metadata bar (stars + language + source/fork/archived badge), description section with `(no description)` fallback, license/pushed/starred/topics with `-` fallbacks. Nothing overflows the preview column width.
+- `m.selected` cleared on every focused-list change path: eager load, Enter drill, double-click drill.
+- `m.repoCursor` and `m.repoOffset` reset to 0 on every focused-list change.
+- Double-click tracking: second click on the same list row within 300ms drills to repo pane. Single click sets focus/cursor only.
+- TUI `OpenBrowser` callback now uses `io.Discard` for both stdout and stderr of the child process so browser noise cannot corrupt the alt-screen. Non-TUI `--web` path unchanged.
 
-Replace `spinnerFrame int` / `spinnerTickMsg` / manual `tea.Tick` with `bubbles/spinner.Model`.
+## Files changed
 
-- Add `spinner.Model` to the model, initialize in `Model.Init()`.
-- Run `spinner.Tick` as a `tea.Cmd` from Init; stop by not returning it when idle.
-- Use `m.spinner.View()` in `renderListPane` and `renderRepoPane` loading states.
-- Delete `spinnerFrame`, `spinnerTickMsg`, manual frame rotation.
-- Visual appearance identical — purely mechanical migration.
+| File | Change |
+|------|--------|
+| `internal/tui/styles.go` | Full rewrite: 24 semantic styles + 3 backward-compat aliases (styleFaint, styleFooter, styleSelected) |
+| `internal/tui/geometry.go` | New file: `paneGeometry` struct + `calcPaneGeometry` replacing three drifting inline width-math sites |
+| `internal/tui/model.go` | Spinner migration; `renderHeader`, `renderFooter`, `renderListPane`, `renderRepoPane`, `renderPreviewPane` rebuilt; `listsLoadedMsg` eager load; double-click fields + logic; `repoPaneH()` helper; `starGlyph` constant; `truncateToWidth` helper; `renderHint`/`joinHints` footer helpers |
+| `internal/tui/model_test.go` | ~25 new tests across all phases; 2 existing tests updated for eager-load behavior |
+| `internal/command/run.go` | TUI `OpenBrowser` option wraps browser call with `io.Discard` stderr |
 
-### W2 — Eager load repos for focused list on startup
+## Design notes
 
-After `listsLoadedMsg`, immediately load repos for the first sorted list. No press-enter-to-view delay for the initial list.
-
-- In the `listsLoadedMsg` handler, after sorting, set `m.focusedList` and call the same `loadReposCmd` that `handleEnter` uses.
-- Do NOT load repos for unfocused lists.
-- Remove `(press enter to view repos)` hint rendering for the focused list.
-
-### W3 — Mouse double-click on list row
-
-Double-click on a list row acts like Enter: load repos and switch focus to repo pane.
-
-- Check `tea.MouseClickMsg.Count` if bubbletea v2.0.x exposes it; otherwise store `lastClickTime` and detect <300ms interval.
-- Hit-test list pane rows; on match, call `handleEnter` logic.
-
-### W4 — Mouse single-click on focused row to drill
-
-Single-click on an already-focused list row triggers repo load (same as Enter) without shifting focus.
-
-- In mouse handler: if clicked row == `m.listCursor` and repos not yet loaded, call `loadReposCmd`.
-- Already-loaded row: no-op.
-
-### W5 — Hover-aware mouse wheel
-
-Mouse wheel scrolls the pane under the pointer, not the active pane.
-
-- In `tea.MouseWheelMsg` handler, compare `msg.X` against `leftW` boundary to determine target pane.
-- Scroll the determined pane's cursor regardless of `m.focus`.
-- Target pane with no content: no-op.
-
-### W6 — Simplify list pane layout
-
-Remove `|` separator and `Age` column. Show only `Name` and `Count` (e.g. `Rust 42`).
-
-- Update `renderListPane` row format. Drop `padLeft(age,8)` and `|`.
-- Update any layout-width calculations. Keep sort indicator compact.
-
-### W7 — Search result count indicator
-
-Show `N / total` at right edge of search bar when query is active.
-
-- In `renderSearchBar`, compute filtered count vs total.
-- Append `"N/total"` faint-styled. Narrow window: hide if insufficient width.
-- Repo pane total unknown if repos not loaded.
-
-### W8 — Dynamic language column width
-
-Replace `%-8s` fixed width with max language name length across current repos.
-
-- Compute `maxLangW = max(lipgloss.Width(lang))` over `m.repos`.
-- Use dynamic width in meta format string. Min 4, max constrained by pane content width.
-
-### W9 — Align repo metadata columns
-
-Language/Stars/Age render in strict aligned columns.
-
-- Per-column max widths from visible repos (Language dynamic, Stars right-6, Age right-8).
-- 1-space gutter between columns.
-
-### W10 — Clear `m.selected` on list change
-
-When `handleEnter` drills into a different list, clear `m.selected`.
-
-- Set `m.selected = nil` at top of `handleEnter` (and W2 eager-load path).
-
-### W11 — Reset `repoCursor`/`repoOffset` on list change
-
-When drilling into a new list, cursor and scroll offset reset to 0.
-
-- `m.repoCursor = 0; m.repoOffset = 0` before loading repos for the new list.
-
-### W12 — Suppress browser stderr noise on Linux
-
-Firefox writes to stderr when opening URLs, corrupting TUI display.
-
-- In `internal/command/run.go`, redirect browser stderr to `/dev/null` in the `OpenBrowser` path.
-
-## Test additions
-
-| Test | What it covers |
-|------|----------------|
-| Spinner migration | Existing pane-local loading tests pass identically |
-| Eager initial load | After `listsLoadedMsg`, first list repos load, no hint shown |
-| Double-click drill | Rapid clicks load repos and switch pane focus |
-| Single-click drill | Click on cursor row triggers repo load |
-| Hover wheel | Wheel over list pane scrolls list while repo pane active |
-| Simplified list layout | Row format omits `\|` and Age |
-| Search count indicator | Shows/hides correctly with/without query |
-| Dynamic language width | Long language names don't overflow fixed slot |
-| Metadata column alignment | Language/Stars/Age align in 3-column grid |
-| Selection cleared | `m.selected == nil` after `handleEnter` |
-| Cursor reset | `m.repoCursor == 0` after list change |
-
-## Verification
-
-```
-make check
-make ascii-check
-```
-
-Manual smoke:
-
-```
-go run . browse
-# Initial load: first list repos load automatically (no press-enter-to-view).
-# List rows: Name + Count only, no Age column.
-# Mouse: click focused row loads repos; double-click loads and focuses.
-# Wheel: scrolls pane under pointer regardless of active focus.
-# Search: count indicator appears while typing.
-# Language column: "TypeScript" etc. don't overflow.
-# Metadata: Stars align in column regardless of language width.
-# Focus switch: selection cleared when drilling into a new list.
-# Browser: open link doesn't spew stderr noise.
-```
+- **Backward-compat style aliases**: `styleFaint`, `styleFooter`, `styleSelected` kept as aliases during the render-function rewrites so each phase compiled independently. They can be inlined in a future cleanup pass.
+- **Sequential phases despite single-file ownership**: all five implementation phases touched `internal/tui/model.go`. Parallel worktree phases would have produced merge conflicts; sequential subagents with per-phase exit criteria kept each change reviewable and the gate clean.
+- **`repoPaneH()` subtracts heading rows from scroll window**: the 2-row contextual heading (list name + blank spacer) reduces the scrollable viewport. `slideRepoOffset` uses `repoPaneH()` to keep the cursor visible. If heading row count changes, update `repoPaneH()`.
+- **Esc closes help overlay**: pressing Esc (`keys.Back`) when `m.showHelp` is true now closes the help panel instead of triggering the back/quit logic. The `?` key toggles it; Esc is the intuitive close. No footer hint needed — it matches standard modal conventions.
+- **Star glyph as escaped literal**: `starGlyph = "★"` in Go source passes `make ascii-check`. One test (`TestPreviewDetailBlock`) initially used a raw `★` character — fixed to `"★"` during final verification.
+- **Column widths from visible rows**: star-field width and language-field width are recomputed each render from the visible viewport slice (post-filter, post-scroll), not all repos. This keeps each viewport locally tidy without a separate pre-pass.

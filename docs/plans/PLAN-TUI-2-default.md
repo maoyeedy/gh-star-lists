@@ -68,6 +68,15 @@ internal/tui/
 
 This split is mechanical -- no behavior change. Do it as the first PR of v2.
 
+**Cleanup items to bundle with the split:**
+- Inline or remove backward-compat style aliases (`styleFaint`, `styleSelected`
+  in `styles.go`) — they were kept to let v1.4 phases compile independently.
+- Move `truncateToWidth` helper (added in v1.4 for the preview pane) into a
+  shared utility location rather than leaving it at the top of `model.go`.
+- `repoPaneH()` is now `max(1, m.height-2)` — identical to the inline pane
+  height used elsewhere. Either remove the helper or restore meaningful
+  semantics when v1.5 adds per-pane heading rows.
+
 ## Non-goals for v2
 
 - YAML config. Do not add `config.yaml`, `--no-config`, or config loading.
@@ -96,7 +105,7 @@ These items were observed during v1.3 and are added to this plan:
 | Toast duration proportional to message length | Bulk failure toasts listing 3+ NWOs need longer than 2 s to read. Scale expiry: 2 s for simple messages, 4 s when `len(failedNWOs) > 0`. |
 | Help overlay scrolling | Two-column help table exceeds terminal height on short windows (<20 rows). Add viewport scrolling (Up/Down while help is open) or paginate. Fits the v2 architecture split where help could become a proper sub-model. |
 | `Right` key when repos are loading | `Right` is a no-op if `len(m.repos) == 0`, even if a load is in-flight. After v1.4's session cache lands, `Right` can move focus to the repo pane showing the in-flight spinner rather than silently doing nothing. |
-| Mouse double-click detection | bubbletea v2.0.6 does not expose double-click events. If a future version does, wire double-click on a list row to trigger drill. Track upstream. |
+| Mouse double-click detection | ~~Resolved in v1.4.~~ bubbletea v2.0.6 does not expose native double-click events; v1.4 worked around this with time-based tracking (`lastClickPane`, `lastClickIndex`, `lastClickTime` on the model, 300ms threshold). If a future bubbletea version exposes native double-click, replace the time-tracking fields with the native event. |
 
 ## Verification
 

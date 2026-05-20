@@ -24,7 +24,7 @@
 - `make ascii-check` — non-ASCII scanner for Go source
 - `make smoke` — `bash scripts/smoke-local.sh`
 - After editing Go files: `go tool goimports -w <file>`
-- Final gate: `make check`
+- Final gate: `make lint && make check`
 
 ## Package Responsibilities
 
@@ -112,7 +112,7 @@
 - [ ] Test uses `errWriter`? Duplicate type in `command_test` and `format_test`
 - [ ] TUI model test? Use `update(m, msg)` pattern, check model fields, test all state transitions
 - [ ] TUI test `fakeService`? Must implement all `githubapi.Service` methods, add `Invalidate()` on `fakeInvalidatableService`
-- [ ] Build passes? `make check`
+- [ ] Build passes? `make lint && make check`
 
 **`range` over strings is already rune-wise.** Write `for _, r := range s`, never `for _, r := range []rune(s)`. The conversion allocates. `staticcheck` SA6003 flags it.
 
@@ -124,7 +124,7 @@
 - Prefer `ast-grep` for structural Go edits (switch cases, signatures, interfaces, structs).
 - Prefer `sd` for focused token/replacement edits and renames.
 - After Go edits: `go tool goimports -w <file>`
-- Final validation: `make check`
+- Final validation: `make lint && make check`
 
 ## README
 

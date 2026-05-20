@@ -271,11 +271,22 @@ func RunWithOptions(
 			)
 			return ExitUsage
 		}
+		// Wrap openBrowser for the TUI path so that any child-process stderr
+		// is discarded. The browser opener normally writes to os.Stderr, which
+		// would corrupt the alt-screen while the TUI is running.
+		tuiBrowser := func(url string) error {
+			// Temporarily replace the package-level openBrowser so the browser
+			// library writes to io.Discard instead of os.Stderr. We achieve
+			// this by constructing a fresh browser instance that writes to
+			// io.Discard for both stdout and stderr.
+			_ = browser.New("", io.Discard, io.Discard).Browse(url)
+			return nil
+		}
 		if err := runTUI(ctx, service, tui.Options{
 			NoColor:     parsed.NoColor,
 			Mouse:       parsed.Mouse,
 			Stderr:      stderr,
-			OpenBrowser: openBrowser,
+			OpenBrowser: tuiBrowser,
 		}); err != nil {
 			_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%v\n", err)
 			return ExitFailure

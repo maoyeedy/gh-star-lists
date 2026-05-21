@@ -7,6 +7,26 @@ import (
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
+type sortListsKey int
+
+const (
+	sortListsGitHub sortListsKey = iota
+	sortListsName
+	sortListsRepos
+	sortListsAdded
+)
+
+type sortReposKey int
+
+const (
+	sortReposGitHub sortReposKey = iota
+	sortReposName
+	sortReposStars
+	sortReposPushed
+	sortReposLanguage
+	sortReposStarredAt
+)
+
 func sortStarLists(lists []githubapi.StarList, key sortListsKey) {
 	sort.Slice(lists, func(i, j int) bool {
 		switch key {
@@ -77,4 +97,20 @@ func sortRepos(repos []githubapi.Repository, key sortReposKey) {
 		}
 		return repos[i].NameWithOwner < repos[j].NameWithOwner
 	})
+}
+
+func (m model) cycleSort() model {
+	if m.active == paneList {
+		m.sortLists = (m.sortLists + 1) % 4
+		sortStarLists(m.lists, m.sortLists)
+		m.listCursor = 0
+		m.listOffset = 0
+	} else {
+		m.sortRepos = (m.sortRepos + 1) % 6
+		sortRepos(m.displayedRepos, m.sortRepos)
+		m.repoCursor = 0
+		m.previewOffset = 0
+		m.repoOffset = 0
+	}
+	return m
 }

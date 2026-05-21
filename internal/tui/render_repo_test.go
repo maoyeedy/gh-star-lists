@@ -127,29 +127,64 @@ func TestRepoColumnAlignment(t *testing.T) {
 	rendered := repoPane(m, 120, 15)
 	lines := strings.Split(rendered, "\n")
 
-	// Heading is 3 lines (title, subtitle, blank), content starts at line 3.
 	// Strip ANSI before measuring byte position so escape-length differences
 	// do not affect the column comparison.
 	starCol := -1
-	for i, line := range lines {
-		if i < 3 {
-			continue // heading rows
-		}
+	repoIdx := 0
+	langSet := false
+	for _, line := range lines {
 		plain := stripANSI(line)
 		if plain == "" {
 			continue // padding rows
 		}
+		if repoIdx >= len(repos) {
+			break
+		}
+
+		// Star column: must be consistent across rows.
 		glyphPos := strings.Index(plain, "\u2605")
 		if glyphPos < 0 {
-			t.Errorf("line %d missing star glyph: %q", i, line)
+			t.Errorf("repo %d: missing star glyph: %q", repoIdx, line)
 			continue
 		}
 		if starCol < 0 {
 			starCol = glyphPos
 		} else if glyphPos != starCol {
-			t.Errorf("star glyph at byte-col %d on line %d, want %d (alignment); plain: %q",
-				glyphPos, i, starCol, plain)
+			t.Errorf("repo %d: star glyph at byte-col %d, want %d (alignment); plain: %q",
+				repoIdx, glyphPos, starCol, plain)
 		}
+
+		// Language column: right-aligned at end. The "  " gap starts at
+		// visual position w - langWidth - 2. Use lipgloss.Width for the
+		// offset to handle multi-byte glyphs (star) correctly.
+		visW := lipgloss.Width(plain)
+		expectedLang := repos[repoIdx].Language
+		if expectedLang == "" {
+			expectedLang = "-"
+		}
+		gapStart := visW - langWidth - 2
+		if gapStart >= 0 && len(plain) >= gapStart+2 {
+			gap := plain[gapStart : gapStart+2]
+			if gap != "  " {
+				t.Errorf(
+					"repo %d: expected 2-space gap before lang at vis-col %d, got %q; plain: %q",
+					repoIdx,
+					gapStart,
+					gap,
+					plain,
+				)
+			}
+			langRaw := strings.TrimLeft(plain[gapStart+2:], " ")
+			if langRaw != expectedLang {
+				t.Errorf("repo %d: expected lang %q right-aligned, got %q; plain: %q",
+					repoIdx, expectedLang, langRaw, plain)
+			}
+		}
+		langSet = true
+		repoIdx++
+	}
+	if !langSet {
+		t.Error("no content lines were checked for language alignment")
 	}
 }
 
@@ -190,7 +225,7 @@ func TestNarrowRepoPaneP4HidesMetadata(t *testing.T) {
 	m.active = paneRepo
 	m.focusedList = &m.lists[0]
 
-	// Very narrow: stars and language hidden (width < 30 hides stars, < 42 hides lang).
+	// Very narrow: stars and language hidden (width < 30 hides stars, < 34 hides lang).
 	narrowOut := repoPane(m, 29, 15)
 	if strings.Contains(narrowOut, "\u2605") {
 		t.Errorf("width 29: star glyph should be absent; got:\n%s", narrowOut)
@@ -200,7 +235,7 @@ func TestNarrowRepoPaneP4HidesMetadata(t *testing.T) {
 		t.Errorf("width 29: repo name should still appear; got:\n%s", narrowOut)
 	}
 
-	// Medium width (>= 42 shows lang).
+	// Medium width (>= 34 shows lang).
 	medOut := repoPane(m, 55, 15)
 	if !strings.Contains(medOut, "\u2605") {
 		t.Errorf("width 55: star glyph should appear; got:\n%s", medOut)
@@ -222,7 +257,6 @@ func TestRepoWidthsCachedAcrossScrolls(t *testing.T) {
 	(&m).ensureRepoWidths()
 	sig1 := m.cachedRepoSig
 	sw1 := m.cachedStarWidth
-	lw1 := m.cachedLangWidth
 
 	if sig1 == "" {
 		t.Error("cachedRepoSig should be non-empty after ensureRepoWidths")
@@ -238,9 +272,6 @@ func TestRepoWidthsCachedAcrossScrolls(t *testing.T) {
 	}
 	if m.cachedStarWidth != sw1 {
 		t.Errorf("cachedStarWidth changed on second call: %d -> %d", sw1, m.cachedStarWidth)
-	}
-	if m.cachedLangWidth != lw1 {
-		t.Errorf("cachedLangWidth changed on second call: %d -> %d", lw1, m.cachedLangWidth)
 	}
 
 	// Verify sentinel invalidates when list changes.

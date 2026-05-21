@@ -34,7 +34,6 @@ type model struct {
 
 	// render-width cache (invalidated by cachedRepoSig sentinel)
 	cachedStarWidth int
-	cachedLangWidth int
 	cachedRepoSig   string
 
 	// preview pane scroll offset (lines scrolled down)

@@ -18,20 +18,13 @@ func (m *model) ensureRepoWidths() {
 		return // cache hit
 	}
 	m.cachedRepoSig = sig
-	maxLang := 0
-	for _, r := range m.displayedRepos {
-		if n := len(r.Language); n > maxLang {
-			maxLang = n
-		}
-	}
-	if maxLang > 12 {
-		maxLang = 12
-	}
 	m.cachedStarWidth = 4
-	m.cachedLangWidth = maxLang
 }
 
-const starGlyph = "\u2605"
+const (
+	starGlyph = "\u2605"
+	langWidth = 20
+)
 
 func (m model) renderRepoPane(w, h int) string {
 	totalH := h
@@ -109,7 +102,7 @@ func (m model) renderRepoPane(w, h int) string {
 
 	// ---- Width-based feature flags ----
 	showBadges := w >= 55
-	showLang := w >= 42
+	showLang := w >= 34
 	showStars := w >= 30
 
 	hasSel := len(m.selected) > 0
@@ -121,11 +114,6 @@ func (m model) renderRepoPane(w, h int) string {
 	starWidth := 4
 	if sw := m.cachedStarWidth + 2; sw > starWidth {
 		starWidth = sw
-	}
-	// langWidth: minimum 4; capped at 12 by ensureRepoWidths.
-	langWidth := 4
-	if lw := m.cachedLangWidth; lw > langWidth {
-		langWidth = lw
 	}
 
 	start := m.repoOffset
@@ -176,12 +164,12 @@ func (m model) renderRepoPane(w, h int) string {
 			starsStr = styleRepoStars.Render(paddedCount+" "+starGlyph) + "  "
 		}
 
-		// -- Language field --
+		// -- Language field (right-aligned at end) --
 		var langStr string
 		if showLang {
 			lang := r.Language
 			if lang == "" {
-				langStr = styleFaint.Render(padRight("-", langWidth)) + "  "
+				langStr = "  " + styleFaint.Render(padLeft("-", langWidth))
 			} else {
 				lw := lipgloss.Width(lang)
 				if lw > langWidth {
@@ -192,7 +180,7 @@ func (m model) renderRepoPane(w, h int) string {
 					}
 					lang = string(runes) + "..."
 				}
-				langStr = styleRepoLanguage.Render(padRight(lang, langWidth)) + "  "
+				langStr = "  " + styleRepoLanguage.Render(padLeft(lang, langWidth))
 			}
 		}
 
@@ -204,10 +192,10 @@ func (m model) renderRepoPane(w, h int) string {
 		if showStars {
 			fixedW += starWidth + 2 // field + two spaces separator
 		}
-		if showLang {
-			fixedW += langWidth + 2 // field + two spaces separator
-		}
 		nameAvail := w - fixedW
+		if showLang {
+			nameAvail -= langWidth + 2 // "  " + right-aligned field
+		}
 		if nameAvail < 12 {
 			nameAvail = 12
 		}
@@ -260,8 +248,11 @@ func (m model) renderRepoPane(w, h int) string {
 			badgesStr = styleRepoBadge.Render(badgesRaw)
 		}
 
-		// -- Assemble row --
-		row := cursorStr + markerStr + starsStr + langStr + nameStr + badgesStr
+		// -- Pad name to fill available width so lang sits at consistent column --
+		nameFilled := padRight(nameStr+badgesStr, nameAvail)
+
+		// -- Assemble row (lang at end, right-aligned) --
+		row := cursorStr + markerStr + starsStr + nameFilled + langStr
 
 		out = append(out, row)
 	}

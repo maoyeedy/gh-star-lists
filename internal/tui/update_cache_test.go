@@ -2,6 +2,8 @@ package tui
 
 import (
 	"testing"
+
+	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func TestStaleReposLoadedMsgIgnored(t *testing.T) {
@@ -81,5 +83,47 @@ func TestAnyPendingDerivedFromMap(t *testing.T) {
 
 	if m.anyPending() {
 		t.Error("anyPending should be false after entry transitions to repoCacheLoaded")
+	}
+}
+
+func TestStaleLoadDropped(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	initialRepos := []githubapi.Repository{{ID: "R_init", NameWithOwner: "owner/init"}}
+	m.displayedRepos = initialRepos
+
+	// Test 1: stale generation.
+	staleMsg := reposLoadedMsg{
+		repos:  svc.repos,
+		listID: m.focusedList.ID,
+		gen:    999,
+	}
+	m2 := update(m, staleMsg)
+
+	key := repoCacheKey{m.focusedList.ID, false}
+	if e := m2.preloader.cache[key]; e != nil && e.state == repoCacheLoaded {
+		t.Error("stale reposLoadedMsg (gen=999) should not create a loaded cache entry")
+	}
+	if len(m2.displayedRepos) != 1 || m2.displayedRepos[0].NameWithOwner != "owner/init" {
+		t.Error("displayedRepos should be unchanged after stale reposLoadedMsg")
+	}
+
+	// Test 2: cancelled load - cache entry removed, valid gen.
+	delete(m2.preloader.cache, key)
+	cancelledMsg := reposLoadedMsg{
+		repos:  svc.repos,
+		listID: m.focusedList.ID,
+		gen:    m2.preloader.generation,
+	}
+	m3 := update(m2, cancelledMsg)
+
+	if e := m3.preloader.cache[key]; e != nil && e.state == repoCacheLoaded {
+		t.Error("reposLoadedMsg for cancelled load (removed cache entry) should be dropped")
+	}
+	if len(m3.displayedRepos) != 1 || m3.displayedRepos[0].NameWithOwner != "owner/init" {
+		t.Error("displayedRepos should be unchanged after cancelled-load reposLoadedMsg")
 	}
 }

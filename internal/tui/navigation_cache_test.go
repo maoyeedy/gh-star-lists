@@ -17,23 +17,23 @@ func TestCursorMoveUsesCacheNoNewCmd(t *testing.T) {
 	reposA := []githubapi.Repository{{ID: "A_1", NameWithOwner: "owner/a-list-repo"}}
 	reposB := []githubapi.Repository{{ID: "B_1", NameWithOwner: "owner/b-list-repo"}}
 	reposC := []githubapi.Repository{{ID: "C_1", NameWithOwner: "owner/c-list-repo"}}
-	m = update(m, reposLoadedMsg{repos: reposA, listID: m.lists[0].ID, gen: m.generation})
-	m = update(m, reposLoadedMsg{repos: reposB, listID: m.lists[1].ID, gen: m.generation})
-	m = update(m, reposLoadedMsg{repos: reposC, listID: m.lists[2].ID, gen: m.generation})
+	m = update(m, reposLoadedMsg{repos: reposA, listID: m.lists[0].ID, gen: m.preloader.generation})
+	m = update(m, reposLoadedMsg{repos: reposB, listID: m.lists[1].ID, gen: m.preloader.generation})
+	m = update(m, reposLoadedMsg{repos: reposC, listID: m.lists[2].ID, gen: m.preloader.generation})
 
 	// All lists are cached now; reset cursor to 0 and ensure list pane is active.
 	m.active = paneList
 	m.listCursor = 0
-	inflightBefore := m.preloadInFlight
+	inflightBefore := m.preloader.inFlight
 
 	// Move cursor down -- should use cache, no new load.
 	next, _ := m.Update(specialKey(tea.KeyDown))
 	m2 := next.(model)
 
-	if m2.preloadInFlight != inflightBefore {
+	if m2.preloader.inFlight != inflightBefore {
 		t.Errorf(
 			"preloadInFlight changed from %d to %d after cursor move to cached list",
-			inflightBefore, m2.preloadInFlight,
+			inflightBefore, m2.preloader.inFlight,
 		)
 	}
 	// displayedRepos should be populated from the cache for lists[1].
@@ -56,31 +56,34 @@ func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
 
 	// Simulate: deliver repos for first list only, then manually clear all other
 	// cache entries to simulate idle state for lists[1] and lists[2].
-	m = update(m, reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.generation})
+	m = update(
+		m,
+		reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.preloader.generation},
+	)
 	// Remove loading/loaded entries for UL_2 and UL_3 (simulate idle).
-	delete(m.repoCache, repoCacheKey{m.lists[1].ID, false})
-	delete(m.repoCache, repoCacheKey{m.lists[2].ID, false})
-	m.preloadInFlight = 0
-	m.preloadQueue = nil
+	delete(m.preloader.cache, repoCacheKey{m.lists[1].ID, false})
+	delete(m.preloader.cache, repoCacheKey{m.lists[2].ID, false})
+	m.preloader.inFlight = 0
+	m.preloader.queue = nil
 
 	m.active = paneList
 	m.listCursor = 0
-	inflightBefore := m.preloadInFlight
+	inflightBefore := m.preloader.inFlight
 
 	// Move down to lists[1] which has no cache entry.
 	m2 := update(m, specialKey(tea.KeyDown))
 
-	cacheEntry := m2.repoCache[repoCacheKey{m2.lists[1].ID, false}]
+	cacheEntry := m2.preloader.cache[repoCacheKey{m2.lists[1].ID, false}]
 	if cacheEntry == nil {
 		t.Fatal("repoCache entry for list[1] should exist after cursor move to idle list")
 	}
 	if cacheEntry.state != repoCacheLoading {
 		t.Errorf("cache entry state = %d, want repoCacheLoading", cacheEntry.state)
 	}
-	if m2.preloadInFlight <= inflightBefore {
+	if m2.preloader.inFlight <= inflightBefore {
 		t.Errorf(
 			"preloadInFlight did not increase: before=%d after=%d",
-			inflightBefore, m2.preloadInFlight,
+			inflightBefore, m2.preloader.inFlight,
 		)
 	}
 }

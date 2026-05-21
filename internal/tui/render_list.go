@@ -12,7 +12,7 @@ func (m model) renderListPane(w, h int) string {
 	totalH := h
 	out := make([]string, 0, totalH)
 
-	if m.searchActive && m.active == paneList {
+	if m.listSearchActive && m.active == paneList {
 		// Build search bar with optional N/total count on the right.
 		prefix := styleSearchPrompt.Render("/") + " "
 		prefixW := lipgloss.Width(prefix)
@@ -38,7 +38,7 @@ func (m model) renderListPane(w, h int) string {
 			queryBudget = 0
 		}
 
-		qDisplay := m.searchQuery
+		qDisplay := m.listSearchQuery
 		if lipgloss.Width(qDisplay) > queryBudget {
 			// Truncate from left.
 			tail := ""
@@ -74,8 +74,8 @@ func (m model) renderListPane(w, h int) string {
 
 	if len(m.displayedLists) == 0 {
 		label := "(no lists)"
-		if m.searchQuery != "" {
-			q := m.searchQuery
+		if m.listSearchQuery != "" {
+			q := m.listSearchQuery
 			if utf8.RuneCountInString(q) > 20 {
 				q = string([]rune(q)[:20]) + "..."
 			}

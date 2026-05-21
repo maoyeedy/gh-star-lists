@@ -41,11 +41,17 @@ func loadReposCmd(
 	gen uint64,
 ) tea.Cmd {
 	return func() tea.Msg {
+		if ctx.Err() != nil {
+			return nil
+		}
 		opts := []githubapi.ListOptions{}
 		if withTopics {
 			opts = append(opts, githubapi.ListOptions{WithTopics: true})
 		}
 		repos, err := svc.ListRepositories(ctx, listID, opts...)
+		if ctx.Err() != nil {
+			return nil
+		}
 		return reposLoadedMsg{
 			repos:      repos,
 			err:        err,

@@ -27,8 +27,8 @@ type model struct {
 	lists       []githubapi.StarList
 	focusedList *githubapi.StarList
 
-	repoCache       map[repoCacheKey]*repoCacheEntry
-	generation      uint64
+	preloader *preloader
+
 	listsLoading    bool
 	mutationPending bool
 
@@ -38,9 +38,6 @@ type model struct {
 
 	// preview pane scroll offset (lines scrolled down)
 	previewOffset int
-
-	preloadQueue    []string // list IDs waiting to be loaded, in sorted order
-	preloadInFlight int      // number of loads currently in flight (cap: 3)
 
 	listCursor int
 	listOffset int
@@ -60,10 +57,12 @@ type model struct {
 	statusExpiry time.Time
 	showPreview  bool
 
-	searchActive   bool
-	searchQuery    string
-	displayedLists []githubapi.StarList
-	displayedRepos []githubapi.Repository
+	listSearchActive bool
+	listSearchQuery  string
+	repoSearchActive bool
+	repoSearchQuery  string
+	displayedLists   []githubapi.StarList
+	displayedRepos   []githubapi.Repository
 
 	selected map[string]struct{} // NameWithOwner of checked repos
 
@@ -77,20 +76,16 @@ type model struct {
 
 func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
 	return model{
-		svc:             svc,
-		openBrowser:     opts.OpenBrowser,
-		noColor:         opts.NoColor,
-		mouse:           opts.Mouse,
-		ctx:             ctx,
-		listsLoading:    true,
-		repoCache:       make(map[repoCacheKey]*repoCacheEntry),
-		spinner:         spinner.New(spinner.WithSpinner(spinner.Line)),
-		preloadQueue:    nil,
-		preloadInFlight: 0,
+		svc:          svc,
+		openBrowser:  opts.OpenBrowser,
+		noColor:      opts.NoColor,
+		mouse:        opts.Mouse,
+		ctx:          ctx,
+		listsLoading: true,
+		preloader:    newPreloader(),
+		spinner:      spinner.New(spinner.WithSpinner(spinner.Line)),
 	}
 }
-
-// schedulePreload starts up to (3 - m.preloadInFlight) repo loads from m.preloadQueue.
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(loadListsCmd(m.ctx, m.svc), m.spinner.Tick)

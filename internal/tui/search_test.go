@@ -14,8 +14,8 @@ func TestSearchActivatesOnSlash(t *testing.T) {
 
 	m2 := update(m, keyPress('/'))
 
-	if !m2.searchActive {
-		t.Error("searchActive should be true after /")
+	if !m2.listSearchActive {
+		t.Error("listSearchActive should be true after /")
 	}
 }
 
@@ -60,11 +60,11 @@ func TestSearchEscClearsFilter(t *testing.T) {
 
 	m2 := update(m, specialKey(tea.KeyEscape))
 
-	if m2.searchActive {
-		t.Error("searchActive should be false after Esc")
+	if m2.listSearchActive {
+		t.Error("listSearchActive should be false after Esc")
 	}
-	if m2.searchQuery != "" {
-		t.Errorf("searchQuery = %q, want empty after Esc", m2.searchQuery)
+	if m2.listSearchQuery != "" {
+		t.Errorf("listSearchQuery = %q, want empty after Esc", m2.listSearchQuery)
 	}
 	if len(m2.displayedLists) != len(svc.lists) {
 		t.Errorf(
@@ -90,11 +90,11 @@ func TestSearchEnterDeactivatesKeepsFilter(t *testing.T) {
 
 	m2 := update(m, specialKey(tea.KeyEnter))
 
-	if m2.searchActive {
-		t.Error("searchActive should be false after Enter")
+	if m2.listSearchActive {
+		t.Error("listSearchActive should be false after Enter")
 	}
-	if m2.searchQuery == "" {
-		t.Error("searchQuery should still be non-empty after Enter")
+	if m2.listSearchQuery == "" {
+		t.Error("listSearchQuery should still be non-empty after Enter")
 	}
 	// displayedLists should still be filtered - only "Alpha" matches.
 	if len(m2.displayedLists) >= len(svc.lists) {
@@ -127,13 +127,13 @@ func TestSearchBackspaceRemovesLastChar(t *testing.T) {
 	m = update(m, keyPress('a'))
 	m = update(m, keyPress('l'))
 
-	if m.searchQuery != "al" {
-		t.Fatalf("searchQuery = %q before backspace, want 'al'", m.searchQuery)
+	if m.listSearchQuery != "al" {
+		t.Fatalf("listSearchQuery = %q before backspace, want 'al'", m.listSearchQuery)
 	}
 	m2 := update(m, specialKey(tea.KeyBackspace))
 
-	if m2.searchQuery != "a" {
-		t.Errorf("searchQuery = %q after backspace, want 'a'", m2.searchQuery)
+	if m2.listSearchQuery != "a" {
+		t.Errorf("listSearchQuery = %q after backspace, want 'a'", m2.listSearchQuery)
 	}
 }
 
@@ -199,8 +199,8 @@ func TestSearchWhileFilterActiveActionKeys(t *testing.T) {
 	m.focusedList = &m.lists[0]
 
 	// Commit a filter query via Enter (searchActive=false, query kept).
-	m.searchQuery = string([]rune(svc.repos[0].NameWithOwner)[:1]) // first char of first repo
-	m.searchActive = false
+	m.repoSearchQuery = string([]rune(svc.repos[0].NameWithOwner)[:1]) // first char of first repo
+	m.repoSearchActive = false
 	m = m.rebuildDisplayed()
 	if len(m.displayedRepos) == 0 {
 		t.Skip("filter removed all repos -- fixture mismatch")

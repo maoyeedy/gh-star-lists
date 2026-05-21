@@ -57,8 +57,8 @@ func TestSearchCountIndicator(t *testing.T) {
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: lists})
 	m.active = paneList
-	m.searchActive = true
-	m.searchQuery = "alp"
+	m.listSearchActive = true
+	m.listSearchQuery = "alp"
 	m = m.rebuildDisplayed()
 	// Should have 2 matches ("Alpha", "Alpine").
 	if len(m.displayedLists) != 2 {

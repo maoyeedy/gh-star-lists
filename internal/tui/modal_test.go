@@ -34,8 +34,8 @@ func TestSearchNoModalOnSlash(t *testing.T) {
 
 	m2 := update(m, keyPress('/'))
 
-	if m2.searchActive {
-		t.Error("searchActive should stay false when modal is open")
+	if m2.listSearchActive || m2.repoSearchActive {
+		t.Error("search should stay inactive when modal is open")
 	}
 }
 
@@ -94,8 +94,8 @@ func TestMutationDoneClosesModalAndInvalidatesEntry(t *testing.T) {
 	m.focusedList = &m.lists[0]
 
 	// Pre-populate a cache entry to confirm it gets invalidated.
-	m.repoCache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
-	m.repoCache[repoCacheKey{"UL_1", true}] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.cache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.cache[repoCacheKey{"UL_1", true}] = &repoCacheEntry{state: repoCacheLoaded}
 
 	// Open a modal in submitting state.
 	m.modal = &modal{kind: modalCreateList, submitting: true}
@@ -113,10 +113,11 @@ func TestMutationDoneClosesModalAndInvalidatesEntry(t *testing.T) {
 		t.Error("mutationPending should be false after successful mutation")
 	}
 	// Both cache entries for UL_1 should be deleted (invalidated).
-	if e := m2.repoCache[repoCacheKey{"UL_1", false}]; e != nil && e.state == repoCacheLoaded {
+	if e := m2.preloader.cache[repoCacheKey{"UL_1", false}]; e != nil &&
+		e.state == repoCacheLoaded {
 		t.Error("repoCache[UL_1, false] should be invalidated after mutation")
 	}
-	if e := m2.repoCache[repoCacheKey{"UL_1", true}]; e != nil && e.state == repoCacheLoaded {
+	if e := m2.preloader.cache[repoCacheKey{"UL_1", true}]; e != nil && e.state == repoCacheLoaded {
 		t.Error("repoCache[UL_1, true] should be invalidated after mutation")
 	}
 }

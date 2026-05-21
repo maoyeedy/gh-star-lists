@@ -46,16 +46,16 @@ func TestRefreshBumpsGenerationAndClearsCache(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 
 	// Populate cache with a loaded entry.
-	m.repoCache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
-	genBefore := m.generation
+	m.preloader.cache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
+	genBefore := m.preloader.generation
 
 	m2 := update(m, ctrlKey('r'))
 
-	if m2.generation != genBefore+1 {
-		t.Errorf("generation = %d, want %d after ctrl+r", m2.generation, genBefore+1)
+	if m2.preloader.generation != genBefore+1 {
+		t.Errorf("generation = %d, want %d after ctrl+r", m2.preloader.generation, genBefore+1)
 	}
-	if len(m2.repoCache) != 0 {
-		t.Errorf("repoCache len = %d, want 0 after ctrl+r", len(m2.repoCache))
+	if len(m2.preloader.cache) != 0 {
+		t.Errorf("repoCache len = %d, want 0 after ctrl+r", len(m2.preloader.cache))
 	}
 	if !m2.listsLoading {
 		t.Error("listsLoading should be true after ctrl+r")
@@ -72,15 +72,15 @@ func TestStaleMsgDroppedAfterRefresh(t *testing.T) {
 
 	// Refresh bumps generation to 1.
 	m = update(m, ctrlKey('r'))
-	if m.generation != 1 {
-		t.Fatalf("generation = %d after ctrl+r, want 1", m.generation)
+	if m.preloader.generation != 1 {
+		t.Fatalf("generation = %d after ctrl+r, want 1", m.preloader.generation)
 	}
 
 	// Deliver a stale message (gen 0).
 	stale := reposLoadedMsg{repos: svc.repos, listID: "UL_1", gen: 0}
 	m2 := update(m, stale)
 
-	entry := m2.repoCache[repoCacheKey{"UL_1", false}]
+	entry := m2.preloader.cache[repoCacheKey{"UL_1", false}]
 	if entry != nil && entry.state == repoCacheLoaded {
 		t.Error(
 			"stale reposLoadedMsg (gen=0) should not create a loaded entry after refresh (gen=1)",

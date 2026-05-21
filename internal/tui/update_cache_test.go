@@ -10,7 +10,7 @@ func TestStaleReposLoadedMsgIgnored(t *testing.T) {
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	// Bump generation so gen=0 messages are stale.
-	m.generation = 1
+	m.preloader.generation = 1
 
 	staleMsg := reposLoadedMsg{
 		repos:  svc.repos,
@@ -20,7 +20,7 @@ func TestStaleReposLoadedMsgIgnored(t *testing.T) {
 	m2 := update(m, staleMsg)
 
 	key := repoCacheKey{m.focusedList.ID, false}
-	entry := m2.repoCache[key]
+	entry := m2.preloader.cache[key]
 	if entry != nil && entry.state == repoCacheLoaded {
 		t.Error("stale reposLoadedMsg should not write a repoCacheLoaded entry")
 	}
@@ -43,7 +43,7 @@ func TestRepoCacheEntryWrittenOnLoad(t *testing.T) {
 	})
 
 	key := repoCacheKey{firstListID, false}
-	entry := m2.repoCache[key]
+	entry := m2.preloader.cache[key]
 	if entry == nil {
 		t.Fatal("repoCache entry should exist after reposLoadedMsg")
 	}
@@ -70,14 +70,14 @@ func TestAnyPendingDerivedFromMap(t *testing.T) {
 
 	// Write a loading entry.
 	key := repoCacheKey{listID: "UL_1", withTopics: false}
-	m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading}
+	m.preloader.cache[key] = &repoCacheEntry{state: repoCacheLoading}
 
 	if !m.anyPending() {
 		t.Error("anyPending should be true when a repoCacheLoading entry exists")
 	}
 
 	// Mark it loaded.
-	m.repoCache[key] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.cache[key] = &repoCacheEntry{state: repoCacheLoaded}
 
 	if m.anyPending() {
 		t.Error("anyPending should be false after entry transitions to repoCacheLoaded")

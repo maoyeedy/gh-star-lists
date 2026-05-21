@@ -27,7 +27,7 @@ func (m model) previewContentLines(w int) []string {
 	repo := m.displayedRepos[m.repoCursor]
 	// Use the withTopics=true cache entry for topic data when available.
 	if m.focusedList != nil {
-		if e := m.repoCache[repoCacheKey{m.focusedList.ID, true}]; e != nil &&
+		if e := m.preloader.cache[repoCacheKey{m.focusedList.ID, true}]; e != nil &&
 			e.state == repoCacheLoaded && m.repoCursor < len(e.repos) {
 			repo = e.repos[m.repoCursor]
 		}

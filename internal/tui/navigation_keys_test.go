@@ -299,10 +299,13 @@ func TestEnterListPaneNoLoadWhenCached(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 
 	// Pre-populate cache for the focused list.
-	m = update(m, reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.generation})
+	m = update(
+		m,
+		reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.preloader.generation},
+	)
 	m.active = paneList
 	m.listCursor = 0
-	inflightBefore := m.preloadInFlight
+	inflightBefore := m.preloader.inFlight
 
 	// Press Enter -- should switch to paneRepo with no new load.
 	next, cmd := m.Update(specialKey(tea.KeyEnter))
@@ -313,11 +316,11 @@ func TestEnterListPaneNoLoadWhenCached(t *testing.T) {
 	}
 	if cmd != nil {
 		// Allow nil cmd (no load) -- if cmd is non-nil, check that inflight didn't increase.
-		if m2.preloadInFlight > inflightBefore {
+		if m2.preloader.inFlight > inflightBefore {
 			t.Errorf(
 				"preloadInFlight increased from %d to %d after Enter with cached list (should not start new load)",
 				inflightBefore,
-				m2.preloadInFlight,
+				m2.preloader.inFlight,
 			)
 		}
 	}

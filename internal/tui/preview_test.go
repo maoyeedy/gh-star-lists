@@ -285,15 +285,15 @@ func TestPreviewToggleSchedulesTopicsLoadForFocusedListOnly(t *testing.T) {
 	m2 := update(m, keyPress('p'))
 
 	// Only UL_1 should have a withTopics=true entry.
-	e1 := m2.repoCache[repoCacheKey{"UL_1", true}]
+	e1 := m2.preloader.cache[repoCacheKey{"UL_1", true}]
 	if e1 == nil {
 		t.Error("repoCache[UL_1, true] should exist after preview toggle for focused list")
 	}
 	// Other lists should NOT have withTopics=true entries.
-	if e := m2.repoCache[repoCacheKey{"UL_2", true}]; e != nil {
+	if e := m2.preloader.cache[repoCacheKey{"UL_2", true}]; e != nil {
 		t.Errorf("repoCache[UL_2, true] should not exist; focused list is UL_1")
 	}
-	if e := m2.repoCache[repoCacheKey{"UL_3", true}]; e != nil {
+	if e := m2.preloader.cache[repoCacheKey{"UL_3", true}]; e != nil {
 		t.Errorf("repoCache[UL_3, true] should not exist; focused list is UL_1")
 	}
 }

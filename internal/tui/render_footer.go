@@ -19,7 +19,7 @@ func (m model) renderFooter() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusExpiry) {
 		return styleSuccess.Render(m.statusMsg)
 	}
-	if m.searchActive {
+	if m.listSearchActive || m.repoSearchActive {
 		return joinHints([]string{
 			renderHint("/", "search"),
 			renderHint("esc", "clear"),

@@ -45,7 +45,9 @@ func TestLoadingViewUsesSpinnerView(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.focusedList = &m.lists[0]
 	// Mark the focused list's cache entry as loading to simulate repo fetch in flight.
-	m.repoCache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{state: repoCacheLoading}
+	m.preloader.cache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{
+		state: repoCacheLoading,
+	}
 
 	spinnerStr := m.spinner.View()
 	rendered := repoPane(m, 80, 20)

@@ -9,28 +9,42 @@ import (
 )
 
 func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	activeList := m.active == paneList
 	switch {
 	case key.Matches(msg, keys.Back):
-		m.searchActive = false
-		m.searchQuery = ""
-		m = m.rebuildDisplayed()
-		m.listCursor = 0
-		m.repoCursor = 0
+		if activeList {
+			m.listSearchActive = false
+			m.listSearchQuery = ""
+			m.listCursor = 0
+			m.listOffset = 0
+		} else {
+			m.repoSearchActive = false
+			m.repoSearchQuery = ""
+			m.repoCursor = 0
+			m.repoOffset = 0
+		}
 		m.previewOffset = 0
-		m.listOffset = 0
-		m.repoOffset = 0
+		m = m.rebuildDisplayed()
 		return m, nil
 	case key.Matches(msg, keys.Enter):
-		m.searchActive = false
+		if activeList {
+			m.listSearchActive = false
+		} else {
+			m.repoSearchActive = false
+		}
 		return m, nil
 	case msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete:
-		m.searchQuery = dropLastRune(m.searchQuery)
-		m = m.rebuildDisplayed()
-		m.listCursor = 0
-		m.repoCursor = 0
+		if activeList {
+			m.listSearchQuery = dropLastRune(m.listSearchQuery)
+			m.listCursor = 0
+			m.listOffset = 0
+		} else {
+			m.repoSearchQuery = dropLastRune(m.repoSearchQuery)
+			m.repoCursor = 0
+			m.repoOffset = 0
+		}
 		m.previewOffset = 0
-		m.listOffset = 0
-		m.repoOffset = 0
+		m = m.rebuildDisplayed()
 		return m, nil
 	}
 	// Pass navigation keys to handleKey so arrows/PgDn still work.
@@ -40,25 +54,32 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	if msg.Text != "" {
-		m.searchQuery += msg.Text
-		m = m.rebuildDisplayed()
-		m.listCursor = 0
-		m.repoCursor = 0
+		if activeList {
+			m.listSearchQuery += msg.Text
+			m.listCursor = 0
+			m.listOffset = 0
+		} else {
+			m.repoSearchQuery += msg.Text
+			m.repoCursor = 0
+			m.repoOffset = 0
+		}
 		m.previewOffset = 0
-		m.listOffset = 0
-		m.repoOffset = 0
+		m = m.rebuildDisplayed()
 	}
 	return m, nil
 }
 
 func (m model) rebuildDisplayed() model {
 	repos := m.currentRepos()
-	if m.searchQuery == "" {
+	if m.listSearchQuery == "" {
 		m.displayedLists = m.lists
+	} else {
+		m.displayedLists = search.FilterStarLists(m.lists, m.listSearchQuery)
+	}
+	if m.repoSearchQuery == "" {
 		m.displayedRepos = repos
 	} else {
-		m.displayedLists = search.FilterStarLists(m.lists, m.searchQuery)
-		m.displayedRepos = search.FilterRepositories(repos, m.searchQuery)
+		m.displayedRepos = search.FilterRepositories(repos, m.repoSearchQuery)
 	}
 	return m
 }

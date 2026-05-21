@@ -13,7 +13,7 @@ func (m *model) ensureRepoWidths() {
 	if m.focusedList != nil {
 		sig = m.focusedList.ID
 	}
-	sig += fmt.Sprintf("|%d|%s|%d", m.sortRepos, m.searchQuery, len(m.displayedRepos))
+	sig += fmt.Sprintf("|%d|%s|%d", m.sortRepos, m.repoSearchQuery, len(m.displayedRepos))
 	if sig == m.cachedRepoSig {
 		return // cache hit
 	}
@@ -31,8 +31,8 @@ func (m model) renderRepoPane(w, h int) string {
 	out := make([]string, 0, totalH)
 
 	// Search bar (active search in repo pane).
-	if m.searchActive && m.active == paneRepo {
-		qDisplay := m.searchQuery
+	if m.repoSearchActive && m.active == paneRepo {
+		qDisplay := m.repoSearchQuery
 		prefix := styleSuccess.Render("/") + " "
 		prefixW := 2 // "/" + space
 		if lipgloss.Width(prefix)+lipgloss.Width(qDisplay) > w {
@@ -61,7 +61,7 @@ func (m model) renderRepoPane(w, h int) string {
 
 	// Loading/error state: check focused list's cache entry.
 	if m.focusedList != nil {
-		entry := m.repoCache[repoCacheKey{m.focusedList.ID, m.showPreview}]
+		entry := m.preloader.cache[repoCacheKey{m.focusedList.ID, m.showPreview}]
 		if entry != nil && entry.state == repoCacheError {
 			errStr := entry.err.Error()
 			const maxErrW = 60
@@ -86,8 +86,8 @@ func (m model) renderRepoPane(w, h int) string {
 	// Empty state.
 	if len(m.displayedRepos) == 0 {
 		label := "(no repos)"
-		if m.searchQuery != "" {
-			q := m.searchQuery
+		if m.repoSearchQuery != "" {
+			q := m.repoSearchQuery
 			if utf8.RuneCountInString(q) > 20 {
 				q = string([]rune(q)[:20]) + "..."
 			}

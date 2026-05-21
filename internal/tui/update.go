@@ -34,29 +34,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = nil
 			// Build the preload queue from the sorted displayed list IDs.
 			// Put the focused list first (it gets the first slot).
-			m.preloadQueue = make([]string, 0, len(m.displayedLists))
-			m.preloadQueue = append(m.preloadQueue, m.focusedList.ID)
+			m.preloader.queue = make([]string, 0, len(m.displayedLists))
+			m.preloader.queue = append(m.preloader.queue, m.focusedList.ID)
 			for _, l := range m.displayedLists {
 				if l.ID != m.focusedList.ID {
-					m.preloadQueue = append(m.preloadQueue, l.ID)
+					m.preloader.queue = append(m.preloader.queue, l.ID)
 				}
 			}
-			m.preloadInFlight = 0
-			preloadCmd := (&m).schedulePreload()
+			m.preloader.inFlight = 0
+			preloadCmd := m.preloader.schedulePreload(m.ctx, m.svc)
 			return m, preloadCmd
 		}
 		return m, nil
 
 	case reposLoadedMsg:
-		if msg.gen != m.generation {
+		if msg.gen != m.preloader.generation {
 			return m, nil // stale: drop
 		}
 		key := repoCacheKey{msg.listID, msg.withTopics}
+		// Cancelled loads have their cache entry removed, so this response is stale.
+		if e, ok := m.preloader.cache[key]; !ok || e.state != repoCacheLoading {
+			return m, nil
+		}
+		delete(m.preloader.preloadCancels, msg.listID)
 		if msg.err != nil {
-			m.repoCache[key] = &repoCacheEntry{state: repoCacheError, err: msg.err, gen: msg.gen}
+			m.preloader.cache[key] = &repoCacheEntry{
+				state: repoCacheError,
+				err:   msg.err,
+				gen:   msg.gen,
+			}
 		} else {
 			entry := &repoCacheEntry{state: repoCacheLoaded, repos: msg.repos, gen: msg.gen}
-			m.repoCache[key] = entry
+			m.preloader.cache[key] = entry
 			// Update displayed slice only if this is the focused list and matches current withTopics.
 			if m.focusedList != nil && msg.listID == m.focusedList.ID &&
 				msg.withTopics == m.showPreview {
@@ -64,7 +73,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				copy(sorted, entry.repos)
 				sortRepos(sorted, m.sortRepos)
 				m.displayedRepos = sorted
-				if m.searchActive && m.searchQuery != "" {
+				if m.repoSearchActive && m.repoSearchQuery != "" {
 					m = m.rebuildDisplayed()
 				}
 				if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
@@ -96,18 +105,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Only count non-topics loads toward the preloader inflight cap.
 		if !msg.withTopics {
-			if m.preloadInFlight > 0 {
-				m.preloadInFlight--
+			if m.preloader.inFlight > 0 {
+				m.preloader.inFlight--
 			}
 		}
-		return m, (&m).schedulePreload()
+		return m, m.preloader.schedulePreload(m.ctx, m.svc)
 
 	case errMsg:
 		m.err = msg.err
 		m.listsLoading = false
-		for k, e := range m.repoCache {
+		for k, e := range m.preloader.cache {
 			if e.state == repoCacheLoading {
-				m.repoCache[k] = &repoCacheEntry{state: repoCacheError, err: msg.err, gen: e.gen}
+				m.preloader.cache[k] = &repoCacheEntry{
+					state: repoCacheError,
+					err:   msg.err,
+					gen:   e.gen,
+				}
 			}
 		}
 		return m, nil
@@ -129,16 +142,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
 		// Invalidate repo cache for focused list.
 		if m.focusedList != nil {
-			delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
-			delete(m.repoCache, repoCacheKey{m.focusedList.ID, true})
+			delete(m.preloader.cache, repoCacheKey{m.focusedList.ID, false})
+			delete(m.preloader.cache, repoCacheKey{m.focusedList.ID, true})
 		}
 		// For repo-pane mutations, trigger re-fetch of the focused list.
 		if m.active == paneRepo && m.focusedList != nil {
 			key := repoCacheKey{m.focusedList.ID, m.showPreview}
-			m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
+			m.preloader.cache[key] = &repoCacheEntry{
+				state: repoCacheLoading,
+				gen:   m.preloader.generation,
+			}
 			cmds = append(
 				cmds,
-				loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.generation),
+				loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.preloader.generation),
 			)
 		}
 		return m, tea.Batch(cmds...)
@@ -197,15 +213,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, loadListsCmd(m.ctx, m.svc))
 		// Invalidate repo cache for focused list.
 		if m.focusedList != nil {
-			delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
-			delete(m.repoCache, repoCacheKey{m.focusedList.ID, true})
+			delete(m.preloader.cache, repoCacheKey{m.focusedList.ID, false})
+			delete(m.preloader.cache, repoCacheKey{m.focusedList.ID, true})
 		}
 		if m.active == paneRepo && m.focusedList != nil {
 			key := repoCacheKey{m.focusedList.ID, m.showPreview}
-			m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
+			m.preloader.cache[key] = &repoCacheEntry{
+				state: repoCacheLoading,
+				gen:   m.preloader.generation,
+			}
 			cmds = append(
 				cmds,
-				loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.generation),
+				loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.preloader.generation),
 			)
 		}
 		return m, tea.Batch(cmds...)
@@ -215,7 +234,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseWheelMsg:
-		if m.modal != nil || m.searchActive {
+		if m.modal != nil || m.listSearchActive || m.repoSearchActive {
 			return m, nil
 		}
 		var delta int
@@ -252,7 +271,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseClickMsg:
-		if m.modal != nil || m.searchActive {
+		if m.modal != nil || m.listSearchActive || m.repoSearchActive {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -281,7 +300,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modal = updated
 			return m, cmd
 		}
-		if m.searchActive {
+		if m.listSearchActive || m.repoSearchActive {
 			return m.handleSearchKey(msg)
 		}
 		return m.handleKey(msg)
@@ -294,10 +313,7 @@ func (m model) handleRefresh() (tea.Model, tea.Cmd) {
 	if inv, ok := m.svc.(invalidatable); ok {
 		inv.Invalidate()
 	}
-	m.generation++
-	m.repoCache = make(map[repoCacheKey]*repoCacheEntry)
-	m.preloadQueue = nil
-	m.preloadInFlight = 0
+	m.preloader.clear()
 	m.listsLoading = true
 	m.err = nil
 	m.lists = nil

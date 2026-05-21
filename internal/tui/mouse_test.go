@@ -144,8 +144,8 @@ func TestDoubleClickDispatchesLoadCmd(t *testing.T) {
 
 	// Pre-populate cache so the first click does not start a load.
 	if m.focusedList != nil {
-		m.repoCache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{
-			state: repoCacheLoaded, repos: svc.repos, gen: m.generation,
+		m.preloader.cache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{
+			state: repoCacheLoaded, repos: svc.repos, gen: m.preloader.generation,
 		}
 	}
 
@@ -156,10 +156,10 @@ func TestDoubleClickDispatchesLoadCmd(t *testing.T) {
 	// Set tracker time and delete cache so double-click starts a fresh load.
 	m2.lastClickTime = time.Now()
 	if m2.focusedList != nil {
-		delete(m2.repoCache, repoCacheKey{m2.focusedList.ID, false})
+		delete(m2.preloader.cache, repoCacheKey{m2.focusedList.ID, false})
 	}
-	m2.preloadInFlight = 0
-	m2.preloadQueue = nil
+	m2.preloader.inFlight = 0
+	m2.preloader.queue = nil
 
 	// Second click -- use m.Update directly to capture cmd.
 	next, cmd := m2.Update(click)
@@ -219,10 +219,10 @@ func TestSingleClickFocusedUncachedTriggersLoad(t *testing.T) {
 
 	// Clear the focused list's cache entry to simulate idle state.
 	if m.focusedList != nil {
-		delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
+		delete(m.preloader.cache, repoCacheKey{m.focusedList.ID, false})
 	}
-	m.preloadInFlight = 0
-	m.preloadQueue = nil
+	m.preloader.inFlight = 0
+	m.preloader.queue = nil
 	m.active = paneList
 	m.listCursor = 0
 	m.width = 120
@@ -247,7 +247,7 @@ func TestSingleClickFocusedUncachedTriggersLoad(t *testing.T) {
 	if m2.focusedList == nil {
 		t.Fatal("focusedList is nil")
 	}
-	entry := m2.repoCache[repoCacheKey{m2.focusedList.ID, false}]
+	entry := m2.preloader.cache[repoCacheKey{m2.focusedList.ID, false}]
 	if entry == nil || entry.state != repoCacheLoading {
 		var state repoCacheState = -1
 		if entry != nil {

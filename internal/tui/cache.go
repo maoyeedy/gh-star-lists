@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
@@ -26,25 +28,80 @@ type repoCacheEntry struct {
 	gen   uint64
 }
 
-func (m *model) schedulePreload() tea.Cmd {
+// preloader manages the async repo cache and preload queue.
+type preloader struct {
+	cache          map[repoCacheKey]*repoCacheEntry
+	generation     uint64
+	queue          []string
+	inFlight       int
+	preloadCancels map[string]context.CancelFunc
+}
+
+func newPreloader() *preloader {
+	return &preloader{
+		cache: make(map[repoCacheKey]*repoCacheEntry),
+	}
+}
+
+func (p *preloader) schedulePreload(ctx context.Context, svc githubapi.Service) tea.Cmd {
 	const maxInFlight = 3
 	var cmds []tea.Cmd
-	for m.preloadInFlight < maxInFlight && len(m.preloadQueue) > 0 {
-		listID := m.preloadQueue[0]
-		m.preloadQueue = m.preloadQueue[1:]
+	for p.inFlight < maxInFlight && len(p.queue) > 0 {
+		listID := p.queue[0]
+		p.queue = p.queue[1:]
 		key := repoCacheKey{listID, false}
-		if e := m.repoCache[key]; e != nil && e.state != repoCacheIdle {
-			continue // already loading or loaded: skip
+		if e := p.cache[key]; e != nil && e.state != repoCacheIdle {
+			continue
 		}
-		m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
-		m.preloadInFlight++
-		capturedID := listID // capture for closure
-		cmds = append(cmds, loadReposCmd(m.ctx, m.svc, capturedID, false, m.generation))
+		loadCtx, cancel := context.WithCancel(ctx)
+		if p.preloadCancels == nil {
+			p.preloadCancels = make(map[string]context.CancelFunc)
+		}
+		p.preloadCancels[listID] = cancel
+		p.cache[key] = &repoCacheEntry{state: repoCacheLoading, gen: p.generation}
+		p.inFlight++
+		capturedID := listID
+		cmds = append(cmds, loadReposCmd(loadCtx, svc, capturedID, false, p.generation))
 	}
 	if len(cmds) == 0 {
 		return nil
 	}
 	return tea.Batch(cmds...)
+}
+
+// enqueueFront inserts listID at the front of the queue, removing any duplicate.
+func (p *preloader) enqueueFront(listID string) {
+	newQueue := make([]string, 0, len(p.queue)+1)
+	newQueue = append(newQueue, listID)
+	for _, id := range p.queue {
+		if id != listID {
+			newQueue = append(newQueue, id)
+		}
+	}
+	p.queue = newQueue
+}
+
+// clear resets the cache, bumps generation, drains the queue, and cancels any
+// in-flight preload requests.
+func (p *preloader) clear() {
+	p.generation++
+	p.cache = make(map[repoCacheKey]*repoCacheEntry)
+	for _, cancel := range p.preloadCancels {
+		cancel()
+	}
+	p.preloadCancels = nil
+	p.queue = nil
+	p.inFlight = 0
+}
+
+// anyPendingInCache reports whether any repo cache entry is loading.
+func (p *preloader) anyPendingInCache() bool {
+	for _, e := range p.cache {
+		if e.state == repoCacheLoading {
+			return true
+		}
+	}
+	return false
 }
 
 // focusList sets the list cursor to idx, resolves focusedList, and updates the
@@ -64,7 +121,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 		}
 	}
 	key := repoCacheKey{list.ID, false}
-	e := m.repoCache[key]
+	e := m.preloader.cache[key]
 	switch {
 	case e != nil && e.state == repoCacheLoaded:
 		// Populate display slice immediately from cache.
@@ -72,7 +129,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 		copy(sorted, e.repos)
 		sortRepos(sorted, m.sortRepos)
 		m.displayedRepos = sorted
-		if m.searchActive && m.searchQuery != "" {
+		if m.repoSearchActive && m.repoSearchQuery != "" {
 			*m = m.rebuildDisplayed()
 		}
 		m.repoCursor = 0
@@ -85,17 +142,20 @@ func (m *model) focusList(idx int) tea.Cmd {
 		m.displayedRepos = nil
 		return nil
 	default: // repoCacheIdle or absent: promote and start
-		// Remove from queue if present, prepend.
-		newQueue := make([]string, 0, len(m.preloadQueue)+1)
-		newQueue = append(newQueue, list.ID)
-		for _, id := range m.preloadQueue {
+		// Cancel in-flight loads for non-focused lists to free concurrency slots.
+		for id, cancel := range m.preloader.preloadCancels {
 			if id != list.ID {
-				newQueue = append(newQueue, id)
+				cancel()
+				delete(m.preloader.preloadCancels, id)
+				if m.preloader.inFlight > 0 {
+					m.preloader.inFlight--
+				}
+				delete(m.preloader.cache, repoCacheKey{id, false})
 			}
 		}
-		m.preloadQueue = newQueue
+		m.preloader.enqueueFront(list.ID)
 		m.displayedRepos = nil
-		return m.schedulePreload()
+		return m.preloader.schedulePreload(m.ctx, m.svc)
 	}
 }
 
@@ -112,7 +172,7 @@ func (m model) currentRepos() []githubapi.Repository {
 	if m.focusedList == nil {
 		return nil
 	}
-	e := m.repoCache[repoCacheKey{m.focusedList.ID, m.showPreview}]
+	e := m.preloader.cache[repoCacheKey{m.focusedList.ID, m.showPreview}]
 	if e == nil || e.state != repoCacheLoaded {
 		return nil
 	}
@@ -124,12 +184,7 @@ func (m model) anyPending() bool {
 	if m.listsLoading || m.mutationPending {
 		return true
 	}
-	for _, e := range m.repoCache {
-		if e.state == repoCacheLoading {
-			return true
-		}
-	}
-	return false
+	return m.preloader.anyPendingInCache()
 }
 
 // invalidatable is satisfied by cacheService.

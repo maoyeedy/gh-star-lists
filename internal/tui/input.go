@@ -208,22 +208,30 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.showPreview && m.focusedList != nil {
 			// Only schedule a withTopics=true load for the focused list if not already loaded/loading.
 			topicsKey := repoCacheKey{m.focusedList.ID, true}
-			e := m.repoCache[topicsKey]
+			e := m.preloader.cache[topicsKey]
 			if e == nil || e.state == repoCacheIdle {
-				m.repoCache[topicsKey] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
-				return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, true, m.generation)
+				m.preloader.cache[topicsKey] = &repoCacheEntry{
+					state: repoCacheLoading,
+					gen:   m.preloader.generation,
+				}
+				return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, true, m.preloader.generation)
 			}
 		}
 		return m, nil
 
 	case key.Matches(msg, keys.Search):
-		m.searchActive = true
-		m.searchQuery = ""
-		m.listCursor = 0
-		m.repoCursor = 0
+		if m.active == paneList {
+			m.listSearchActive = true
+			m.listSearchQuery = ""
+			m.listCursor = 0
+			m.listOffset = 0
+		} else {
+			m.repoSearchActive = true
+			m.repoSearchQuery = ""
+			m.repoCursor = 0
+			m.repoOffset = 0
+		}
 		m.previewOffset = 0
-		m.listOffset = 0
-		m.repoOffset = 0
 		m = m.rebuildDisplayed()
 		return m, nil
 
@@ -294,7 +302,7 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 		m.lastClickTime = now
 		if m.focusedList != nil {
 			cacheKey := repoCacheKey{m.focusedList.ID, false}
-			e := m.repoCache[cacheKey]
+			e := m.preloader.cache[cacheKey]
 			if e == nil || e.state == repoCacheIdle {
 				cmd := (&m).focusList(idx)
 				return m, cmd
@@ -336,7 +344,7 @@ func (m model) activateRepoPane() (model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	key := repoCacheKey{m.displayedLists[m.listCursor].ID, m.showPreview}
-	e := m.repoCache[key]
+	e := m.preloader.cache[key]
 	if e == nil || e.state == repoCacheIdle {
 		// Not cached / idle: focusList triggers load. Its idle/default branch
 		// does NOT touch repoCursor/repoOffset.

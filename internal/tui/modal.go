@@ -22,6 +22,13 @@ const (
 	modalConfirmYesNo
 )
 
+type bulkFailureState struct {
+	verb       string
+	succeeded  int
+	failedNWOs []string
+	offset     int
+}
+
 type modal struct {
 	kind  modalKind
 	title string
@@ -45,13 +52,15 @@ type modal struct {
 	// mutation to run on confirm (set by constructor)
 	// Returns (nil, cmd) when triggered.
 	onConfirm func(mo *modal) tea.Cmd
+	bulkRetry func(failedNWOs []string) tea.Cmd
 
 	// submitting is true while a mutation command is in flight.
 	// Input events are discarded and the view shows a "submitting" indicator.
 	submitting bool
 	// submitErr holds the error message from the last failed mutation attempt.
 	// Cleared when submitting starts; displayed in the view when not submitting.
-	submitErr string
+	submitErr   string
+	bulkFailure *bulkFailureState
 
 	// context for cancel-without-side-effect
 	ctx context.Context
@@ -297,7 +306,11 @@ func newBulkAddModal(
 		if len(m.choices) == 0 {
 			return nil
 		}
-		return bulkAddReposCmd(ctx, svc, nwos, m.choices[m.choiceCursor].ID)
+		targetID := m.choices[m.choiceCursor].ID
+		m.bulkRetry = func(failedNWOs []string) tea.Cmd {
+			return bulkAddReposCmd(ctx, svc, failedNWOs, targetID)
+		}
+		return bulkAddReposCmd(ctx, svc, nwos, targetID)
 	}
 	return mo
 }
@@ -316,6 +329,9 @@ func newBulkRemoveModal(
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
 		return bulkRemoveReposCmd(ctx, svc, nwos, fromListID)
+	}
+	mo.bulkRetry = func(failedNWOs []string) tea.Cmd {
+		return bulkRemoveReposCmd(ctx, svc, failedNWOs, fromListID)
 	}
 	return mo
 }
@@ -344,7 +360,11 @@ func newBulkMoveModal(
 		if len(m.choices) == 0 {
 			return nil
 		}
-		return bulkMoveReposCmd(ctx, svc, nwos, fromListID, m.choices[m.choiceCursor].ID)
+		targetID := m.choices[m.choiceCursor].ID
+		m.bulkRetry = func(failedNWOs []string) tea.Cmd {
+			return bulkMoveReposCmd(ctx, svc, failedNWOs, fromListID, targetID)
+		}
+		return bulkMoveReposCmd(ctx, svc, nwos, fromListID, targetID)
 	}
 	return mo
 }
@@ -380,6 +400,9 @@ func (mo *modal) update(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 	if mo.submitting {
 		return mo, nil
 	}
+	if mo.bulkFailure != nil {
+		return mo.updateBulkFailure(msg)
+	}
 	switch mo.kind {
 	case modalCreateList, modalEditList:
 		return mo.updateForm(msg)
@@ -395,6 +418,39 @@ func (mo *modal) update(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 		}
 		return mo, nil
 	}
+}
+
+func (mo *modal) updateBulkFailure(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return nil, nil
+	case "enter", "r", "R":
+		if mo.bulkRetry == nil || len(mo.bulkFailure.failedNWOs) == 0 {
+			return mo, nil
+		}
+		failedNWOs := append([]string(nil), mo.bulkFailure.failedNWOs...)
+		cmd := mo.bulkRetry(failedNWOs)
+		if cmd == nil {
+			return mo, nil
+		}
+		mo.bulkFailure = nil
+		return nil, cmd
+	case "up", "k":
+		if mo.bulkFailure.offset > 0 {
+			mo.bulkFailure.offset--
+		}
+		return mo, nil
+	case "down", "j":
+		maxOffset := len(mo.bulkFailure.failedNWOs) - bulkFailureMaxVisible
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		if mo.bulkFailure.offset < maxOffset {
+			mo.bulkFailure.offset++
+		}
+		return mo, nil
+	}
+	return mo, nil
 }
 
 func (mo *modal) updateForm(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
@@ -517,28 +573,36 @@ func (mo *modal) view() string {
 	var body string
 	var hint string
 
-	switch mo.kind {
-	case modalCreateList, modalEditList:
-		body = mo.viewForm()
-		hint = styleFaint.Render("tab: next field  esc: cancel")
-	case modalDeleteList:
-		body = mo.viewConfirmText("Type the list name to confirm deletion:")
-		hint = styleFaint.Render("enter: confirm  esc: cancel")
-	case modalConfirmText:
-		body = mo.viewConfirmText("Type the repo name to confirm:")
-		hint = styleFaint.Render("enter: confirm  esc: cancel")
-	case modalPickList:
-		body = mo.viewPickList()
-		hint = styleFaint.Render("j/k: move  enter: select  esc: cancel")
-	case modalConfirmYesNo:
-		body = mo.viewConfirmYesNo()
-		hint = styleFaint.Render("y: confirm  n/esc: cancel")
-	default:
-		body = mo.body
-		if body == "" {
-			body = "not wired yet"
+	if mo.bulkFailure != nil && !mo.submitting {
+		body = mo.viewBulkFailure()
+		hint = styleFaint.Render("enter/r: retry failed  esc: close")
+		if len(mo.bulkFailure.failedNWOs) > bulkFailureMaxVisible {
+			hint = styleFaint.Render("j/k: scroll  enter/r: retry failed  esc: close")
 		}
-		hint = styleFaint.Render("esc: cancel")
+	} else {
+		switch mo.kind {
+		case modalCreateList, modalEditList:
+			body = mo.viewForm()
+			hint = styleFaint.Render("tab: next field  esc: cancel")
+		case modalDeleteList:
+			body = mo.viewConfirmText("Type the list name to confirm deletion:")
+			hint = styleFaint.Render("enter: confirm  esc: cancel")
+		case modalConfirmText:
+			body = mo.viewConfirmText("Type the repo name to confirm:")
+			hint = styleFaint.Render("enter: confirm  esc: cancel")
+		case modalPickList:
+			body = mo.viewPickList()
+			hint = styleFaint.Render("j/k: move  enter: select  esc: cancel")
+		case modalConfirmYesNo:
+			body = mo.viewConfirmYesNo()
+			hint = styleFaint.Render("y: confirm  n/esc: cancel")
+		default:
+			body = mo.body
+			if body == "" {
+				body = "not wired yet"
+			}
+			hint = styleFaint.Render("esc: cancel")
+		}
 	}
 
 	result := title + "\n\n" + body
@@ -611,6 +675,51 @@ func (mo *modal) viewPickList() string {
 		} else {
 			lines = append(lines, prefix+mo.choices[i].Name)
 		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+const bulkFailureMaxVisible = 8
+
+func (mo *modal) viewBulkFailure() string {
+	if mo.bulkFailure == nil {
+		return ""
+	}
+	failure := mo.bulkFailure
+	if failure.offset < 0 {
+		failure.offset = 0
+	}
+	maxOffset := len(failure.failedNWOs) - bulkFailureMaxVisible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if failure.offset > maxOffset {
+		failure.offset = maxOffset
+	}
+
+	header := fmt.Sprintf(
+		"%d %s, %d failed.",
+		failure.succeeded,
+		failure.verb,
+		len(failure.failedNWOs),
+	)
+	if failure.succeeded == 0 {
+		header = fmt.Sprintf("%d failed.", len(failure.failedNWOs))
+	}
+	lines := []string{styleError.Render(header), styleFaint.Render("Failed repositories:")}
+	start := failure.offset
+	end := start + bulkFailureMaxVisible
+	if end > len(failure.failedNWOs) {
+		end = len(failure.failedNWOs)
+	}
+	for _, nwo := range failure.failedNWOs[start:end] {
+		lines = append(lines, "  "+nwo)
+	}
+	if start > 0 {
+		lines = append(lines, styleFaint.Render(fmt.Sprintf("  ... %d above", start)))
+	}
+	if remaining := len(failure.failedNWOs) - end; remaining > 0 {
+		lines = append(lines, styleFaint.Render(fmt.Sprintf("  ... %d more", remaining)))
 	}
 	return strings.Join(lines, "\n")
 }

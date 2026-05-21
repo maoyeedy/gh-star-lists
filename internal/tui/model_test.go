@@ -1956,6 +1956,151 @@ func TestBulkDoneMsgPartialFailureToast(t *testing.T) {
 	}
 }
 
+// TestBulkDoneMsgPartialFailureKeepsModalOpen verifies that partial bulk failures
+// stay in the modal and list failed repositories.
+func TestBulkDoneMsgPartialFailureKeepsModalOpen(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.modal = newBulkRemoveModal(
+		m.ctx,
+		m.svc,
+		[]string{"owner/a-repo", "owner/b-repo"},
+		m.focusedList.ID,
+	)
+	m.modal.submitting = true
+	m.selected = map[string]struct{}{
+		"owner/a-repo": {},
+		"owner/b-repo": {},
+	}
+
+	m2 := update(m, bulkDoneMsg{
+		verb:       "removed",
+		succeeded:  1,
+		failed:     1,
+		failedNWOs: []string{"owner/b-repo"},
+	})
+
+	if m2.modal == nil {
+		t.Fatal("modal should remain open after partial bulk failure")
+	}
+	if m2.modal.submitting {
+		t.Error("modal.submitting should be false after partial bulk failure")
+	}
+	if m2.modal.bulkFailure == nil {
+		t.Fatal("modal.bulkFailure should be set after partial bulk failure")
+	}
+	if got := m2.modal.bulkFailure.failedNWOs; len(got) != 1 || got[0] != "owner/b-repo" {
+		t.Fatalf("failedNWOs = %v, want [owner/b-repo]", got)
+	}
+	if len(m2.selected) != 0 {
+		t.Errorf("selected should be cleared after bulkDoneMsg, got %d", len(m2.selected))
+	}
+	rendered := m2.modal.view()
+	if !strings.Contains(rendered, "owner/b-repo") {
+		t.Errorf("modal view = %q, want failed repo name", rendered)
+	}
+	if !strings.Contains(rendered, "retry") {
+		t.Errorf("modal view = %q, want retry hint", rendered)
+	}
+}
+
+// TestBulkFailureRetryUsesFailedNWOsOnly verifies retry replays only failed repos.
+func TestBulkFailureRetryUsesFailedNWOsOnly(t *testing.T) {
+	t.Parallel()
+	svc := &repoMutationFakeService{}
+	svc.membershipsResult.repoID = "R_1"
+	svc.membershipsResult.listIDs = []string{"UL_1"}
+	m := newTestModel(svc)
+	m.modal = newBulkRemoveModal(
+		m.ctx,
+		m.svc,
+		[]string{"owner/a-repo", "owner/b-repo", "owner/c-repo"},
+		"UL_1",
+	)
+	m.modal.submitting = true
+
+	m = update(m, bulkDoneMsg{
+		verb:       "removed",
+		succeeded:  1,
+		failed:     2,
+		failedNWOs: []string{"owner/b-repo", "owner/c-repo"},
+	})
+	if m.modal == nil || m.modal.bulkFailure == nil {
+		t.Fatal("modal should show bulk failure before retry")
+	}
+
+	next, cmd := m.Update(keyPress('r'))
+	m2 := next.(model)
+	if cmd == nil {
+		t.Fatal("retry key should produce a command")
+	}
+	if m2.modal == nil || !m2.modal.submitting {
+		t.Fatal("modal should remain open and submitting during retry")
+	}
+	executeBatch(cmd)
+
+	want := []string{"owner/b-repo", "owner/c-repo"}
+	if len(svc.membershipsCalls) != len(want) {
+		t.Fatalf("membershipsCalls = %v, want %v", svc.membershipsCalls, want)
+	}
+	for i := range want {
+		if svc.membershipsCalls[i] != want[i] {
+			t.Errorf("membershipsCalls[%d] = %q, want %q", i, svc.membershipsCalls[i], want[i])
+		}
+	}
+}
+
+// TestBulkFailureListScrolls verifies long failed-repo lists can scroll.
+func TestBulkFailureListScrolls(t *testing.T) {
+	t.Parallel()
+	failed := []string{
+		"owner/repo-01",
+		"owner/repo-02",
+		"owner/repo-03",
+		"owner/repo-04",
+		"owner/repo-05",
+		"owner/repo-06",
+		"owner/repo-07",
+		"owner/repo-08",
+		"owner/repo-09",
+	}
+	mo := &modal{
+		kind: modalConfirmYesNo,
+		bulkFailure: &bulkFailureState{
+			verb:       "removed",
+			succeeded:  1,
+			failedNWOs: failed,
+		},
+		bulkRetry: func([]string) tea.Cmd { return nil },
+	}
+
+	before := mo.view()
+	if !strings.Contains(before, "owner/repo-01") {
+		t.Fatalf("initial view = %q, want first failed repo", before)
+	}
+	if strings.Contains(before, "owner/repo-09") {
+		t.Fatalf("initial view = %q, should clip final failed repo", before)
+	}
+
+	updated, cmd := mo.update(keyPress('j'))
+	if cmd != nil {
+		t.Fatal("scrolling failure list should not produce a command")
+	}
+	mo = updated
+
+	after := mo.view()
+	if !strings.Contains(after, "owner/repo-09") {
+		t.Errorf("scrolled view = %q, want final failed repo", after)
+	}
+	if !strings.Contains(after, "above") {
+		t.Errorf("scrolled view = %q, want above indicator", after)
+	}
+}
+
 // TestBulkAddModalOpenedWithSelection verifies 'a' opens bulk modal when repos selected.
 func TestBulkAddModalOpenedWithSelection(t *testing.T) {
 	t.Parallel()

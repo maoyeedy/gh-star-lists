@@ -116,8 +116,7 @@ type model struct {
 	displayedLists []githubapi.StarList
 	displayedRepos []githubapi.Repository
 
-	selected       map[string]struct{} // NameWithOwner of checked repos
-	bulkFailedNWOs []string
+	selected map[string]struct{} // NameWithOwner of checked repos
 
 	// Double-click tracking for list-pane rows.
 	lastClickPane  int
@@ -395,16 +394,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bulkDoneMsg:
 		m.mutationPending = false
 		m.selected = nil
-		if msg.failed > 0 && msg.succeeded == 0 {
-			// Full failure: keep modal open with error.
-			if m.modal != nil {
-				m.modal.submitting = false
-				m.modal.submitErr = fmt.Sprintf("%d repos failed to %s", msg.failed, msg.verb)
+		switch {
+		case msg.failed > 0 && m.modal != nil:
+			m.statusMsg = ""
+			m.modal.submitting = false
+			m.modal.submitErr = ""
+			m.modal.bulkFailure = &bulkFailureState{
+				verb:       msg.verb,
+				succeeded:  msg.succeeded,
+				failedNWOs: append([]string(nil), msg.failedNWOs...),
 			}
-			return m, nil
-		}
-		m.modal = nil
-		if msg.failed > 0 {
+			if msg.succeeded == 0 {
+				return m, nil
+			}
+		case msg.failed > 0:
+			m.modal = nil
 			names := msg.failedNWOs
 			var failDetail string
 			switch {
@@ -428,17 +432,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg.failed,
 				failDetail,
 			)
-		} else {
+		default:
+			m.modal = nil
 			m.statusMsg = fmt.Sprintf("%d repos %s.", msg.succeeded, msg.verb)
 		}
-		m.statusExpiry = time.Now().Add(2 * time.Second)
-		if msg.failed > 0 {
-			m.bulkFailedNWOs = msg.failedNWOs
-		} else {
-			m.bulkFailedNWOs = nil
+		var cmds []tea.Cmd
+		if m.statusMsg != "" {
+			m.statusExpiry = time.Now().Add(2 * time.Second)
+			cmds = append(cmds, statusClearCmd(m.statusExpiry))
 		}
 		m.listsLoading = true
-		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
+		cmds = append(cmds, loadListsCmd(m.ctx, m.svc))
 		// Invalidate repo cache for focused list.
 		if m.focusedList != nil {
 			delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
@@ -518,6 +522,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Modal signalled submit: keep it open in submitting state.
 				m.modal.submitting = true
 				m.modal.submitErr = ""
+				m.modal.bulkFailure = nil
 				m.mutationPending = true
 				return m, tea.Batch(cmd, m.spinner.Tick)
 			}

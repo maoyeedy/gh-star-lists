@@ -211,6 +211,7 @@ func RunWithOptions(
 	if parsed.CacheTTL != nil {
 		cacheTTL = *parsed.CacheTTL
 	}
+	originalService := service
 	if cacheTTL > 0 {
 		service = githubapi.NewCacheServiceWithOptions(
 			service,
@@ -282,7 +283,8 @@ func RunWithOptions(
 			_ = browser.New("", io.Discard, io.Discard).Browse(url)
 			return nil
 		}
-		if err := runTUI(ctx, service, tui.Options{
+		tuiSvc := wrapServiceForTUI(service, originalService, cacheTTL, parsed.Host)
+		if err := runTUI(ctx, tuiSvc, tui.Options{
 			NoColor:     parsed.NoColor,
 			Mouse:       parsed.Mouse,
 			Stderr:      stderr,
@@ -298,7 +300,8 @@ func RunWithOptions(
 				_ = browser.New("", io.Discard, io.Discard).Browse(url)
 				return nil
 			}
-			if err := runTUI(ctx, service, tui.Options{
+			tuiSvc := wrapServiceForTUI(service, originalService, cacheTTL, parsed.Host)
+			if err := runTUI(ctx, tuiSvc, tui.Options{
 				NoColor:     parsed.NoColor,
 				Mouse:       parsed.Mouse,
 				Stderr:      stderr,
@@ -1655,6 +1658,60 @@ func firstOptions(options []format.Options) format.Options {
 		return format.Options{}
 	}
 	return options[0]
+}
+
+// combinedInvalidator wraps a Service chain (in-memory cache over disk cache)
+// so that Invalidate() clears both in-memory and disk cache entries.
+type combinedInvalidator struct {
+	githubapi.Service
+	invalidateDisk func()
+}
+
+func (c *combinedInvalidator) Invalidate() {
+	if inv, ok := c.Service.(interface{ Invalidate() }); ok {
+		inv.Invalidate()
+	}
+	if c.invalidateDisk != nil {
+		c.invalidateDisk()
+	}
+}
+
+func newCombinedInvalidator(
+	svc githubapi.Service,
+	diskSvc githubapi.Service,
+) githubapi.Service {
+	return &combinedInvalidator{
+		Service: svc,
+		invalidateDisk: func() {
+			if inv, ok := diskSvc.(interface{ Invalidate() }); ok {
+				inv.Invalidate()
+			}
+		},
+	}
+}
+
+// wrapServiceForTUI builds a TUI service chain: in-memory cache over disk cache,
+// wrapped with a combined invalidator that clears both layers on Invalidate().
+// When cacheTTL <= 0 it returns the input service unchanged.
+func wrapServiceForTUI(
+	svc githubapi.Service,
+	originalSvc githubapi.Service,
+	cacheTTL time.Duration,
+	host string,
+) githubapi.Service {
+	if cacheTTL <= 0 {
+		return svc
+	}
+	hostVal := host
+	if hostVal == "" {
+		hostVal = "default"
+	}
+	diskSvc := githubapi.NewDiskCacheService(originalSvc, githubapi.DiskCacheOptions{
+		TTL:  cacheTTL,
+		Host: hostVal,
+	})
+	memSvc := githubapi.NewCacheServiceWithOptions(diskSvc, githubapi.CacheOptions{TTL: cacheTTL})
+	return newCombinedInvalidator(memSvc, diskSvc)
 }
 
 func argsContainNoColor(args []string) bool {

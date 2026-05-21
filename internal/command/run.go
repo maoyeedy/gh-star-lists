@@ -263,11 +263,11 @@ func RunWithOptions(
 		stdout = f
 	}
 	switch parsed.Action {
-	case ActionBrowse:
+	case ActionTUI:
 		if !canPrompt() {
 			_ = writeDiagnostic(
 				stderr,
-				"error: browse requires a terminal; use 'gh star-lists --help' for non-interactive commands\n",
+				"error: tui requires a terminal; use 'gh star-lists --help' for non-interactive commands\n",
 			)
 			return ExitUsage
 		}
@@ -293,6 +293,22 @@ func RunWithOptions(
 		}
 		return ExitSuccess
 	case ActionList:
+		if canPrompt() && !parsed.hasOutputFlags() {
+			tuiBrowser := func(url string) error {
+				_ = browser.New("", io.Discard, io.Discard).Browse(url)
+				return nil
+			}
+			if err := runTUI(ctx, service, tui.Options{
+				NoColor:     parsed.NoColor,
+				Mouse:       parsed.Mouse,
+				Stderr:      stderr,
+				OpenBrowser: tuiBrowser,
+			}); err != nil {
+				_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%v\n", err)
+				return ExitFailure
+			}
+			return ExitSuccess
+		}
 		lists, err := service.ListStarLists(ctx, directListOptions(parsed, false))
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)

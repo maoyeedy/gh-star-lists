@@ -25,7 +25,7 @@ const (
 	ActionMerge  Action = "merge"
 	ActionUnstar Action = "unstar"
 	ActionHelp   Action = "help"
-	ActionBrowse Action = "browse"
+	ActionTUI    Action = "tui"
 )
 
 const (
@@ -50,11 +50,11 @@ const (
 )
 
 var commandAliases = map[string]string{
-	"ls":  "list",
-	"rm":  "remove",
-	"mv":  "move",
-	"cp":  "copy",
-	"tui": "browse",
+	"ls":     "list",
+	"rm":     "remove",
+	"mv":     "move",
+	"cp":     "copy",
+	"browse": "tui",
 }
 
 func canonicalCommand(token string) string {
@@ -63,7 +63,7 @@ func canonicalCommand(token string) string {
 	}
 	switch token {
 	case "list", "repos", "create", "edit", "delete",
-		"add", "remove", "move", "copy", "merge", "unstar", "browse":
+		"add", "remove", "move", "copy", "merge", "unstar", "tui":
 		return token
 	}
 	return ""
@@ -112,6 +112,28 @@ type Parsed struct {
 	Yes            bool
 	DryRun         bool
 	DeleteSource   bool
+}
+
+func (p Parsed) hasOutputFlags() bool {
+	if p.Mode != format.OutputHuman {
+		return true
+	}
+	if p.Template != "" || p.JQ != "" || p.OutputPath != "" {
+		return true
+	}
+	if p.Limit > 0 {
+		return true
+	}
+	if len(p.Filters) > 0 {
+		return true
+	}
+	if len(p.SortKeys) > 0 {
+		return true
+	}
+	if p.Search != "" {
+		return true
+	}
+	return false
 }
 
 type UsageError struct {
@@ -701,53 +723,53 @@ func Parse(argv []string) (Parsed, error) {
 				DryRun:   dryRunFlag,
 				Host:     hostValue,
 			}, nil
-		case "browse":
+		case "tui", "browse":
 			if len(positionals) > 1 {
 				return Parsed{}, usage(
-					"too many arguments for browse: %s",
+					"too many arguments for tui: %s",
 					strings.Join(positionals[1:], " "),
 				)
 			}
 			if jsonFlag || tsvFlag || plainFlag || fzfFlag {
 				return Parsed{}, usage(
-					"--json, --tsv, --plain, and --fzf are not supported for browse",
+					"--json, --tsv, --plain, and --fzf are not supported for tui",
 				)
 			}
 			if templateStr != "" {
-				return Parsed{}, usage("--template is not supported for browse")
+				return Parsed{}, usage("--template is not supported for tui")
 			}
 			if jqValue != "" {
-				return Parsed{}, usage("--jq is not supported for browse")
+				return Parsed{}, usage("--jq is not supported for tui")
 			}
 			if outputPath != "" {
-				return Parsed{}, usage("--output is not supported for browse")
+				return Parsed{}, usage("--output is not supported for tui")
 			}
 			if webFlag {
-				return Parsed{}, usage("--web is not supported for browse")
+				return Parsed{}, usage("--web is not supported for tui")
 			}
 			if unlistedFlag {
-				return Parsed{}, usage("--unlisted is not supported for browse")
+				return Parsed{}, usage("--unlisted is not supported for tui")
 			}
 			if allFlag {
-				return Parsed{}, usage("--all is not supported for browse")
+				return Parsed{}, usage("--all is not supported for tui")
 			}
 			if searchValue != "" {
-				return Parsed{}, usage("--search is not supported for browse")
+				return Parsed{}, usage("--search is not supported for tui")
 			}
 			if limit != 0 {
-				return Parsed{}, usage("--limit is not supported for browse")
+				return Parsed{}, usage("--limit is not supported for tui")
 			}
 			if len(filters) > 0 {
-				return Parsed{}, usage("--filter is not supported for browse")
+				return Parsed{}, usage("--filter is not supported for tui")
 			}
 			if len(sortKeys) > 0 {
-				return Parsed{}, usage("--sort is not supported for browse")
+				return Parsed{}, usage("--sort is not supported for tui")
 			}
 			if sortDesc {
-				return Parsed{}, usage("--desc is not supported for browse")
+				return Parsed{}, usage("--desc is not supported for tui")
 			}
 			return Parsed{
-				Action:   ActionBrowse,
+				Action:   ActionTUI,
 				Host:     hostValue,
 				NoColor:  noColorFlag,
 				Mouse:    mouseFlag,
@@ -771,7 +793,7 @@ func Parse(argv []string) (Parsed, error) {
 		return Parsed{}, usage("--search is only supported for repos")
 	}
 	if mouseFlag {
-		return Parsed{}, usage("--mouse is only supported for browse")
+		return Parsed{}, usage("--mouse is only supported for 'tui' subcommand")
 	}
 	if err := validateFilters(ActionList, filters); err != nil {
 		return Parsed{}, err

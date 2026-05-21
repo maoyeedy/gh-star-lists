@@ -2463,22 +2463,7 @@ func TestRunColorizesHumanDiagnostics(t *testing.T) {
 	}
 }
 
-func TestRunBrowseNonTTYReturnsUsageError(t *testing.T) {
-	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
-	defer command.CanPromptForTest(prevCanPrompt)
-
-	var stdout, stderr strings.Builder
-	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
-
-	if code != command.ExitUsage {
-		t.Fatalf("exit = %d, want ExitUsage on non-TTY", code)
-	}
-	if !strings.Contains(stderr.String(), "browse requires a terminal") {
-		t.Fatalf("stderr = %q, want TTY error message", stderr.String())
-	}
-}
-
-func TestRunBrowseTUIAliasNonTTYReturnsUsageError(t *testing.T) {
+func TestRunTUINonTTYReturnsUsageError(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
 	defer command.CanPromptForTest(prevCanPrompt)
 
@@ -2486,11 +2471,26 @@ func TestRunBrowseTUIAliasNonTTYReturnsUsageError(t *testing.T) {
 	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
 
 	if code != command.ExitUsage {
-		t.Fatalf("tui alias: exit = %d, want ExitUsage on non-TTY", code)
+		t.Fatalf("exit = %d, want ExitUsage on non-TTY", code)
+	}
+	if !strings.Contains(stderr.String(), "tui requires a terminal") {
+		t.Fatalf("stderr = %q, want TTY error message", stderr.String())
 	}
 }
 
-func TestRunBrowseTTYCallsRunTUI(t *testing.T) {
+func TestRunBrowseAliasNonTTYReturnsUsageError(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitUsage {
+		t.Fatalf("browse alias: exit = %d, want ExitUsage on non-TTY", code)
+	}
+}
+
+func TestRunTUITTYCallsRunTUI(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
 
@@ -2504,7 +2504,7 @@ func TestRunBrowseTTYCallsRunTUI(t *testing.T) {
 	defer command.RunTUIForTest(prevRunTUI)
 
 	var stdout, stderr strings.Builder
-	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
 
 	if code != command.ExitSuccess {
 		t.Fatalf("exit = %d, want ExitSuccess", code)
@@ -2514,7 +2514,7 @@ func TestRunBrowseTTYCallsRunTUI(t *testing.T) {
 	}
 }
 
-func TestRunBrowseTUIErrorReturnsFailure(t *testing.T) {
+func TestRunTUIErrorReturnsFailure(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
 
@@ -2526,19 +2526,19 @@ func TestRunBrowseTUIErrorReturnsFailure(t *testing.T) {
 	defer command.RunTUIForTest(prevRunTUI)
 
 	var stdout, stderr strings.Builder
-	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
 
 	if code != command.ExitFailure {
 		t.Fatalf("exit = %d, want ExitFailure when TUI errors", code)
 	}
 }
 
-func TestRunBrowseHelp(t *testing.T) {
+func TestRunTUIHelp(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr strings.Builder
 	code := runCommand(
 		context.Background(),
-		[]string{"browse", "--help"},
+		[]string{"tui", "--help"},
 		&stdout,
 		&stderr,
 		fixtureService(),
@@ -2547,33 +2547,33 @@ func TestRunBrowseHelp(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("exit = %d, want ExitSuccess", code)
 	}
-	if !strings.Contains(stdout.String(), "browse") {
-		t.Fatalf("browse --help stdout = %q, want browse-specific help", stdout.String())
+	if !strings.Contains(stdout.String(), "tui") {
+		t.Fatalf("tui --help stdout = %q, want tui-specific help", stdout.String())
 	}
 }
 
-func TestRunBrowseRejectsOutputFlag(t *testing.T) {
+func TestRunTUIRejectsOutputFlag(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr strings.Builder
 	code := runCommand(
 		context.Background(),
-		[]string{"browse", "--json"},
+		[]string{"tui", "--json"},
 		&stdout,
 		&stderr,
 		fixtureService(),
 	)
 
 	if code != command.ExitUsage {
-		t.Fatalf("exit = %d, want ExitUsage for --json on browse", code)
+		t.Fatalf("exit = %d, want ExitUsage for --json on tui", code)
 	}
 }
 
-func TestRunBrowseNoExtraArgsAllowed(t *testing.T) {
+func TestRunTUINoExtraArgsAllowed(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr strings.Builder
 	code := runCommand(
 		context.Background(),
-		[]string{"browse", "unexpected-arg"},
+		[]string{"tui", "unexpected-arg"},
 		&stdout,
 		&stderr,
 		fixtureService(),
@@ -2584,7 +2584,7 @@ func TestRunBrowseNoExtraArgsAllowed(t *testing.T) {
 	}
 }
 
-func TestRunBrowseNoColorPropagated(t *testing.T) {
+func TestRunTUINoColorPropagated(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
 
@@ -2600,7 +2600,7 @@ func TestRunBrowseNoColorPropagated(t *testing.T) {
 	var stdout, stderr strings.Builder
 	runCommand(
 		context.Background(),
-		[]string{"browse", "--no-color"},
+		[]string{"tui", "--no-color"},
 		&stdout,
 		&stderr,
 		fixtureService(),
@@ -2608,5 +2608,77 @@ func TestRunBrowseNoColorPropagated(t *testing.T) {
 
 	if !capturedNoColor {
 		t.Error("NoColor should be true when --no-color flag passed")
+	}
+}
+
+func TestRunBareTTYCallsRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if !called {
+		t.Error("runTUI was not called for bare gh star-lists on TTY")
+	}
+}
+
+func TestRunBareWithJSONDoesNotCallRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"--json"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if called {
+		t.Error("runTUI was called for gh star-lists --json, should be CLI list output")
+	}
+}
+
+func TestRunBareNonTTYDoesNotCallRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if called {
+		t.Error("runTUI was called for bare gh star-lists on non-TTY, should be CLI list output")
 	}
 }

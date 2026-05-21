@@ -15,6 +15,7 @@ var (
 	styleRepoName         = lipgloss.NewStyle()
 	styleRepoNameFocused  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	styleRepoNameInactive = lipgloss.NewStyle().Faint(true)
+	styleRepoOwner        = lipgloss.NewStyle().Faint(true)
 	styleRepoStars        = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleRepoLanguage     = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	styleRepoURL          = lipgloss.NewStyle().Faint(true)

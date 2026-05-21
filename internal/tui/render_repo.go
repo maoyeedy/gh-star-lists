@@ -232,15 +232,36 @@ func (m model) renderRepoPane(w, h int) string {
 			nameRaw = string(runes) + ellipsis
 		}
 
+		owner, repo, hasSep := strings.Cut(nameRaw, "/")
 		var nameStr string
-		if isCursor {
-			if m.active == paneRepo {
-				nameStr = styleRepoNameFocused.Render(nameRaw)
+		if hasSep {
+			var repoStyle lipgloss.Style
+			if isCursor {
+				if m.active == paneRepo {
+					repoStyle = styleRepoNameFocused
+				} else {
+					repoStyle = styleRepoNameInactive
+				}
 			} else {
-				nameStr = styleRepoNameInactive.Render(nameRaw)
+				repoStyle = styleRepoName
 			}
+			nameStr = styleRepoOwner.Render(
+				owner,
+			) + styleRepoOwner.Render(
+				"/",
+			) + repoStyle.Render(
+				repo,
+			)
 		} else {
-			nameStr = styleRepoName.Render(nameRaw)
+			if isCursor {
+				if m.active == paneRepo {
+					nameStr = styleRepoNameFocused.Render(nameRaw)
+				} else {
+					nameStr = styleRepoNameInactive.Render(nameRaw)
+				}
+			} else {
+				nameStr = styleRepoName.Render(nameRaw)
+			}
 		}
 
 		var badgesStr string

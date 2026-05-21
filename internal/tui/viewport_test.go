@@ -126,7 +126,7 @@ func TestViewportCursorVisibleInRender(t *testing.T) {
 
 	paneH := m.height - 2
 	rendered := repoPane(m, 50, paneH)
-	if !strings.Contains(rendered, "owner/repo-49") {
+	if !strings.Contains(stripANSI(rendered), "owner/repo-49") {
 		t.Errorf("rendered pane after G should show repo-49, got:\n%s", rendered)
 	}
 }

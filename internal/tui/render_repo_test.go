@@ -88,8 +88,9 @@ func TestRepoFieldStyling(t *testing.T) {
 	rendered := repoPane(m, 120, 20)
 
 	// The repo name must appear somewhere in the output.
+	plain := stripANSI(rendered)
 	for _, r := range svc.repos {
-		if !strings.Contains(rendered, r.NameWithOwner) {
+		if !strings.Contains(plain, r.NameWithOwner) {
 			t.Errorf(
 				"repo pane should contain NameWithOwner %q; got:\n%s",
 				r.NameWithOwner,
@@ -188,6 +189,48 @@ func TestRepoColumnAlignment(t *testing.T) {
 	}
 }
 
+// TestRepoNameSplitStyling verifies that the owner and "/" are rendered with
+// faint ANSI styling and the repo name is not.
+func TestRepoNameSplitStyling(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.width = 120
+
+	rendered := repoPane(m, 120, 20)
+
+	// Faint ANSI code must appear (owner + slash wrapped in \x1b[2m).
+	if !strings.Contains(rendered, "\x1b[2m") {
+		t.Errorf("expected faint ANSI codes in rendered output; got:\n%s", rendered)
+	}
+
+	// The faint codes split the raw NameWithOwner, so check the unstripped
+	// text parts rather than the combined string.
+	plain := stripANSI(rendered)
+	for _, r := range svc.repos {
+		if !strings.Contains(plain, r.NameWithOwner) {
+			t.Errorf("rendered output should contain %q; unstripped:\n%s",
+				r.NameWithOwner, rendered)
+		}
+	}
+
+	// Check that owner and slash have faint wrapping: the faint code should
+	// appear before "owner" in the stripped output.
+	faintPrefix := "\x1b[2m"
+	for _, line := range strings.Split(rendered, "\n") {
+		plainLine := stripANSI(line)
+		if !strings.Contains(plainLine, "/") {
+			continue
+		}
+		if !strings.Contains(line, faintPrefix+"owner") {
+			t.Errorf("owner not wrapped in faint; line:\n%q", line)
+		}
+	}
+}
+
 // TestRepoTruncation verifies that a repo with a very long NameWithOwner does
 // not produce a rendered line longer than the pane width.
 func TestRepoTruncation(t *testing.T) {
@@ -231,7 +274,7 @@ func TestNarrowRepoPaneP4HidesMetadata(t *testing.T) {
 		t.Errorf("width 29: star glyph should be absent; got:\n%s", narrowOut)
 	}
 	// Repo name must still appear.
-	if !strings.Contains(narrowOut, "owner/") {
+	if !strings.Contains(stripANSI(narrowOut), "owner/") {
 		t.Errorf("width 29: repo name should still appear; got:\n%s", narrowOut)
 	}
 

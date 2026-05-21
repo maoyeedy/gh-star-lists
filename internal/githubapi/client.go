@@ -37,28 +37,33 @@ type ListOptions struct {
 }
 
 type StarList struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	LastAddedAt string `json:"lastAddedAt"`
-	IsPrivate   bool   `json:"isPrivate"`
-	ID          string `json:"id"`
-	RepoCount   int    `json:"repoCount"`
-	URL         string `json:"url"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	LastAddedAt     string `json:"lastAddedAt"`
+	IsPrivate       bool   `json:"isPrivate"`
+	ID              string `json:"id"`
+	RepoCount       int    `json:"repoCount"`
+	URL             string `json:"url"`
+	NormName        string `json:"-"`
+	NormDescription string `json:"-"`
 }
 
 type Repository struct {
-	ID             string   `json:"-"`
-	NameWithOwner  string   `json:"nameWithOwner"`
-	Description    string   `json:"description"`
-	IsFork         bool     `json:"isFork"`
-	StargazerCount int      `json:"stargazerCount"`
-	PushedAt       string   `json:"pushedAt"`
-	URL            string   `json:"url"`
-	Language       string   `json:"language"`
-	StarredAt      string   `json:"starredAt,omitempty"`
-	IsArchived     bool     `json:"-"`
-	License        string   `json:"-"`
-	Topics         []string `json:"-"`
+	ID                string   `json:"-"`
+	NameWithOwner     string   `json:"nameWithOwner"`
+	Description       string   `json:"description"`
+	IsFork            bool     `json:"isFork"`
+	StargazerCount    int      `json:"stargazerCount"`
+	PushedAt          string   `json:"pushedAt"`
+	URL               string   `json:"url"`
+	Language          string   `json:"language"`
+	StarredAt         string   `json:"starredAt,omitempty"`
+	IsArchived        bool     `json:"-"`
+	License           string   `json:"-"`
+	Topics            []string `json:"-"`
+	NormNameWithOwner string   `json:"-"`
+	NormDescription   string   `json:"-"`
+	NormLanguage      string   `json:"-"`
 }
 
 type StarListInput struct {

@@ -142,13 +142,19 @@ func scoreRepository(
 	phrase string,
 	editPrev, editCurr *[]int,
 ) int {
-	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
-
-	normName := normalize(name)
-	normNameWithOwner := normalize(repo.NameWithOwner)
-	normOwner := normalize(owner)
-	normDesc := normalize(repo.Description)
-	normLang := normalize(repo.Language)
+	normNameWithOwner := repo.NormNameWithOwner
+	if normNameWithOwner == "" {
+		normNameWithOwner = normalize(repo.NameWithOwner)
+	}
+	normDesc := repo.NormDescription
+	if normDesc == "" && repo.Description != "" {
+		normDesc = normalize(repo.Description)
+	}
+	normLang := repo.NormLanguage
+	if normLang == "" && repo.Language != "" {
+		normLang = normalize(repo.Language)
+	}
+	normOwner, normName, _ := strings.Cut(normNameWithOwner, "/")
 
 	prepared := make([]preparedField, 0, 5)
 
@@ -177,8 +183,14 @@ func scoreStarList(
 	phrase string,
 	editPrev, editCurr *[]int,
 ) int {
-	normName := normalize(list.Name)
-	normDesc := normalize(list.Description)
+	normName := list.NormName
+	if normName == "" && list.Name != "" {
+		normName = normalize(list.Name)
+	}
+	normDesc := list.NormDescription
+	if normDesc == "" && list.Description != "" {
+		normDesc = normalize(list.Description)
+	}
 
 	prepared := make([]preparedField, 0, 2)
 

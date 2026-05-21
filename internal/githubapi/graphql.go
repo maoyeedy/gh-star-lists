@@ -209,13 +209,15 @@ func (s *graphQLService) ListStarLists(
 				repoCount = node.Items.TotalCount
 			}
 			lists = append(lists, StarList{
-				Name:        node.Name,
-				Description: stringValue(node.Description),
-				LastAddedAt: stringValue(node.LastAddedAt),
-				IsPrivate:   node.IsPrivate,
-				ID:          node.ID,
-				RepoCount:   repoCount,
-				URL:         listURL(s.host, node.User.Login, node.Slug),
+				Name:            node.Name,
+				Description:     stringValue(node.Description),
+				LastAddedAt:     stringValue(node.LastAddedAt),
+				IsPrivate:       node.IsPrivate,
+				ID:              node.ID,
+				RepoCount:       repoCount,
+				URL:             listURL(s.host, node.User.Login, node.Slug),
+				NormName:        strings.ToLower(strings.TrimSpace(node.Name)),
+				NormDescription: strings.ToLower(strings.TrimSpace(stringValue(node.Description))),
 			})
 			if limitReached(limit, len(lists)) {
 				return lists, nil
@@ -267,17 +269,24 @@ func (s *graphQLService) ListRepositories(
 				continue
 			}
 			repositories = append(repositories, Repository{
-				ID:             node.ID,
-				NameWithOwner:  node.NameWithOwner,
-				Description:    stringValue(node.Description),
-				IsFork:         node.IsFork,
-				IsArchived:     node.IsArchived,
-				StargazerCount: node.StargazerCount,
-				PushedAt:       stringValue(node.PushedAt),
-				URL:            node.URL,
-				Language:       node.PrimaryLanguage.OrEmpty(),
-				License:        node.LicenseInfo.OrEmpty(),
-				Topics:         node.RepositoryTopics.Names(),
+				ID:                node.ID,
+				NameWithOwner:     node.NameWithOwner,
+				Description:       stringValue(node.Description),
+				IsFork:            node.IsFork,
+				IsArchived:        node.IsArchived,
+				StargazerCount:    node.StargazerCount,
+				PushedAt:          stringValue(node.PushedAt),
+				URL:               node.URL,
+				Language:          node.PrimaryLanguage.OrEmpty(),
+				License:           node.LicenseInfo.OrEmpty(),
+				Topics:            node.RepositoryTopics.Names(),
+				NormNameWithOwner: strings.ToLower(strings.TrimSpace(node.NameWithOwner)),
+				NormDescription: strings.ToLower(
+					strings.TrimSpace(stringValue(node.Description)),
+				),
+				NormLanguage: strings.ToLower(
+					strings.TrimSpace(node.PrimaryLanguage.OrEmpty()),
+				),
 			})
 			if limitReached(limit, len(repositories)) {
 				return repositories, nil
@@ -458,18 +467,25 @@ func (s *graphQLService) ListStarredRepositories(
 
 		for _, edge := range result.Viewer.StarredRepositories.Edges {
 			repositories = append(repositories, Repository{
-				ID:             edge.Node.ID,
-				NameWithOwner:  edge.Node.NameWithOwner,
-				Description:    stringValue(edge.Node.Description),
-				IsFork:         edge.Node.IsFork,
-				IsArchived:     edge.Node.IsArchived,
-				StargazerCount: edge.Node.StargazerCount,
-				PushedAt:       stringValue(edge.Node.PushedAt),
-				URL:            edge.Node.URL,
-				Language:       edge.Node.PrimaryLanguage.OrEmpty(),
-				StarredAt:      edge.StarredAt,
-				License:        edge.Node.LicenseInfo.OrEmpty(),
-				Topics:         edge.Node.RepositoryTopics.Names(),
+				ID:                edge.Node.ID,
+				NameWithOwner:     edge.Node.NameWithOwner,
+				Description:       stringValue(edge.Node.Description),
+				IsFork:            edge.Node.IsFork,
+				IsArchived:        edge.Node.IsArchived,
+				StargazerCount:    edge.Node.StargazerCount,
+				PushedAt:          stringValue(edge.Node.PushedAt),
+				URL:               edge.Node.URL,
+				Language:          edge.Node.PrimaryLanguage.OrEmpty(),
+				StarredAt:         edge.StarredAt,
+				License:           edge.Node.LicenseInfo.OrEmpty(),
+				Topics:            edge.Node.RepositoryTopics.Names(),
+				NormNameWithOwner: strings.ToLower(strings.TrimSpace(edge.Node.NameWithOwner)),
+				NormDescription: strings.ToLower(
+					strings.TrimSpace(stringValue(edge.Node.Description)),
+				),
+				NormLanguage: strings.ToLower(
+					strings.TrimSpace(edge.Node.PrimaryLanguage.OrEmpty()),
+				),
 			})
 			if limitReached(limit, len(repositories)) {
 				return repositories, nil
@@ -550,17 +566,24 @@ func (s *graphQLService) GetRepository(
 		return Repository{}, fmt.Errorf("repository %q not found", nameWithOwner)
 	}
 	return Repository{
-		ID:             result.Repository.ID,
-		NameWithOwner:  result.Repository.NameWithOwner,
-		Description:    stringValue(result.Repository.Description),
-		IsFork:         result.Repository.IsFork,
-		IsArchived:     result.Repository.IsArchived,
-		StargazerCount: result.Repository.StargazerCount,
-		PushedAt:       stringValue(result.Repository.PushedAt),
-		URL:            result.Repository.URL,
-		Language:       result.Repository.PrimaryLanguage.OrEmpty(),
-		License:        result.Repository.LicenseInfo.OrEmpty(),
-		Topics:         result.Repository.RepositoryTopics.Names(),
+		ID:                result.Repository.ID,
+		NameWithOwner:     result.Repository.NameWithOwner,
+		Description:       stringValue(result.Repository.Description),
+		IsFork:            result.Repository.IsFork,
+		IsArchived:        result.Repository.IsArchived,
+		StargazerCount:    result.Repository.StargazerCount,
+		PushedAt:          stringValue(result.Repository.PushedAt),
+		URL:               result.Repository.URL,
+		Language:          result.Repository.PrimaryLanguage.OrEmpty(),
+		License:           result.Repository.LicenseInfo.OrEmpty(),
+		Topics:            result.Repository.RepositoryTopics.Names(),
+		NormNameWithOwner: strings.ToLower(strings.TrimSpace(result.Repository.NameWithOwner)),
+		NormDescription: strings.ToLower(
+			strings.TrimSpace(stringValue(result.Repository.Description)),
+		),
+		NormLanguage: strings.ToLower(
+			strings.TrimSpace(result.Repository.PrimaryLanguage.OrEmpty()),
+		),
 	}, nil
 }
 
@@ -723,13 +746,15 @@ func (s *graphQLService) starListFromNode(node starListNode) StarList {
 		repoCount = node.Items.TotalCount
 	}
 	return StarList{
-		Name:        node.Name,
-		Description: stringValue(node.Description),
-		LastAddedAt: stringValue(node.LastAddedAt),
-		IsPrivate:   node.IsPrivate,
-		ID:          node.ID,
-		RepoCount:   repoCount,
-		URL:         listURL(s.host, node.User.Login, node.Slug),
+		Name:            node.Name,
+		Description:     stringValue(node.Description),
+		LastAddedAt:     stringValue(node.LastAddedAt),
+		IsPrivate:       node.IsPrivate,
+		ID:              node.ID,
+		RepoCount:       repoCount,
+		URL:             listURL(s.host, node.User.Login, node.Slug),
+		NormName:        strings.ToLower(strings.TrimSpace(node.Name)),
+		NormDescription: strings.ToLower(strings.TrimSpace(stringValue(node.Description))),
 	}
 }
 

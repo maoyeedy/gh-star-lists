@@ -90,6 +90,7 @@ func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
 		LastAddedAt: "",
 		ID:          "UL_1",
 		URL:         "https://github.com/stars/testuser/lists/tools",
+		NormName:    "tools",
 	}
 	if len(lists) != 1 || lists[0] != want {
 		t.Fatalf("ListStarLists() = %#v, want %#v", lists, []StarList{want})
@@ -184,18 +185,22 @@ func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
 
 	want := []StarList{
 		{
-			Name:        "Tools",
-			Description: "Useful CLIs",
-			LastAddedAt: "2025-01-02T03:04:05Z",
-			ID:          "UL_1",
-			URL:         "https://github.com/stars/testuser/lists/tools",
+			Name:            "Tools",
+			Description:     "Useful CLIs",
+			LastAddedAt:     "2025-01-02T03:04:05Z",
+			ID:              "UL_1",
+			URL:             "https://github.com/stars/testuser/lists/tools",
+			NormName:        "tools",
+			NormDescription: "useful clis",
 		},
 		{
-			Name:        "Libraries",
-			Description: "Packages",
-			LastAddedAt: "2025-02-03T04:05:06Z",
-			ID:          "UL_2",
-			URL:         "https://github.com/stars/testuser/lists/libraries",
+			Name:            "Libraries",
+			Description:     "Packages",
+			LastAddedAt:     "2025-02-03T04:05:06Z",
+			ID:              "UL_2",
+			URL:             "https://github.com/stars/testuser/lists/libraries",
+			NormName:        "libraries",
+			NormDescription: "packages",
 		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] || lists[1] != want[1] {
@@ -234,12 +239,14 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 
 	want := []StarList{
 		{
-			Name:        "Tools",
-			Description: "Useful CLIs",
-			LastAddedAt: "2025-01-02T03:04:05Z",
-			ID:          "UL_1",
-			RepoCount:   5,
-			URL:         "https://github.com/stars/testuser/lists/tools",
+			Name:            "Tools",
+			Description:     "Useful CLIs",
+			LastAddedAt:     "2025-01-02T03:04:05Z",
+			ID:              "UL_1",
+			RepoCount:       5,
+			URL:             "https://github.com/stars/testuser/lists/tools",
+			NormName:        "tools",
+			NormDescription: "useful clis",
 		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] {
@@ -278,13 +285,15 @@ func TestGraphQLServiceListStarListsMapsIsPrivate(t *testing.T) {
 
 	want := []StarList{
 		{
-			Name:        "Private List",
-			Description: "Secret",
-			LastAddedAt: "2025-01-02T03:04:05Z",
-			IsPrivate:   true,
-			ID:          "UL_1",
-			RepoCount:   3,
-			URL:         "https://github.com/stars/testuser/lists/private-list",
+			Name:            "Private List",
+			Description:     "Secret",
+			LastAddedAt:     "2025-01-02T03:04:05Z",
+			IsPrivate:       true,
+			ID:              "UL_1",
+			RepoCount:       3,
+			URL:             "https://github.com/stars/testuser/lists/private-list",
+			NormName:        "private list",
+			NormDescription: "secret",
 		},
 	}
 	if len(lists) != len(want) || lists[0] != want[0] {
@@ -330,22 +339,27 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 
 	want := []Repository{
 		{
-			NameWithOwner:  "cli/cli",
-			Description:    "GitHub CLI",
-			URL:            "https://github.com/cli/cli",
-			IsFork:         false,
-			StargazerCount: 39000,
-			PushedAt:       "2026-01-02T03:04:05Z",
-			Language:       "Go",
+			NameWithOwner:     "cli/cli",
+			Description:       "GitHub CLI",
+			URL:               "https://github.com/cli/cli",
+			IsFork:            false,
+			StargazerCount:    39000,
+			PushedAt:          "2026-01-02T03:04:05Z",
+			Language:          "Go",
+			NormNameWithOwner: "cli/cli",
+			NormDescription:   "github cli",
+			NormLanguage:      "go",
 		},
 		{
-			NameWithOwner:  "cli/go-gh",
-			Description:    "Go helpers",
-			URL:            "https://github.com/cli/go-gh",
-			IsFork:         false,
-			StargazerCount: 700,
-			PushedAt:       "2026-02-03T04:05:06Z",
-			Language:       "",
+			NameWithOwner:     "cli/go-gh",
+			Description:       "Go helpers",
+			URL:               "https://github.com/cli/go-gh",
+			IsFork:            false,
+			StargazerCount:    700,
+			PushedAt:          "2026-02-03T04:05:06Z",
+			Language:          "",
+			NormNameWithOwner: "cli/go-gh",
+			NormDescription:   "go helpers",
 		},
 	}
 	if !reflect.DeepEqual(repositories, want) {
@@ -389,13 +403,14 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
 	want := Repository{
-		NameWithOwner:  "owner/repo",
-		Description:    "",
-		URL:            "https://github.com/owner/repo",
-		IsFork:         true,
-		StargazerCount: 12,
-		PushedAt:       "",
-		Language:       "",
+		NameWithOwner:     "owner/repo",
+		Description:       "",
+		URL:               "https://github.com/owner/repo",
+		IsFork:            true,
+		StargazerCount:    12,
+		PushedAt:          "",
+		Language:          "",
+		NormNameWithOwner: "owner/repo",
 	}
 	if len(repositories) != 1 || !reflect.DeepEqual(repositories[0], want) {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
@@ -498,12 +513,14 @@ func TestGraphQLServiceListRepositoriesSkipsNonRepositoryAndMissingNameItems(t *
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
 	want := Repository{
-		NameWithOwner:  "owner/repo",
-		Description:    "kept",
-		URL:            "https://github.com/owner/repo",
-		IsFork:         false,
-		StargazerCount: 2,
-		PushedAt:       "2026-01-02T00:00:00Z",
+		NameWithOwner:     "owner/repo",
+		Description:       "kept",
+		URL:               "https://github.com/owner/repo",
+		IsFork:            false,
+		StargazerCount:    2,
+		PushedAt:          "2026-01-02T00:00:00Z",
+		NormNameWithOwner: "owner/repo",
+		NormDescription:   "kept",
 	}
 	if len(repositories) != 1 || !reflect.DeepEqual(repositories[0], want) {
 		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
@@ -726,24 +743,28 @@ func TestGraphQLServiceListStarredRepositoriesMapsFields(t *testing.T) {
 		t.Fatalf("ListStarredRepositories returned %d repos, want 2", len(repos))
 	}
 	want0 := Repository{
-		NameWithOwner:  "owner/go-tool",
-		Description:    "A Go tool",
-		URL:            "https://github.com/owner/go-tool",
-		IsFork:         false,
-		StargazerCount: 500,
-		PushedAt:       "2026-02-01T00:00:00Z",
-		Language:       "Go",
-		StarredAt:      "2026-03-01T00:00:00Z",
+		NameWithOwner:     "owner/go-tool",
+		Description:       "A Go tool",
+		URL:               "https://github.com/owner/go-tool",
+		IsFork:            false,
+		StargazerCount:    500,
+		PushedAt:          "2026-02-01T00:00:00Z",
+		Language:          "Go",
+		StarredAt:         "2026-03-01T00:00:00Z",
+		NormNameWithOwner: "owner/go-tool",
+		NormDescription:   "a go tool",
+		NormLanguage:      "go",
 	}
 	want1 := Repository{
-		NameWithOwner:  "owner/rust-lib",
-		Description:    "",
-		URL:            "https://github.com/owner/rust-lib",
-		IsFork:         true,
-		StargazerCount: 100,
-		PushedAt:       "",
-		Language:       "",
-		StarredAt:      "2026-02-01T00:00:00Z",
+		NameWithOwner:     "owner/rust-lib",
+		Description:       "",
+		URL:               "https://github.com/owner/rust-lib",
+		IsFork:            true,
+		StargazerCount:    100,
+		PushedAt:          "",
+		Language:          "",
+		StarredAt:         "2026-02-01T00:00:00Z",
+		NormNameWithOwner: "owner/rust-lib",
 	}
 	if !reflect.DeepEqual(repos[0], want0) {
 		t.Fatalf("repos[0] = %#v, want %#v", repos[0], want0)

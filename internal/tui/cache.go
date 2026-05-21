@@ -35,6 +35,8 @@ type preloader struct {
 	queue          []string
 	inFlight       int
 	preloadCancels map[string]context.CancelFunc
+	topicsInFlight int
+	topicsCancels  map[string]context.CancelFunc
 }
 
 func newPreloader() *preloader {
@@ -82,9 +84,10 @@ func (p *preloader) enqueueFront(listID string) {
 }
 
 // clear resets the cache, bumps generation, drains the queue, and cancels any
-// in-flight preload requests.
+// in-flight preload and topics requests.
 func (p *preloader) clear() {
 	p.generation++
+	p.cancelTopicsPreloads()
 	p.cache = make(map[repoCacheKey]*repoCacheEntry)
 	for _, cancel := range p.preloadCancels {
 		cancel()
@@ -102,6 +105,70 @@ func (p *preloader) anyPendingInCache() bool {
 		}
 	}
 	return false
+}
+
+// cancelTopicsPreloads cancels all in-flight topics preloads and cleans up.
+func (p *preloader) cancelTopicsPreloads() {
+	for id, cancel := range p.topicsCancels {
+		cancel()
+		delete(p.cache, repoCacheKey{id, true})
+	}
+	p.topicsCancels = nil
+	p.topicsInFlight = 0
+}
+
+// scheduleTopicsPreload starts withTopics=true loads for lists whose basic repos
+// are already cached. Basic preloads (queue + inFlight) always take precedence.
+// The focused list is prioritized. Max 2 concurrent topics loads.
+func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Service,
+	focusedList *githubapi.StarList, displayedLists []githubapi.StarList,
+) tea.Cmd {
+	if len(p.queue) > 0 || p.inFlight > 0 {
+		return nil
+	}
+	const maxTopicsInFlight = 2
+	if p.topicsInFlight >= maxTopicsInFlight {
+		return nil
+	}
+
+	// Build candidates: focused list first, then all displayed lists.
+	candidates := make([]string, 0, len(displayedLists))
+	if focusedList != nil {
+		candidates = append(candidates, focusedList.ID)
+	}
+	for _, l := range displayedLists {
+		if focusedList == nil || l.ID != focusedList.ID {
+			candidates = append(candidates, l.ID)
+		}
+	}
+
+	var cmds []tea.Cmd
+	for _, listID := range candidates {
+		if p.topicsInFlight >= maxTopicsInFlight {
+			break
+		}
+		// Only schedule topics when basic repos are cached.
+		basicKey := repoCacheKey{listID, false}
+		if e := p.cache[basicKey]; e == nil || e.state != repoCacheLoaded {
+			continue
+		}
+		topicsKey := repoCacheKey{listID, true}
+		if e := p.cache[topicsKey]; e != nil && e.state != repoCacheIdle {
+			continue
+		}
+		loadCtx, cancel := context.WithCancel(ctx)
+		if p.topicsCancels == nil {
+			p.topicsCancels = make(map[string]context.CancelFunc)
+		}
+		p.topicsCancels[listID] = cancel
+		p.cache[topicsKey] = &repoCacheEntry{state: repoCacheLoading, gen: p.generation}
+		p.topicsInFlight++
+		cmds = append(cmds, loadReposCmd(loadCtx, svc, listID, true, p.generation))
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // focusList sets the list cursor to idx, resolves focusedList, and updates the

@@ -57,6 +57,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		delete(m.preloader.preloadCancels, msg.listID)
+		if msg.withTopics && m.preloader.topicsCancels != nil {
+			delete(m.preloader.topicsCancels, msg.listID)
+		}
 		if msg.err != nil {
 			m.preloader.cache[key] = &repoCacheEntry{
 				state: repoCacheError,
@@ -103,13 +106,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		// Only count non-topics loads toward the preloader inflight cap.
 		if !msg.withTopics {
 			if m.preloader.inFlight > 0 {
 				m.preloader.inFlight--
 			}
+		} else if m.preloader.topicsInFlight > 0 {
+			m.preloader.topicsInFlight--
 		}
-		return m, m.preloader.schedulePreload(m.ctx, m.svc)
+
+		preloadCmd := m.preloader.schedulePreload(m.ctx, m.svc)
+		if preloadCmd == nil && m.showPreview {
+			preloadCmd = m.preloader.scheduleTopicsPreload(
+				m.ctx, m.svc, m.focusedList, m.displayedLists,
+			)
+		}
+		return m, preloadCmd
 
 	case errMsg:
 		m.err = msg.err

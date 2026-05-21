@@ -203,10 +203,14 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Preview):
+		wasShowing := m.showPreview
 		m.showPreview = !m.showPreview
 		m.previewOffset = 0
-		if m.showPreview && m.focusedList != nil {
-			// Only schedule a withTopics=true load for the focused list if not already loaded/loading.
+		if wasShowing {
+			m.preloader.cancelTopicsPreloads()
+			return m, nil
+		}
+		if m.focusedList != nil {
 			topicsKey := repoCacheKey{m.focusedList.ID, true}
 			e := m.preloader.cache[topicsKey]
 			if e == nil || e.state == repoCacheIdle {

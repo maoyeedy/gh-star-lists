@@ -6,6 +6,7 @@ import (
 	"time"
 
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func truncateToWidth(s string, maxW int) string {
@@ -20,19 +21,10 @@ func truncateToWidth(s string, maxW int) string {
 	return string(runes) + ellipsis
 }
 
-// previewContentLines builds the full list of styled content lines for the focused
-// repo in the preview pane. The returned slice is not clipped to any height; the
-// caller applies the scroll offset and pads to the desired height.
-func (m model) previewContentLines(w int) []string {
-	repo := m.displayedRepos[m.repoCursor]
-	// Use the withTopics=true cache entry for topic data when available.
-	if m.focusedList != nil {
-		if e := m.preloader.cache[repoCacheKey{m.focusedList.ID, true}]; e != nil &&
-			e.state == repoCacheLoaded && m.repoCursor < len(e.repos) {
-			repo = e.repos[m.repoCursor]
-		}
-	}
-
+// formatPreviewContent builds styled preview lines for a single repository.
+// The returned slice is not clipped to any height; the caller applies the
+// scroll offset and pads to the desired height.
+func formatPreviewContent(repo githubapi.Repository, w int) []string {
 	maxW := w - 2
 	if maxW < 1 {
 		maxW = 1
@@ -117,6 +109,19 @@ func (m model) previewContentLines(w int) []string {
 	lines = append(lines, stylePaneSubtitle.Render("Topics:")+" "+topicsVal)
 
 	return lines
+}
+
+// previewContentLines builds the full list of styled content lines for the focused
+// repo in the preview pane, preferring the withTopics cache entry when available.
+func (m model) previewContentLines(w int) []string {
+	repo := m.displayedRepos[m.repoCursor]
+	if m.focusedList != nil {
+		if e := m.preloader.cache[repoCacheKey{m.focusedList.ID, true}]; e != nil &&
+			e.state == repoCacheLoaded && m.repoCursor < len(e.repos) {
+			repo = e.repos[m.repoCursor]
+		}
+	}
+	return formatPreviewContent(repo, w)
 }
 
 func (m model) renderPreviewPane(w, h int) string {

@@ -2,6 +2,12 @@ package tui
 
 import "charm.land/bubbles/v2/key"
 
+// helpGroup is a named group of key bindings for the full help view.
+type helpGroup struct {
+	title    string
+	bindings []key.Binding
+}
+
 type keyMap struct {
 	Up      key.Binding
 	Down    key.Binding
@@ -68,4 +74,66 @@ var keys = keyMap{
 	Preview:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "toggle preview")),
 	Search:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 	Select:     key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "select")),
+}
+
+// helpGroups returns all key binding groups for the full help view.
+func (k keyMap) helpGroups() []helpGroup {
+	return []helpGroup{
+		{
+			title: "Navigation",
+			bindings: []key.Binding{
+				k.Up, k.Down, k.PgUp, k.PgDn, k.Home, k.End,
+				k.Left, k.Right, k.Enter, k.Back,
+			},
+		},
+		{
+			title: "List Actions",
+			bindings: []key.Binding{
+				k.CreateList, k.EditList, k.DeleteList, k.CopyList, k.MergeList,
+			},
+		},
+		{
+			title: "Repo Actions",
+			bindings: []key.Binding{
+				k.AddRepo, k.RemoveRepo, k.MoveRepo, k.UnstarRepo,
+			},
+		},
+		{
+			title: "Selection/Bulk",
+			bindings: []key.Binding{
+				k.Select,
+			},
+		},
+		{
+			title: "Preview",
+			bindings: []key.Binding{
+				k.Preview, k.Open,
+			},
+		},
+		{
+			title: "View",
+			bindings: []key.Binding{
+				k.Sort, k.Search, k.Refresh, k.Help,
+			},
+		},
+		{
+			title: "Quit",
+			bindings: []key.Binding{
+				k.Quit,
+			},
+		},
+	}
+}
+
+// footerBindings returns the key bindings to show in the footer short help
+// for the given pane and selection state.
+func (k keyMap) footerBindings(active pane, hasSelection bool) []key.Binding {
+	if active == paneRepo {
+		bindings := []key.Binding{k.Search, k.Select}
+		if hasSelection {
+			bindings = append(bindings, k.AddRepo, k.RemoveRepo, k.MoveRepo)
+		}
+		return append(bindings, k.Open, k.Help, k.Quit)
+	}
+	return []key.Binding{k.Search, k.Enter, k.Sort, k.Help, k.Quit}
 }

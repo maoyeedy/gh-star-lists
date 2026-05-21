@@ -4,10 +4,19 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"charm.land/bubbles/v2/key"
 )
 
+// renderHint renders a styled key+description pair.
 func renderHint(k, desc string) string {
 	return styleFooterKey.Render(k) + " " + styleFooterText.Render(desc)
+}
+
+// renderHintFromBinding renders a key binding as a styled key+description pair.
+func renderHintFromBinding(b key.Binding) string {
+	h := b.Help()
+	return styleFooterKey.Render(h.Key) + " " + styleFooterText.Render(h.Desc)
 }
 
 // joinHints joins rendered hint pairs with two spaces between them.
@@ -15,41 +24,34 @@ func joinHints(hints []string) string {
 	return strings.Join(hints, "  ")
 }
 
-func (m model) renderFooter() string {
-	if m.statusMsg != "" && time.Now().Before(m.statusExpiry) {
-		return styleSuccess.Render(m.statusMsg)
+func renderFooter(
+	active pane,
+	listSearchActive, repoSearchActive bool,
+	selected map[string]struct{},
+	statusMsg string,
+	statusExpiry time.Time,
+) string {
+	if statusMsg != "" && time.Now().Before(statusExpiry) {
+		return styleSuccess.Render(statusMsg)
 	}
-	if m.listSearchActive || m.repoSearchActive {
+	if listSearchActive || repoSearchActive {
 		return joinHints([]string{
-			renderHint("/", "search"),
-			renderHint("esc", "clear"),
-			renderHint("enter", "done"),
+			renderHint(keys.Search.Help().Key, "search"),
+			renderHint(keys.Back.Help().Key, "clear"),
+			renderHint(keys.Enter.Help().Key, "done"),
 			renderHint("up/down", "navigate"),
 		})
 	}
-	if m.active == paneRepo {
-		hints := []string{
-			renderHint("/", "search"),
-			renderHint("space", "select"),
-		}
-		if len(m.selected) > 0 {
-			hints = append(
-				hints,
-				styleFooterText.Render(fmt.Sprintf("[%d selected]", len(m.selected))),
-			)
-		}
-		hints = append(hints,
-			renderHint("o", "browser"),
-			renderHint("?", "help"),
-			renderHint("q", "quit"),
-		)
-		return joinHints(hints)
+	bindings := keys.footerBindings(active, len(selected) > 0)
+	hints := make([]string, 0, len(bindings)+1)
+	for _, b := range bindings {
+		hints = append(hints, renderHintFromBinding(b))
 	}
-	return joinHints([]string{
-		renderHint("/", "search"),
-		renderHint("enter", "open"),
-		renderHint("s", "sort"),
-		renderHint("?", "help"),
-		renderHint("q", "quit"),
-	})
+	if active == paneRepo && len(selected) > 0 {
+		hints = append(
+			hints,
+			styleFooterText.Render(fmt.Sprintf("[%d selected]", len(selected))),
+		)
+	}
+	return joinHints(hints)
 }

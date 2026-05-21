@@ -15,7 +15,14 @@ func TestFooterCoreHintsOnly(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.width = 60
 
-	footer := m.renderFooter()
+	footer := renderFooter(
+		m.active,
+		m.listSearchActive,
+		m.repoSearchActive,
+		m.selected,
+		m.statusMsg,
+		m.statusExpiry,
+	)
 	// Core hints must be present.
 	for _, want := range []string{"search", "help", "quit"} {
 		if !strings.Contains(footer, want) {
@@ -79,7 +86,14 @@ func TestFooterKeyTokensStyled(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.width = 80
 
-	footer := m.renderFooter()
+	footer := renderFooter(
+		m.active,
+		m.listSearchActive,
+		m.repoSearchActive,
+		m.selected,
+		m.statusMsg,
+		m.statusExpiry,
+	)
 
 	// The footer must contain the styled rendering of the "q" key, not just "q".
 	if !strings.Contains(footer, keyRendered) {

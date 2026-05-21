@@ -68,7 +68,14 @@ func (m model) renderLayout() string {
 		}
 
 		header := m.renderHeader()
-		footer := m.renderFooter()
+		footer := renderFooter(
+			m.active,
+			m.listSearchActive,
+			m.repoSearchActive,
+			m.selected,
+			m.statusMsg,
+			m.statusExpiry,
+		)
 		return header + "\n" + strings.Join(rows, "\n") + "\n" + footer
 	}
 
@@ -95,7 +102,14 @@ func (m model) renderLayout() string {
 	}
 
 	header := m.renderHeader()
-	footer := m.renderFooter()
+	footer := renderFooter(
+		m.active,
+		m.listSearchActive,
+		m.repoSearchActive,
+		m.selected,
+		m.statusMsg,
+		m.statusExpiry,
+	)
 	body := strings.Join(rows, "\n")
 	return header + "\n" + body + "\n" + footer
 }

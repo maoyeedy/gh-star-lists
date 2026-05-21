@@ -77,7 +77,7 @@ func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarLis
 		return err
 	}
 	boldFn := Bold(options.Color)
-	faintFn := faint(options.Color)
+	faintFn := Faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader([]string{"NAME", "REPOS", "ADDED", "ID", "URL"}, tableprinter.WithColor(boldFn))
 	for _, list := range lists {

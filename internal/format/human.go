@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/cli/go-gh/v2/pkg/jq"
@@ -26,7 +27,20 @@ func Red(enabled bool) func(string) string       { return ansiStyle(enabled, "31
 func Green(enabled bool) func(string) string     { return ansiStyle(enabled, "32") }
 func Yellow(enabled bool) func(string) string    { return ansiStyle(enabled, "33") }
 func Cyan(enabled bool) func(string) string      { return ansiStyle(enabled, "36") }
-func faint(enabled bool) func(string) string     { return ansiStyle(enabled, "2") }
+func Faint(enabled bool) func(string) string     { return ansiStyle(enabled, "2") }
+
+// FormatNameWithOwner formats "owner/repo" with the owner and "/" in faint
+// and the repo name in bold. Returns plain text when color is false.
+func FormatNameWithOwner(nameWithOwner string, color bool) string {
+	if !color {
+		return nameWithOwner
+	}
+	owner, repo, ok := strings.Cut(nameWithOwner, "/")
+	if !ok {
+		return Bold(true)(nameWithOwner)
+	}
+	return Faint(true)(owner) + Faint(true)("/") + Bold(true)(repo)
+}
 
 func writeJSONSliceWithOptions[T any](w io.Writer, options Options, data []T) error {
 	if options.JQ == "" {

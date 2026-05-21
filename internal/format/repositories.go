@@ -84,14 +84,14 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 		return err
 	}
 	boldFn := Bold(options.Color)
-	faintFn := faint(options.Color)
+	faintFn := Faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader(
 		[]string{"REPOSITORY", "STARS", "LANG", "FORK", "PUSHED", "URL"},
 		tableprinter.WithColor(boldFn),
 	)
 	for _, repo := range repos {
-		table.AddField(repo.NameWithOwner, tableprinter.WithColor(boldFn))
+		table.AddField(FormatNameWithOwner(repo.NameWithOwner, options.Color))
 		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))
 		table.AddField(repo.Language, tableprinter.WithTruncate(nil))
 		table.AddField(yesNo(repo.IsFork), tableprinter.WithTruncate(nil))

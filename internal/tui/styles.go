@@ -42,8 +42,4 @@ var (
 	// Cursor rows
 	styleCursorActive   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	styleCursorInactive = lipgloss.NewStyle().Faint(true)
-
-	// Backward-compatible aliases (callers in model.go still use these names).
-	styleFaint    = stylePaneSubtitle
-	styleSelected = styleCursorActive
 )

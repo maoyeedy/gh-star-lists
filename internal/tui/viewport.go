@@ -11,10 +11,12 @@ func (m model) slideListOffset() model {
 	return m
 }
 
+const headingRows = 2
+
 // repoPaneH returns the effective number of scrollable repo rows in the repo
 // pane (full pane content height; no heading overhead).
 func (m model) repoPaneH() int {
-	return max(1, m.height-2)
+	return max(1, m.height-headingRows)
 }
 
 func (m model) slideRepoOffset() model {

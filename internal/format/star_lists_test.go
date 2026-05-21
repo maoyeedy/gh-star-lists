@@ -69,7 +69,7 @@ func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 		t.Fatalf("WriteStarLists returned unexpected error: %v", err)
 	}
 
-	want := "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":5,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n"
+	want := "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"isPrivate\":false,\"id\":\"UL_1\",\"repoCount\":5,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n"
 	if got := out.String(); got != want {
 		t.Fatalf("WriteStarLists JSON output mismatch\ngot:  %q\nwant: %q", got, want)
 	}

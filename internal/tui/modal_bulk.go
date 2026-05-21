@@ -156,7 +156,7 @@ func (mo *modal) viewBulkFailure() string {
 	if failure.succeeded == 0 {
 		header = fmt.Sprintf("%d failed.", len(failure.failedNWOs))
 	}
-	lines := []string{styleError.Render(header), styleFaint.Render("Failed repositories:")}
+	lines := []string{styleError.Render(header), stylePaneSubtitle.Render("Failed repositories:")}
 	start := failure.offset
 	end := start + bulkFailureMaxVisible
 	if end > len(failure.failedNWOs) {
@@ -166,10 +166,10 @@ func (mo *modal) viewBulkFailure() string {
 		lines = append(lines, "  "+nwo)
 	}
 	if start > 0 {
-		lines = append(lines, styleFaint.Render(fmt.Sprintf("  ... %d above", start)))
+		lines = append(lines, stylePaneSubtitle.Render(fmt.Sprintf("  ... %d above", start)))
 	}
 	if remaining := len(failure.failedNWOs) - end; remaining > 0 {
-		lines = append(lines, styleFaint.Render(fmt.Sprintf("  ... %d more", remaining)))
+		lines = append(lines, stylePaneSubtitle.Render(fmt.Sprintf("  ... %d more", remaining)))
 	}
 	return strings.Join(lines, "\n")
 }

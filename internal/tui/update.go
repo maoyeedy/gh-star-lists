@@ -190,7 +190,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmds []tea.Cmd
 		if m.statusMsg != "" {
-			m.statusExpiry = time.Now().Add(2 * time.Second)
+			m.statusExpiry = time.Now().Add(toastDuration(msg.failedNWOs))
 			cmds = append(cmds, statusClearCmd(m.statusExpiry))
 		}
 		m.listsLoading = true
@@ -311,4 +311,13 @@ func (m model) handleRefresh() (tea.Model, tea.Cmd) {
 	m.repoOffset = 0
 	m.cachedRepoSig = ""
 	return m, loadListsCmd(m.ctx, m.svc)
+}
+
+// toastDuration returns the status-message display duration based on whether
+// any items failed during a bulk operation.
+func toastDuration(failedNWOs []string) time.Duration {
+	if len(failedNWOs) > 0 {
+		return 4 * time.Second
+	}
+	return 2 * time.Second
 }

@@ -11,33 +11,33 @@ func (mo *modal) view() string {
 
 	if mo.bulkFailure != nil && !mo.submitting {
 		body = mo.viewBulkFailure()
-		hint = styleFaint.Render("enter/r: retry failed  esc: close")
+		hint = stylePaneSubtitle.Render("enter/r: retry failed  esc: close")
 		if len(mo.bulkFailure.failedNWOs) > bulkFailureMaxVisible {
-			hint = styleFaint.Render("j/k: scroll  enter/r: retry failed  esc: close")
+			hint = stylePaneSubtitle.Render("j/k: scroll  enter/r: retry failed  esc: close")
 		}
 	} else {
 		switch mo.kind {
 		case modalCreateList, modalEditList:
 			body = mo.viewForm()
-			hint = styleFaint.Render("tab: next field  esc: cancel")
+			hint = stylePaneSubtitle.Render("tab: next field  esc: cancel")
 		case modalDeleteList:
 			body = mo.viewConfirmText("Type the list name to confirm deletion:")
-			hint = styleFaint.Render("enter: confirm  esc: cancel")
+			hint = stylePaneSubtitle.Render("enter: confirm  esc: cancel")
 		case modalConfirmText:
 			body = mo.viewConfirmText("Type the repo name to confirm:")
-			hint = styleFaint.Render("enter: confirm  esc: cancel")
+			hint = stylePaneSubtitle.Render("enter: confirm  esc: cancel")
 		case modalPickList:
 			body = mo.viewPickList()
-			hint = styleFaint.Render("j/k: move  enter: select  esc: cancel")
+			hint = stylePaneSubtitle.Render("j/k: move  enter: select  esc: cancel")
 		case modalConfirmYesNo:
 			body = mo.viewConfirmYesNo()
-			hint = styleFaint.Render("y: confirm  n/esc: cancel")
+			hint = stylePaneSubtitle.Render("y: confirm  n/esc: cancel")
 		default:
 			body = mo.body
 			if body == "" {
 				body = "not wired yet"
 			}
-			hint = styleFaint.Render("esc: cancel")
+			hint = stylePaneSubtitle.Render("esc: cancel")
 		}
 	}
 
@@ -50,7 +50,7 @@ func (mo *modal) view() string {
 		result += "\n" + styleError.Render(mo.submitErr)
 	}
 	if mo.submitting {
-		result += "\n\n" + styleFaint.Render("  ... submitting...")
+		result += "\n\n" + stylePaneSubtitle.Render("  ... submitting...")
 	} else {
 		result += "\n\n" + hint
 	}
@@ -65,7 +65,7 @@ func (mo *modal) viewForm() string {
 		if i == mo.focusedIdx {
 			prefix = "> "
 		}
-		lines = append(lines, styleFaint.Render(labels[i]))
+		lines = append(lines, stylePaneSubtitle.Render(labels[i]))
 		lines = append(lines, prefix+inp.View())
 	}
 	// visibility toggle
@@ -80,13 +80,13 @@ func (mo *modal) viewForm() string {
 	case 2:
 		visLabel = "Private"
 	}
-	lines = append(lines, styleFaint.Render("Visibility:"))
+	lines = append(lines, stylePaneSubtitle.Render("Visibility:"))
 	lines = append(lines, visPrefix+visLabel+" (space/enter to cycle)")
 	return strings.Join(lines, "\n")
 }
 
 func (mo *modal) viewConfirmText(prompt string) string {
-	return styleFaint.Render(prompt) + "\n> " + mo.confirmInput.View()
+	return stylePaneSubtitle.Render(prompt) + "\n> " + mo.confirmInput.View()
 }
 
 func (mo *modal) viewPickList() string {
@@ -107,7 +107,7 @@ func (mo *modal) viewPickList() string {
 		prefix := "  "
 		if i == mo.choiceCursor {
 			prefix = "> "
-			lines = append(lines, prefix+styleSelected.Render(mo.choices[i].Name))
+			lines = append(lines, prefix+styleCursorActive.Render(mo.choices[i].Name))
 		} else {
 			lines = append(lines, prefix+mo.choices[i].Name)
 		}
@@ -116,6 +116,6 @@ func (mo *modal) viewPickList() string {
 }
 
 func (mo *modal) viewConfirmYesNo() string {
-	return styleFaint.Render("Remove repo from current list?") + "\n\n" +
+	return stylePaneSubtitle.Render("Remove repo from current list?") + "\n\n" +
 		"[y] Yes  [n/esc] No"
 }

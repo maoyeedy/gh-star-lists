@@ -17,6 +17,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Back):
 		if m.showHelp {
 			m.showHelp = false
+			m.helpViewportOffset = 0
 			return m, nil
 		}
 		// Clear selection first if any; second Esc then navigates back / quits.
@@ -29,6 +30,24 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Quit
+
+	case m.showHelp && key.Matches(msg, keys.Up):
+		if m.helpViewportOffset > 0 {
+			m.helpViewportOffset--
+		}
+		return m, nil
+	case m.showHelp && key.Matches(msg, keys.Down):
+		m.helpViewportOffset++
+		return m, nil
+	case m.showHelp && key.Matches(msg, keys.PgUp):
+		m.helpViewportOffset -= m.height
+		if m.helpViewportOffset < 0 {
+			m.helpViewportOffset = 0
+		}
+		return m, nil
+	case m.showHelp && key.Matches(msg, keys.PgDn):
+		m.helpViewportOffset += m.height
+		return m, nil
 
 	case key.Matches(msg, keys.Left):
 		if m.active == paneRepo {
@@ -65,7 +84,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.PgUp):
-		paneH := max(1, m.height-2)
+		paneH := m.repoPaneH()
 		if m.active == paneList {
 			newIdx := clampInt(m.listCursor-(paneH-1), 0, len(m.displayedLists)-1)
 			cmd := (&m).focusList(newIdx)
@@ -77,7 +96,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.PgDn):
-		paneH := max(1, m.height-2)
+		paneH := m.repoPaneH()
 		if m.active == paneList {
 			newIdx := clampInt(m.listCursor+(paneH-1), 0, len(m.displayedLists)-1)
 			cmd := (&m).focusList(newIdx)
@@ -124,6 +143,9 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Help):
 		m.showHelp = !m.showHelp
+		if !m.showHelp {
+			m.helpViewportOffset = 0
+		}
 		return m, nil
 
 	case key.Matches(msg, keys.CreateList):
@@ -274,7 +296,7 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 		if m.lastClickPane == int(paneList) && m.lastClickIndex == idx &&
 			!m.lastClickTime.IsZero() && now.Sub(m.lastClickTime) < 300*time.Millisecond {
 			// Double-click: drill into the list, ensure load starts if idle.
-			_ = (&m).focusList(idx)
+			cmd := (&m).focusList(idx)
 			m.active = paneRepo
 			m.repoCursor = 0
 			m.previewOffset = 0
@@ -282,7 +304,7 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 			m.selected = nil
 			// Reset tracker.
 			m.lastClickTime = time.Time{}
-			return m, nil
+			return m, cmd
 		}
 		// Single click.
 		if idx != m.listCursor {
@@ -346,7 +368,7 @@ func (m model) activateRepoPane() (model, tea.Cmd) {
 		// does NOT touch repoCursor/repoOffset.
 		cmd = (&m).focusList(m.listCursor)
 	}
-	// Cache-loaded branch: skip focusList entirely — displayedRepos is current
+	// Cache-loaded branch: skip focusList entirely -- displayedRepos is current
 	// and we want to preserve repoCursor.
 	m.active = paneRepo
 	return m, cmd

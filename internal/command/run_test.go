@@ -430,7 +430,7 @@ func TestRunWritesListOutput(t *testing.T) {
 		{
 			name: "json",
 			argv: []string{"list", "--json"},
-			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":3,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n",
+			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"isPrivate\":false,\"id\":\"UL_1\",\"repoCount\":3,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n",
 		},
 		{
 			name: "tsv",
@@ -1199,49 +1199,20 @@ func TestRunUnlistedRepos(t *testing.T) {
 func TestRunUnlistedSortedByStarred(t *testing.T) {
 	t.Parallel()
 
-	svc := &fakeService{
-		lists: []githubapi.StarList{
-			{Name: "List A", ID: "UL_1", URL: "https://github.com/stars/user/lists/a"},
-		},
-		repos: []githubapi.Repository{
-			{NameWithOwner: "owner/a", URL: "https://github.com/owner/a"},
-		},
-		starred: []githubapi.Repository{
-			{
-				NameWithOwner: "owner/a",
-				StarredAt:     "2026-05-01T00:00:00Z",
-				URL:           "https://github.com/owner/a",
-			},
-			{
-				NameWithOwner: "owner/b",
-				StarredAt:     "2026-02-01T00:00:00Z",
-				URL:           "https://github.com/owner/b",
-			},
-			{
-				NameWithOwner: "owner/c",
-				StarredAt:     "2026-04-01T00:00:00Z",
-				URL:           "https://github.com/owner/c",
-			},
-		},
-	}
-
 	var stdout, stderr strings.Builder
 	code := runCommand(
 		context.Background(),
-		[]string{"repos", "--unlisted", "--sort", "starred", "--desc", "--tsv"},
+		[]string{"repos", "--unlisted", "--sort", "starred"},
 		&stdout,
 		&stderr,
-		svc,
+		&fakeService{},
 	)
 
-	if code != command.ExitSuccess {
-		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	if code != command.ExitUsage {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitUsage, stderr.String())
 	}
-	// owner/c starred 2026-04, owner/b starred 2026-02; desc order = c first
-	want := "owner/c\t\tno\t0\t\thttps://github.com/owner/c\t\n" +
-		"owner/b\t\tno\t0\t\thttps://github.com/owner/b\t\n"
-	if got := stdout.String(); got != want {
-		t.Fatalf("Run --unlisted --sort starred stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	if !strings.Contains(stderr.String(), "unsupported sort key") {
+		t.Fatalf("expected unsupported sort key error, got stderr=%q", stderr.String())
 	}
 }
 

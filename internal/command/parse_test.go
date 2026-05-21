@@ -499,16 +499,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "sort repos by starred",
-			argv: []string{"repos", "--unlisted", "--sort", "starred"},
-			want: command.Parsed{
-				Action:   command.ActionRepos,
-				Mode:     format.OutputHuman,
-				Unlisted: true,
-				SortKeys: []string{"starred"},
-			},
-		},
-		{
 			name: "filter min-stars negative clamps to zero",
 			argv: []string{"repos", "UL_1", "--filter", "min-stars:-5"},
 			want: command.Parsed{
@@ -647,6 +637,11 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "list unsupported sort key",
 			argv:        []string{"list", "--sort", "stars"},
 			wantMessage: "unsupported sort key \"stars\" for list",
+		},
+		{
+			name:        "sort repos by starred",
+			argv:        []string{"repos", "--unlisted", "--sort", "starred"},
+			wantMessage: "unsupported sort key \"starred\" for repos",
 		},
 		{
 			name:        "repos unsupported sort key",

@@ -129,6 +129,60 @@ func TestDoubleClickDrillsToRepoPane(t *testing.T) {
 	}
 }
 
+// TestDoubleClickDispatchesLoadCmd verifies that a double-click returns the
+// focusList load cmd instead of discarding it. The first click on an already-focused
+// row with cached repos is a no-op; the second click within 300ms becomes a
+// double-click that starts a load.
+func TestDoubleClickDispatchesLoadCmd(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 120
+	m.height = 24
+	m.active = paneList
+
+	// Pre-populate cache so the first click does not start a load.
+	if m.focusedList != nil {
+		m.repoCache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{
+			state: repoCacheLoaded, repos: svc.repos, gen: m.generation,
+		}
+	}
+
+	// First click on already-focused row -- triggers no load.
+	click := tea.MouseClickMsg{X: 5, Y: 1, Button: tea.MouseLeft}
+	m2 := update(m, click)
+
+	// Set tracker time and delete cache so double-click starts a fresh load.
+	m2.lastClickTime = time.Now()
+	if m2.focusedList != nil {
+		delete(m2.repoCache, repoCacheKey{m2.focusedList.ID, false})
+	}
+	m2.preloadInFlight = 0
+	m2.preloadQueue = nil
+
+	// Second click -- use m.Update directly to capture cmd.
+	next, cmd := m2.Update(click)
+	m3 := next.(model)
+
+	if m3.active != paneRepo {
+		t.Errorf("active after double-click = %v, want paneRepo", m3.active)
+	}
+	if cmd == nil {
+		t.Error("cmd should be non-nil after double-click (repo load command expected)")
+	}
+	// Verify the cmd produces a reposLoadedMsg for the focused list.
+	msgs := executeBatch(cmd)
+	if len(msgs) == 0 {
+		t.Error("cmd produced no messages")
+	} else {
+		_, ok := msgs[0].(reposLoadedMsg)
+		if !ok {
+			t.Errorf("cmd produced %T, want reposLoadedMsg", msgs[0])
+		}
+	}
+}
+
 // TestDoubleClickDifferentRowNoSwitch verifies that two rapid clicks on
 // different list rows do NOT switch pane.
 func TestDoubleClickDifferentRowNoSwitch(t *testing.T) {

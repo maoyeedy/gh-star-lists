@@ -40,6 +40,7 @@ type StarList struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	LastAddedAt string `json:"lastAddedAt"`
+	IsPrivate   bool   `json:"isPrivate"`
 	ID          string `json:"id"`
 	RepoCount   int    `json:"repoCount"`
 	URL         string `json:"url"`

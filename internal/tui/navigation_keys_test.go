@@ -157,6 +157,100 @@ func TestHelpToggle(t *testing.T) {
 	}
 }
 
+// TestHelpOverlayScrollsWithUpDown verifies that Up/Down scroll the help
+// overlay when showHelp is true.
+func TestHelpOverlayScrollsWithUpDown(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.showHelp = true
+	m.width = 80
+	m.height = 5 // short terminal to force scrolling
+
+	if m.helpViewportOffset != 0 {
+		t.Errorf("initial helpViewportOffset = %d, want 0", m.helpViewportOffset)
+	}
+
+	// Down scrolls down by 1.
+	m2 := update(m, specialKey(tea.KeyDown))
+	if m2.helpViewportOffset != 1 {
+		t.Errorf("after Down: helpViewportOffset = %d, want 1", m2.helpViewportOffset)
+	}
+
+	// Up scrolls back up by 1.
+	m3 := update(m2, specialKey(tea.KeyUp))
+	if m3.helpViewportOffset != 0 {
+		t.Errorf("after Up: helpViewportOffset = %d, want 0", m3.helpViewportOffset)
+	}
+
+	// Up at 0 stays at 0.
+	m4 := update(m3, specialKey(tea.KeyUp))
+	if m4.helpViewportOffset != 0 {
+		t.Errorf("after Up at 0: helpViewportOffset = %d, want 0", m4.helpViewportOffset)
+	}
+}
+
+// TestHelpOverlayPgDnPgUpScrolls verifies that PgUp/PgDn scroll the help
+// overlay by a full page.
+func TestHelpOverlayPgDnPgUpScrolls(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.showHelp = true
+	m.width = 80
+	m.height = 5
+
+	// PgDn scrolls by m.height.
+	m2 := update(m, specialKey(tea.KeyPgDown))
+	if m2.helpViewportOffset != 5 {
+		t.Errorf("after PgDn: helpViewportOffset = %d, want 5", m2.helpViewportOffset)
+	}
+
+	// PgUp scrolls back up.
+	m3 := update(m2, specialKey(tea.KeyPgUp))
+	if m3.helpViewportOffset != 0 {
+		t.Errorf("after PgUp: helpViewportOffset = %d, want 0", m3.helpViewportOffset)
+	}
+}
+
+// TestHelpOverlayScrollingDoesNotAffectNormalNav verifies that help overlay
+// key handling does not interfere with normal navigation when help is not shown.
+func TestHelpOverlayScrollingDoesNotAffectNormalNav(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.width = 120
+	m.height = 24
+	// showHelp is false by default.
+
+	m2 := update(m, specialKey(tea.KeyDown))
+	if m2.listCursor != 1 {
+		t.Errorf(
+			"Down when help not shown should navigate normally, got listCursor = %d",
+			m2.listCursor,
+		)
+	}
+}
+
+// TestHelpOverlayEscResetsOffset verifies that pressing Esc closes help and
+// resets the scroll offset.
+func TestHelpOverlayEscResetsOffset(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.showHelp = true
+	m.helpViewportOffset = 3
+
+	m2 := update(m, specialKey(tea.KeyEscape))
+	if m2.showHelp {
+		t.Error("showHelp should be false after Esc")
+	}
+	if m2.helpViewportOffset != 0 {
+		t.Errorf("helpViewportOffset = %d after Esc, want 0", m2.helpViewportOffset)
+	}
+}
+
 // TestSortCycleListsPane verifies s key cycles sortLists through all modes.
 
 func TestRepoMutationKeysNoOpInListPane(t *testing.T) {

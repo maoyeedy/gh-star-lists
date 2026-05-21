@@ -18,6 +18,7 @@ const listStarListsQuery = `query($endCursor: String, $first: Int!) {
         slug
         description
         lastAddedAt
+        isPrivate
         items {
           totalCount
         }
@@ -77,6 +78,13 @@ const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!, $w
 
 const getRepositoryQuery = `query($owner: String!, $name: String!, $withTopics: Boolean!) {
   repository(owner: $owner, name: $name) {` + repositoryFieldsFragment + `
+  }
+}`
+
+const getRepositoryIDQuery = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    nameWithOwner
   }
 }`
 
@@ -144,7 +152,6 @@ const listRepositoriesQuery = `query($id: ID!, $endCursor: String, $first: Int!,
   node(id: $id) {
     __typename
     ... on UserList {
-      name
       items(first: $first, after: $endCursor) {
         nodes {
           __typename
@@ -205,6 +212,7 @@ func (s *graphQLService) ListStarLists(
 				Name:        node.Name,
 				Description: stringValue(node.Description),
 				LastAddedAt: stringValue(node.LastAddedAt),
+				IsPrivate:   node.IsPrivate,
 				ID:          node.ID,
 				RepoCount:   repoCount,
 				URL:         listURL(s.host, node.User.Login, node.Slug),
@@ -301,6 +309,7 @@ type starListNode struct {
 	Slug        string                   `json:"slug"`
 	Description *string                  `json:"description"`
 	LastAddedAt *string                  `json:"lastAddedAt"`
+	IsPrivate   bool                     `json:"isPrivate"`
 	Items       *starListItemsConnection `json:"items"`
 	User        userNode                 `json:"user"`
 }
@@ -491,6 +500,15 @@ type repositoryNode struct {
 	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
 }
 
+type getRepositoryIDResponse struct {
+	Repository *repositoryIDNode `json:"repository"`
+}
+
+type repositoryIDNode struct {
+	ID            string `json:"id"`
+	NameWithOwner string `json:"nameWithOwner"`
+}
+
 type starListMutationResponse struct {
 	List starListNode `json:"list"`
 }
@@ -546,6 +564,28 @@ func (s *graphQLService) GetRepository(
 	}, nil
 }
 
+func (s *graphQLService) GetRepositoryID(
+	ctx context.Context,
+	nameWithOwner string,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	owner, name, err := parseRepoName(nameWithOwner)
+	if err != nil {
+		return "", err
+	}
+	var result getRepositoryIDResponse
+	variables := map[string]any{"owner": owner, "name": name}
+	if err := s.client.DoWithContext(ctx, getRepositoryIDQuery, variables, &result); err != nil {
+		return "", fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	}
+	if result.Repository == nil || result.Repository.ID == "" {
+		return "", fmt.Errorf("repository %q not found", nameWithOwner)
+	}
+	return result.Repository.ID, nil
+}
+
 func (s *graphQLService) GetRepositoryMemberships(
 	ctx context.Context,
 	nameWithOwner string,
@@ -588,11 +628,10 @@ func (s *graphQLService) GetRepositoryMemberships(
 		return "", nil, err
 	}
 	if repoID == "" {
-		repo, err := s.GetRepository(ctx, nameWithOwner)
+		repoID, err = s.GetRepositoryID(ctx, nameWithOwner)
 		if err != nil {
 			return "", nil, err
 		}
-		repoID = repo.ID
 	}
 	return repoID, memberListIDs, nil
 }
@@ -687,6 +726,7 @@ func (s *graphQLService) starListFromNode(node starListNode) StarList {
 		Name:        node.Name,
 		Description: stringValue(node.Description),
 		LastAddedAt: stringValue(node.LastAddedAt),
+		IsPrivate:   node.IsPrivate,
 		ID:          node.ID,
 		RepoCount:   repoCount,
 		URL:         listURL(s.host, node.User.Login, node.Slug),

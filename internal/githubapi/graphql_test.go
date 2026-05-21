@@ -256,6 +256,45 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 	}
 }
 
+func TestGraphQLServiceListStarListsMapsIsPrivate(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"lists": {
+				"nodes": [
+					{"id": "UL_1", "name": "Private List", "slug": "private-list", "description": "Secret", "lastAddedAt": "2025-01-02T03:04:05Z", "isPrivate": true, "items": {"totalCount": 3}, "user": {"login": "testuser"}}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`}}
+	service := newGraphQLService(executor, 100)
+
+	lists, err := service.ListStarLists(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarLists returned error: %v", err)
+	}
+
+	want := []StarList{
+		{
+			Name:        "Private List",
+			Description: "Secret",
+			LastAddedAt: "2025-01-02T03:04:05Z",
+			IsPrivate:   true,
+			ID:          "UL_1",
+			RepoCount:   3,
+			URL:         "https://github.com/stars/testuser/lists/private-list",
+		},
+	}
+	if len(lists) != len(want) || lists[0] != want[0] {
+		t.Fatalf("ListStarLists() = %#v, want %#v", lists, want)
+	}
+	if len(executor.calls) != 1 {
+		t.Fatalf("executor calls = %d, want 1", len(executor.calls))
+	}
+}
+
 func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 	t.Parallel()
 
@@ -796,5 +835,61 @@ func TestGraphQLServicePaginationExactMultiple(t *testing.T) {
 	}
 	if len(executor.calls) != 2 {
 		t.Fatalf("executor calls = %d, want 2", len(executor.calls))
+	}
+}
+
+func TestGraphQLServiceGetRepositoryMembershipsFallsBackToGetRepositoryID(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeGraphQLExecutor{responses: []string{`{
+		"viewer": {
+			"lists": {
+				"nodes": [
+					{"id": "UL_1", "name": "Empty List", "slug": "empty", "description": "", "lastAddedAt": "2025-01-01T00:00:00Z", "isPrivate": false, "user": {"login": "testuser"}}
+				],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`, `{
+		"node": {
+			"__typename": "UserList",
+			"items": {
+				"nodes": [],
+				"pageInfo": {"hasNextPage": false, "endCursor": null}
+			}
+		}
+	}`, `{
+		"repository": {
+			"id": "R_abc123",
+			"nameWithOwner": "owner/repo"
+		}
+	}`}}
+	service := newGraphQLService(executor, 100)
+
+	repoID, memberListIDs, err := service.GetRepositoryMemberships(
+		context.Background(),
+		"owner/repo",
+	)
+	if err != nil {
+		t.Fatalf("GetRepositoryMemberships returned error: %v", err)
+	}
+
+	if repoID != "R_abc123" {
+		t.Fatalf("repoID = %q, want R_abc123", repoID)
+	}
+	if len(memberListIDs) != 0 {
+		t.Fatalf("memberListIDs = %#v, want empty", memberListIDs)
+	}
+
+	if len(executor.calls) != 3 {
+		t.Fatalf("executor calls = %d, want 3", len(executor.calls))
+	}
+
+	lastCall := executor.calls[2]
+	if _, hasWithTopics := lastCall.variables["withTopics"]; hasWithTopics {
+		t.Fatal("last executor call has withTopics variable, want narrow query without it")
+	}
+	if !strings.Contains(lastCall.query, "nameWithOwner") {
+		t.Fatal("last executor call query missing nameWithOwner")
 	}
 }

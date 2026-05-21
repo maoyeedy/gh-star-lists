@@ -52,7 +52,7 @@ func (m model) renderRepoPane(w, h int) string {
 
 	// No list focused yet.
 	if m.focusedList == nil {
-		out = append(out, styleFaint.Render("(no list selected)"))
+		out = append(out, stylePaneSubtitle.Render("(no list selected)"))
 		for len(out) < totalH {
 			out = append(out, "")
 		}
@@ -93,7 +93,7 @@ func (m model) renderRepoPane(w, h int) string {
 			}
 			label = "(no matches for \"" + q + "\")"
 		}
-		out = append(out, styleFaint.Render(label))
+		out = append(out, stylePaneSubtitle.Render(label))
 		for len(out) < totalH {
 			out = append(out, "")
 		}
@@ -147,7 +147,7 @@ func (m model) renderRepoPane(w, h int) string {
 			if checked {
 				markerStr = styleChecked.Render("[x]") + " "
 			} else {
-				markerStr = styleFaint.Render("[ ]") + " "
+				markerStr = stylePaneSubtitle.Render("[ ]") + " "
 			}
 		}
 
@@ -169,7 +169,7 @@ func (m model) renderRepoPane(w, h int) string {
 		if showLang {
 			lang := r.Language
 			if lang == "" {
-				langStr = "  " + styleFaint.Render(padLeft("-", langWidth))
+				langStr = "  " + stylePaneSubtitle.Render(padLeft("-", langWidth))
 			} else {
 				lw := lipgloss.Width(lang)
 				if lw > langWidth {

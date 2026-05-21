@@ -106,31 +106,14 @@ func FilterStarLists(lists []githubapi.StarList, query string) []githubapi.StarL
 // Tokens returns the normalized searchable tokens extracted from text.
 func Tokens(text string) []string { return searchTerms(text) }
 
-// Score computes a relevance score for a set of fields against pre-computed query terms.
-// Returns 0 if any term is absent (AND semantics). phrase is normalize(originalQuery).
-// allText is the pre-normalized concatenation of all fields for phrase-bonus matching.
-func Score(
-	fields []Field,
+func scorePrepared(
+	prepared []preparedField,
 	terms []string,
 	phrase, allText string,
-	tokenCache map[string][]string,
 	editPrev, editCurr *[]int,
 ) int {
 	if len(terms) == 0 {
 		return 0
-	}
-
-	prepared := make([]preparedField, 0, len(fields))
-	for _, f := range fields {
-		text := normalize(f.Text)
-		if text == "" {
-			continue
-		}
-		prepared = append(prepared, preparedField{
-			text:   text,
-			tokens: cachedSearchTerms(tokenCache, text),
-			weight: f.Weight,
-		})
 	}
 
 	score := 0
@@ -160,18 +143,54 @@ func scoreRepository(
 	editPrev, editCurr *[]int,
 ) int {
 	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
+
+	normName := normalize(name)
 	normNameWithOwner := normalize(repo.NameWithOwner)
-	normDescription := normalize(repo.Description)
-	normLanguage := normalize(repo.Language)
-	fields := []Field{
-		{Text: name, Weight: 120},
-		{Text: repo.NameWithOwner, Weight: 100},
-		{Text: owner, Weight: 80},
-		{Text: repo.Description, Weight: 55},
-		{Text: repo.Language, Weight: 45},
+	normOwner := normalize(owner)
+	normDesc := normalize(repo.Description)
+	normLang := normalize(repo.Language)
+
+	prepared := make([]preparedField, 0, 5)
+
+	if normName != "" {
+		prepared = append(
+			prepared,
+			preparedField{normName, cachedSearchTerms(tokenCache, normName), 120},
+		)
 	}
-	allText := strings.Join([]string{normNameWithOwner, normDescription, normLanguage}, " ")
-	return Score(fields, terms, phrase, allText, tokenCache, editPrev, editCurr)
+	if normNameWithOwner != "" {
+		prepared = append(
+			prepared,
+			preparedField{normNameWithOwner, cachedSearchTerms(tokenCache, normNameWithOwner), 100},
+		)
+	}
+	if normOwner != "" {
+		prepared = append(
+			prepared,
+			preparedField{normOwner, cachedSearchTerms(tokenCache, normOwner), 80},
+		)
+	}
+	if normDesc != "" {
+		prepared = append(
+			prepared,
+			preparedField{normDesc, cachedSearchTerms(tokenCache, normDesc), 55},
+		)
+	}
+	if normLang != "" {
+		prepared = append(
+			prepared,
+			preparedField{normLang, cachedSearchTerms(tokenCache, normLang), 45},
+		)
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(normNameWithOwner) + 1 + len(normDesc) + 1 + len(normLang))
+	sb.WriteString(normNameWithOwner)
+	sb.WriteByte(' ')
+	sb.WriteString(normDesc)
+	sb.WriteByte(' ')
+	sb.WriteString(normLang)
+	return scorePrepared(prepared, terms, phrase, sb.String(), editPrev, editCurr)
 }
 
 func scoreStarList(
@@ -183,12 +202,28 @@ func scoreStarList(
 ) int {
 	normName := normalize(list.Name)
 	normDesc := normalize(list.Description)
-	fields := []Field{
-		{Text: list.Name, Weight: 120},
-		{Text: list.Description, Weight: 70},
+
+	prepared := make([]preparedField, 0, 2)
+
+	if normName != "" {
+		prepared = append(
+			prepared,
+			preparedField{normName, cachedSearchTerms(tokenCache, normName), 120},
+		)
 	}
-	allText := strings.Join([]string{normName, normDesc}, " ")
-	return Score(fields, terms, phrase, allText, tokenCache, editPrev, editCurr)
+	if normDesc != "" {
+		prepared = append(
+			prepared,
+			preparedField{normDesc, cachedSearchTerms(tokenCache, normDesc), 70},
+		)
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(normName) + 1 + len(normDesc))
+	sb.WriteString(normName)
+	sb.WriteByte(' ')
+	sb.WriteString(normDesc)
+	return scorePrepared(prepared, terms, phrase, sb.String(), editPrev, editCurr)
 }
 
 type preparedField struct {

@@ -20,7 +20,7 @@ func (m *model) ensureRepoWidths() {
 	m.cachedRepoSig = sig
 	maxStars, maxLang := 0, 0
 	for _, r := range m.displayedRepos {
-		if n := len(fmt.Sprintf("%d", r.StargazerCount)); n > maxStars {
+		if n := len(formatStars(r.StargazerCount)); n > maxStars {
 			maxStars = n
 		}
 		if n := len(r.Language); n > maxLang {
@@ -169,7 +169,7 @@ func (m model) renderRepoPane(w, h int) string {
 		// -- Stars field --
 		var starsStr string
 		if showStars {
-			countRaw := fmt.Sprintf("%d", r.StargazerCount)
+			countRaw := formatStars(r.StargazerCount)
 			// Right-align count within (starWidth - 2) then append " " + glyph.
 			countFieldW := starWidth - 2 // space + glyph
 			if countFieldW < 1 {

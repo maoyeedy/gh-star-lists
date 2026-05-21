@@ -87,15 +87,29 @@
 
 **TUI key binding pattern.** Use `key.NewBinding(key.WithKeys(...), key.WithHelp(...))` from `charm.land/bubbles/v2/key`. Match with `key.Matches(msg, keys.X)`.
 
+**TUI contextual help.** Keep key help text close to `key.Binding` definitions. Prefer Bubbles `help.Model`/`ShortHelp`/`FullHelp` patterns over hand-maintained duplicate help tables when adding or reshaping help.
+
+**TUI component boundaries.** For larger TUI work, keep root `Update` orchestration thin and split pane rendering/input, preview, footer/help, modal, and cache/preload logic into focused helpers. This borrows the useful part of `gh-dash` without copying its broad PR/issue/notification scope.
+
+**TUI preview pattern.** A preview/detail pane should update from the current selection and stay inside Star Lists capacity: list metadata when the list pane is focused, repo metadata/topics when the repo pane is focused. Do not add unrelated GitHub dashboards.
+
+**TUI load commands.** Keep API work in `tea.Cmd`, return typed messages, batch independent commands with `tea.Batch`, and drop stale async results with generation checks and/or canceled contexts.
+
 **TUI cache invalidation.** Type-assert `m.svc.(invalidatable)` in model — check the `invalidatable` interface. Never assume service has `Invalidate()`.
 
 **TUI sort enum cycle.** Add enum constant in `model.go`, case in `sort.go`, label in `currentSortLabel()`. Cycle count must match number of enum values.
 
 **TUI rendering.** `lipgloss.Width(s)` for visual width, not `len(s)`. Use `lipgloss.NewStyle().Width(w).Height(h)` for empty-state placeholders.
 
-**TUI v1 has no detail pane.** `Repository.Topics` not available in TUI. No `WithTopics: true` guard needed in TUI v1.
+**TUI responsive layout.** Prefer stable pane dimensions from `geometry.go`, adaptive preview placement for narrow terminals, faint separators, full-row cursor cues, and fixed-width column calculations. Do not let labels, spinners, or dynamic counts shift pane boundaries.
+
+**TUI topics guard.** Fetch `Repository.Topics` only for preview/detail or explicit topic-dependent behavior. Use `WithTopics: true` only on the paths that need those fields.
 
 **TUI `fakeService` in tests.** Must implement all `githubapi.Service` methods. Add stubs for unused methods returning nil/nil.
+
+**go-gh GraphQL usage.** Construct `api.NewGraphQLClient` lazily in `githubapi` only, pass `Host` through `api.ClientOptions`, use `DoWithContext`, and wrap failures as `fmt.Errorf("GitHub GraphQL request failed: %w", err)`.
+
+**go-gh browser usage in TUI.** Browser opening is injected through `Options.OpenBrowser` from `command/run.go`. In TUI paths, construct browser writers with `io.Discard` so child-process output cannot corrupt the alt screen.
 
 ## Code Review Checklist
 
@@ -135,18 +149,13 @@
 
 ## Context7 Library IDs
 
-Pre-resolved. Use `query-docs` directly.
+Pre-resolved. Use them for ctx7 mcp `query-docs` directly.
 
 | Library | Context7 ID | Query when… |
 |---------|-------------|-------------|
 | `go-gh/v2` | `/cli/go-gh` | GraphQL executor, pagination, terminal, auth |
 | `Masterminds/sprig` | `/masterminds/sprig` | `--template` function availability |
 | `gopkg.in/yaml.v3` | `/yaml/go-yaml` | YAML marshal/unmarshal, struct tags |
-
-### tui
-
-| Library | Context7 ID | Query when… |
-|---------|-------------|-------------|
 | `charm.land/bubbletea/v2` | `/charmbracelet/bubbletea` | TUI framework, models, updates, commands |
 | `charm.land/bubbles/v2` | `/charmbracelet/bubbles` | TUI components (table, input, viewport, etc.) |
 | `charm.land/lipgloss/v2` | `/charmbracelet/lipgloss` | Terminal styling, colors, layouts |

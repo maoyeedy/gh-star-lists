@@ -18,6 +18,7 @@ const (
 	modalPickList
 	modalConfirmText
 	modalConfirmYesNo
+	modalHelp
 )
 
 type modal struct {
@@ -52,6 +53,9 @@ type modal struct {
 	// Cleared when submitting starts; displayed in the view when not submitting.
 	submitErr   string
 	bulkFailure *bulkFailureState
+
+	// scroll offset for scrollable modals (help)
+	scrollOffset int
 
 	// context for cancel-without-side-effect
 	ctx context.Context

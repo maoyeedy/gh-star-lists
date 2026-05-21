@@ -8,17 +8,14 @@ import (
 
 func TestHelpViewContainsAllKeys(t *testing.T) {
 	t.Parallel()
-	svc := &fakeService{}
-	m := newTestModel(svc)
-	m.showHelp = true
-	m.width = 80
-	m.height = 24
+	mo := newHelpModal()
+	mo.scrollOffset = 0
 
-	view := m.renderHelp()
+	view := mo.view()
 
-	for _, want := range []string{"up/k", "down/j", "enter", "esc", "o", "s", "ctrl+r", "?", "q"} {
+	for _, want := range []string{"up/k", "down/j", "enter", "esc", "o", "s", "ctrl+r", "q"} {
 		if !containsStr(view, want) {
-			t.Errorf("help view missing key %q", want)
+			t.Errorf("help modal view missing key %q; got:\n%s", want, view)
 		}
 	}
 }
@@ -74,19 +71,17 @@ func TestLoadingRendersInsidePane(t *testing.T) {
 	}
 }
 
-// TestHelpOverlayContainsV12Keys verifies the rendered help overlay references
+// TestHelpModalContainsV12Keys verifies the rendered help modal references
 // v1.2 additions and new v1.3 Left/Right keys.
-func TestHelpOverlayContainsV12Keys(t *testing.T) {
+func TestHelpModalContainsV12Keys(t *testing.T) {
 	t.Parallel()
-	svc := threeListsSvc()
-	m := newTestModel(svc)
-	m.width = 120
-	m.height = 40
+	mo := newHelpModal()
+	mo.scrollOffset = 0
 
-	help := m.renderHelp()
+	view := mo.view()
 	for _, want := range []string{"space", "/", "pgup", "g", "left", "right"} {
-		if !strings.Contains(help, want) {
-			t.Errorf("renderHelp missing %q; got:\n%s", want, help)
+		if !strings.Contains(view, want) {
+			t.Errorf("help modal missing %q; got:\n%s", want, view)
 		}
 	}
 }

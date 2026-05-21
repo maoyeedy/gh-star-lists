@@ -32,6 +32,9 @@ func (mo *modal) view() string {
 		case modalConfirmYesNo:
 			body = mo.viewConfirmYesNo()
 			hint = stylePaneSubtitle.Render("y: confirm  n/esc: cancel")
+		case modalHelp:
+			body = mo.viewHelp()
+			hint = stylePaneSubtitle.Render("j/k: scroll  esc: close")
 		default:
 			body = mo.body
 			if body == "" {
@@ -113,6 +116,20 @@ func (mo *modal) viewPickList() string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (mo *modal) viewHelp() string {
+	lines := renderHelpLines(60)
+	if mo.scrollOffset >= len(lines) {
+		mo.scrollOffset = max(0, len(lines)-1)
+	}
+	const maxVisible = 20
+	start := mo.scrollOffset
+	end := start + maxVisible
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 func (mo *modal) viewConfirmYesNo() string {

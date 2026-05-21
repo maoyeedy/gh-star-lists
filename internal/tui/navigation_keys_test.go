@@ -141,113 +141,93 @@ func TestQuitKeySendsQuit(t *testing.T) {
 	}
 }
 
-// TestHelpToggle verifies ? key toggles showHelp.
+// TestHelpToggle verifies ? key opens a help modal, and esc closes it.
 func TestHelpToggle(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
 
 	m2 := update(m, keyPress('?'))
-	if !m2.showHelp {
-		t.Error("showHelp should be true after first ?")
+	if m2.modal == nil || m2.modal.kind != modalHelp {
+		t.Error("modal should be a help modal after first ?")
 	}
+
+	// Second ? when modal is open should not toggle it (modal handles esc).
 	m3 := update(m2, keyPress('?'))
-	if m3.showHelp {
-		t.Error("showHelp should be false after second ?")
+	if m3.modal == nil {
+		t.Error("modal should still be open after second ? (use esc to close)")
+	}
+
+	// Esc closes the modal.
+	m4 := update(m3, specialKey(tea.KeyEscape))
+	if m4.modal != nil {
+		t.Error("modal should be nil after esc")
 	}
 }
 
-// TestHelpOverlayScrollsWithUpDown verifies that Up/Down scroll the help
-// overlay when showHelp is true.
-func TestHelpOverlayScrollsWithUpDown(t *testing.T) {
+// TestHelpModalScrollsWithUpDown verifies that Up/Down scroll the help
+// modal content.
+func TestHelpModalScrollsWithUpDown(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
-	m.showHelp = true
-	m.width = 80
-	m.height = 5 // short terminal to force scrolling
+	m.modal = newHelpModal()
 
-	if m.helpViewportOffset != 0 {
-		t.Errorf("initial helpViewportOffset = %d, want 0", m.helpViewportOffset)
+	if m.modal.scrollOffset != 0 {
+		t.Errorf("initial scrollOffset = %d, want 0", m.modal.scrollOffset)
 	}
 
 	// Down scrolls down by 1.
-	m2 := update(m, specialKey(tea.KeyDown))
-	if m2.helpViewportOffset != 1 {
-		t.Errorf("after Down: helpViewportOffset = %d, want 1", m2.helpViewportOffset)
+	updated, _ := m.modal.update(specialKey(tea.KeyDown))
+	if updated.scrollOffset != 1 {
+		t.Errorf("after Down: scrollOffset = %d, want 1", updated.scrollOffset)
 	}
 
 	// Up scrolls back up by 1.
-	m3 := update(m2, specialKey(tea.KeyUp))
-	if m3.helpViewportOffset != 0 {
-		t.Errorf("after Up: helpViewportOffset = %d, want 0", m3.helpViewportOffset)
+	updated2, _ := updated.update(specialKey(tea.KeyUp))
+	if updated2.scrollOffset != 0 {
+		t.Errorf("after Up: scrollOffset = %d, want 0", updated2.scrollOffset)
 	}
 
 	// Up at 0 stays at 0.
-	m4 := update(m3, specialKey(tea.KeyUp))
-	if m4.helpViewportOffset != 0 {
-		t.Errorf("after Up at 0: helpViewportOffset = %d, want 0", m4.helpViewportOffset)
+	updated3, _ := updated2.update(specialKey(tea.KeyUp))
+	if updated3.scrollOffset != 0 {
+		t.Errorf("after Up at 0: scrollOffset = %d, want 0", updated3.scrollOffset)
 	}
 }
 
-// TestHelpOverlayPgDnPgUpScrolls verifies that PgUp/PgDn scroll the help
-// overlay by a full page.
-func TestHelpOverlayPgDnPgUpScrolls(t *testing.T) {
+// TestHelpModalPgDnPgUpScrolls verifies that PgUp/PgDn scroll the help
+// modal content.
+func TestHelpModalPgDnPgUpScrolls(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
-	m.showHelp = true
-	m.width = 80
-	m.height = 5
+	m.modal = newHelpModal()
 
-	// PgDn scrolls by m.height.
-	m2 := update(m, specialKey(tea.KeyPgDown))
-	if m2.helpViewportOffset != 5 {
-		t.Errorf("after PgDn: helpViewportOffset = %d, want 5", m2.helpViewportOffset)
+	// PgDn scrolls by 20.
+	updated, _ := m.modal.update(specialKey(tea.KeyPgDown))
+	if updated.scrollOffset != 20 {
+		t.Errorf("after PgDn: scrollOffset = %d, want 20", updated.scrollOffset)
 	}
 
 	// PgUp scrolls back up.
-	m3 := update(m2, specialKey(tea.KeyPgUp))
-	if m3.helpViewportOffset != 0 {
-		t.Errorf("after PgUp: helpViewportOffset = %d, want 0", m3.helpViewportOffset)
+	updated2, _ := updated.update(specialKey(tea.KeyPgUp))
+	if updated2.scrollOffset != 0 {
+		t.Errorf("after PgUp: scrollOffset = %d, want 0", updated2.scrollOffset)
 	}
 }
 
-// TestHelpOverlayScrollingDoesNotAffectNormalNav verifies that help overlay
-// key handling does not interfere with normal navigation when help is not shown.
-func TestHelpOverlayScrollingDoesNotAffectNormalNav(t *testing.T) {
-	t.Parallel()
-	svc := threeListsSvc()
-	m := newTestModel(svc)
-	m = update(m, listsLoadedMsg{lists: svc.lists})
-	m.width = 120
-	m.height = 24
-	// showHelp is false by default.
-
-	m2 := update(m, specialKey(tea.KeyDown))
-	if m2.listCursor != 1 {
-		t.Errorf(
-			"Down when help not shown should navigate normally, got listCursor = %d",
-			m2.listCursor,
-		)
-	}
-}
-
-// TestHelpOverlayEscResetsOffset verifies that pressing Esc closes help and
-// resets the scroll offset.
-func TestHelpOverlayEscResetsOffset(t *testing.T) {
+// TestHelpModalEscResetsOffset verifies that pressing Esc closes the help modal.
+func TestHelpModalEscResetsOffset(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
-	m.showHelp = true
-	m.helpViewportOffset = 3
+	m.modal = newHelpModal()
+	m.modal.scrollOffset = 3
 
-	m2 := update(m, specialKey(tea.KeyEscape))
-	if m2.showHelp {
-		t.Error("showHelp should be false after Esc")
-	}
-	if m2.helpViewportOffset != 0 {
-		t.Errorf("helpViewportOffset = %d after Esc, want 0", m2.helpViewportOffset)
+	updated, _ := m.modal.update(specialKey(tea.KeyEscape))
+	if updated != nil {
+		t.Error("modal should be nil after Esc")
 	}
 }
 

@@ -21,6 +21,8 @@ func (mo *modal) update(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 		return mo.updatePickList(msg)
 	case modalConfirmYesNo:
 		return mo.updateConfirmYesNo(msg)
+	case modalHelp:
+		return mo.updateHelp(msg)
 	default:
 		if msg.String() == "esc" {
 			return nil, nil
@@ -128,6 +130,31 @@ func (mo *modal) updatePickList(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 		}
 		cmd := mo.onConfirm(mo)
 		return nil, cmd
+	}
+	return mo, nil
+}
+
+func (mo *modal) updateHelp(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return nil, nil
+	case "up", "k":
+		if mo.scrollOffset > 0 {
+			mo.scrollOffset--
+		}
+		return mo, nil
+	case "down", "j":
+		mo.scrollOffset++
+		return mo, nil
+	case "pgup":
+		mo.scrollOffset -= 20
+		if mo.scrollOffset < 0 {
+			mo.scrollOffset = 0
+		}
+		return mo, nil
+	case "pgdown":
+		mo.scrollOffset += 20
+		return mo, nil
 	}
 	return mo, nil
 }

@@ -15,11 +15,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, keys.Back):
-		if m.showHelp {
-			m.showHelp = false
-			m.helpViewportOffset = 0
-			return m, nil
-		}
 		// Clear selection first if any; second Esc then navigates back / quits.
 		if len(m.selected) > 0 {
 			m.selected = nil
@@ -30,24 +25,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Quit
-
-	case m.showHelp && key.Matches(msg, keys.Up):
-		if m.helpViewportOffset > 0 {
-			m.helpViewportOffset--
-		}
-		return m, nil
-	case m.showHelp && key.Matches(msg, keys.Down):
-		m.helpViewportOffset++
-		return m, nil
-	case m.showHelp && key.Matches(msg, keys.PgUp):
-		m.helpViewportOffset -= m.height
-		if m.helpViewportOffset < 0 {
-			m.helpViewportOffset = 0
-		}
-		return m, nil
-	case m.showHelp && key.Matches(msg, keys.PgDn):
-		m.helpViewportOffset += m.height
-		return m, nil
 
 	case key.Matches(msg, keys.Left):
 		if m.active == paneRepo {
@@ -142,10 +119,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleRefresh()
 
 	case key.Matches(msg, keys.Help):
-		m.showHelp = !m.showHelp
-		if !m.showHelp {
-			m.helpViewportOffset = 0
-		}
+		m.modal = newHelpModal()
 		return m, nil
 
 	case key.Matches(msg, keys.CreateList):

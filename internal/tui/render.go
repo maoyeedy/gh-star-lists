@@ -22,9 +22,6 @@ func (m model) renderContent() string {
 	if m.err != nil {
 		return styleError.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\nPress q to quit."
 	}
-	if m.showHelp {
-		return m.renderHelp()
-	}
 	base := m.renderLayout()
 	if m.modal != nil {
 		box := styleModalBorder.Render(m.modal.view())

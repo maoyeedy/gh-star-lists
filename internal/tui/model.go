@@ -52,10 +52,8 @@ type model struct {
 
 	err error
 
-	showHelp           bool
-	helpViewportOffset int
-	width              int
-	height             int
+	width  int
+	height int
 
 	modal        *modal
 	statusMsg    string

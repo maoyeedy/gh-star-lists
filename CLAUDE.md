@@ -12,6 +12,7 @@
 - `NewProductionServiceWithOptions` returns a lazy wrapper. `go-gh` GraphQL client constructed on first API call, not at startup.
 - Extension delegates auth entirely to `gh`. Never store, cache, or forward tokens.
 - `NewCacheServiceWithOptions` wraps `Service`. Cache decisions stay in `githubapi`. Never add caching logic to `command` or `format`.
+- **Shared behavior extraction rule.** When asked "make CLI do what TUI does" or "extract shared logic": data transformations (sort, filter, resolve) go in `githubapi` or a neutral internal package; output rendering (styling, ANSI codes) stays split — `format` owns the CLI path, `tui` owns its lipgloss path, they share the convention not the code; business logic (validation, computation) goes in a new shared package both can import.
 
 ## Build / Commands
 

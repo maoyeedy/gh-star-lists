@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const listStarListsQuery = `query($endCursor: String, $first: Int!) {
@@ -74,19 +77,6 @@ const listStarredRepositoriesQuery = `query($endCursor: String, $first: Int!, $w
 
 const getRepositoryQuery = `query($owner: String!, $name: String!, $withTopics: Boolean!) {
   repository(owner: $owner, name: $name) {` + repositoryFieldsFragment + `
-  }
-}`
-
-const getRepositoryWithListsQuery = `query($owner: String!, $name: String!) {
-  repository(owner: $owner, name: $name) {
-    id
-    nameWithOwner
-    userLists(first: 100) {
-      nodes {
-        id
-        name
-      }
-    }
   }
 }`
 
@@ -501,25 +491,6 @@ type repositoryNode struct {
 	PrimaryLanguage  *languageNode             `json:"primaryLanguage"`
 }
 
-type repositoryMembershipsResponse struct {
-	Repository *repositoryMembershipsNode `json:"repository"`
-}
-
-type repositoryMembershipsNode struct {
-	ID            string              `json:"id"`
-	NameWithOwner string              `json:"nameWithOwner"`
-	UserLists     repositoryUserLists `json:"userLists"`
-}
-
-type repositoryUserLists struct {
-	Nodes []userListIDNode `json:"nodes"`
-}
-
-type userListIDNode struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
 type starListMutationResponse struct {
 	List starListNode `json:"list"`
 }
@@ -582,31 +553,48 @@ func (s *graphQLService) GetRepositoryMemberships(
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
-	owner, name, err := parseRepoName(nameWithOwner)
+	lists, err := s.ListStarLists(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	var result repositoryMembershipsResponse
-	variables := map[string]any{"owner": owner, "name": name}
-	if err := s.client.DoWithContext(
-		ctx,
-		getRepositoryWithListsQuery,
-		variables,
-		&result,
-	); err != nil {
-		return "", nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+	key := strings.ToLower(nameWithOwner)
+	var mu sync.Mutex
+	var repoID string
+	memberListIDs := make([]string, 0)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(5)
+	for _, list := range lists {
+		list := list
+		group.Go(func() error {
+			repos, err := s.ListRepositories(groupCtx, list.ID)
+			if err != nil {
+				return err
+			}
+			for _, repo := range repos {
+				if strings.ToLower(repo.NameWithOwner) == key {
+					mu.Lock()
+					if repo.ID != "" {
+						repoID = repo.ID
+					}
+					memberListIDs = append(memberListIDs, list.ID)
+					mu.Unlock()
+					break
+				}
+			}
+			return nil
+		})
 	}
-	if result.Repository == nil || result.Repository.ID == "" {
-		return "", nil, fmt.Errorf("repository %q not found", nameWithOwner)
+	if err := group.Wait(); err != nil {
+		return "", nil, err
 	}
-	listIDs := make([]string, 0, len(result.Repository.UserLists.Nodes))
-	for _, node := range result.Repository.UserLists.Nodes {
-		if node.ID == "" {
-			continue
+	if repoID == "" {
+		repo, err := s.GetRepository(ctx, nameWithOwner)
+		if err != nil {
+			return "", nil, err
 		}
-		listIDs = append(listIDs, node.ID)
+		repoID = repo.ID
 	}
-	return result.Repository.ID, listIDs, nil
+	return repoID, memberListIDs, nil
 }
 
 func (s *graphQLService) CreateStarList(
@@ -657,6 +645,9 @@ func (s *graphQLService) UpdateRepositoryLists(
 	repoID string,
 	listIDs []string,
 ) error {
+	if listIDs == nil {
+		listIDs = []string{}
+	}
 	return s.execMutation(
 		ctx,
 		updateRepositoryListsMutation,

@@ -146,10 +146,20 @@ func (m model) renderPreviewPane(w, h int) string {
 
 func formatStars(n int) string {
 	switch {
-	case n >= 1000000:
-		return fmt.Sprintf("%.1fM", float64(n)/1000000)
-	case n >= 1000:
-		return fmt.Sprintf("%.1fK", float64(n)/1000)
+	case n >= 1_000_000:
+		m := n / 1_000_000
+		if m >= 10 {
+			return fmt.Sprintf("%dm", m)
+		}
+		d := (n % 1_000_000) / 100_000
+		return fmt.Sprintf("%d.%dm", m, d)
+	case n >= 1_000:
+		k := n / 1_000
+		if k >= 10 {
+			return fmt.Sprintf("%dk", k)
+		}
+		d := (n % 1_000) / 100
+		return fmt.Sprintf("%d.%dk", k, d)
 	default:
 		return fmt.Sprintf("%d", n)
 	}

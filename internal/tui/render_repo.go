@@ -18,11 +18,8 @@ func (m *model) ensureRepoWidths() {
 		return // cache hit
 	}
 	m.cachedRepoSig = sig
-	maxStars, maxLang := 0, 0
+	maxLang := 0
 	for _, r := range m.displayedRepos {
-		if n := len(formatStars(r.StargazerCount)); n > maxStars {
-			maxStars = n
-		}
 		if n := len(r.Language); n > maxLang {
 			maxLang = n
 		}
@@ -30,7 +27,7 @@ func (m *model) ensureRepoWidths() {
 	if maxLang > 12 {
 		maxLang = 12
 	}
-	m.cachedStarWidth = maxStars
+	m.cachedStarWidth = 4
 	m.cachedLangWidth = maxLang
 }
 

@@ -240,7 +240,7 @@ func (m model) renderRepoPane(w, h int) string {
 				if m.active == paneRepo {
 					repoStyle = styleRepoNameFocused
 				} else {
-					repoStyle = styleRepoNameInactive
+					repoStyle = styleRepoName
 				}
 			} else {
 				repoStyle = styleRepoName
@@ -257,7 +257,7 @@ func (m model) renderRepoPane(w, h int) string {
 				if m.active == paneRepo {
 					nameStr = styleRepoNameFocused.Render(nameRaw)
 				} else {
-					nameStr = styleRepoNameInactive.Render(nameRaw)
+					nameStr = styleRepoName.Render(nameRaw)
 				}
 			} else {
 				nameStr = styleRepoName.Render(nameRaw)

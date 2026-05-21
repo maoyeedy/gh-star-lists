@@ -12,14 +12,13 @@ var (
 	styleSeparator    = lipgloss.NewStyle().Faint(true)
 
 	// Repo rows
-	styleRepoName         = lipgloss.NewStyle()
-	styleRepoNameFocused  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	styleRepoNameInactive = lipgloss.NewStyle().Faint(true)
-	styleRepoOwner        = lipgloss.NewStyle().Faint(true)
-	styleRepoStars        = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleRepoLanguage     = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	styleRepoURL          = lipgloss.NewStyle().Faint(true)
-	styleRepoBadge        = lipgloss.NewStyle().Faint(true)
+	styleRepoName        = lipgloss.NewStyle()
+	styleRepoNameFocused = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	styleRepoOwner       = lipgloss.NewStyle().Faint(true)
+	styleRepoStars       = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	styleRepoLanguage    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	styleRepoURL         = lipgloss.NewStyle().Faint(true)
+	styleRepoBadge       = lipgloss.NewStyle().Faint(true)
 
 	// Search
 	styleSearchPrompt = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))

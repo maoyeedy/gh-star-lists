@@ -193,9 +193,9 @@ func TestSelectionClearedOnFocusChange(t *testing.T) {
 	}
 }
 
-// TestCursorResetOnFocusChange verifies that repoCursor and repoOffset are
-// reset to 0 whenever the focused list changes via Enter key.
-func TestCursorResetOnFocusChange(t *testing.T) {
+// TestCursorPreservedOnEnter verifies that repoCursor and repoOffset are
+// preserved when entering the repo pane via Enter (same behavior as Right arrow).
+func TestCursorPreservedOnEnter(t *testing.T) {
 	t.Parallel()
 	svc := largeSvc(30)
 	m := newTestModel(svc)
@@ -210,11 +210,11 @@ func TestCursorResetOnFocusChange(t *testing.T) {
 
 	m2 := update(m, specialKey(tea.KeyEnter))
 
-	if m2.repoCursor != 0 {
-		t.Errorf("repoCursor = %d after focus change, want 0", m2.repoCursor)
+	if m2.repoCursor != 15 {
+		t.Errorf("repoCursor = %d after Enter, want 15 (preserved)", m2.repoCursor)
 	}
-	if m2.repoOffset != 0 {
-		t.Errorf("repoOffset = %d after focus change, want 0", m2.repoOffset)
+	if m2.repoOffset != 10 {
+		t.Errorf("repoOffset = %d after Enter, want 10 (preserved)", m2.repoOffset)
 	}
 }
 

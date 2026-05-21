@@ -38,7 +38,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Right):
 		if m.active == paneList && m.focusedList != nil {
-			m.active = paneRepo
+			return m.activateRepoPane()
 		}
 		return m, nil
 
@@ -324,22 +324,32 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		if len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		var cmd tea.Cmd
-		key := repoCacheKey{m.displayedLists[m.listCursor].ID, m.showPreview}
-		e := m.repoCache[key]
-		if e == nil || e.state == repoCacheIdle {
-			// Idle: start the load via focusList.
-			cmd = (&m).focusList(m.listCursor)
-		}
-		m.active = paneRepo
-		m.repoCursor = 0
-		m.previewOffset = 0
-		m.repoOffset = 0
-		m.selected = nil
-		return m, cmd
+		mo, cmd := m.activateRepoPane()
+		mo.selected = nil
+		return mo, cmd
 	}
 	// paneRepo: open in browser
 	return m.openFocusedRepoURL()
+}
+
+// activateRepoPane switches focus to the repo pane, triggering a load if
+// the focused list's repos aren't cached. Does not modify repoCursor or repoOffset.
+func (m model) activateRepoPane() (model, tea.Cmd) {
+	if len(m.displayedLists) == 0 {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	key := repoCacheKey{m.displayedLists[m.listCursor].ID, m.showPreview}
+	e := m.repoCache[key]
+	if e == nil || e.state == repoCacheIdle {
+		// Not cached / idle: focusList triggers load. Its idle/default branch
+		// does NOT touch repoCursor/repoOffset.
+		cmd = (&m).focusList(m.listCursor)
+	}
+	// Cache-loaded branch: skip focusList entirely — displayedRepos is current
+	// and we want to preserve repoCursor.
+	m.active = paneRepo
+	return m, cmd
 }
 
 func (m model) handleOpen() (tea.Model, tea.Cmd) {

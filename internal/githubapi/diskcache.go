@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -16,6 +17,7 @@ const (
 	diskCacheVersion    = 1
 	defaultDiskCacheTTL = 5 * time.Minute
 	diskCacheDirName    = "gh-star-lists"
+	diskCacheMaxEntries = 200
 )
 
 // DiskCacheOptions configures the disk-backed cache service.
@@ -38,6 +40,17 @@ type diskCacheService struct {
 	host     string
 	cacheDir string
 	mu       sync.Mutex
+	fills    map[string]*diskCacheFill
+	gen      int64
+	maxFiles int
+
+	beforeDiskWrite func()
+}
+
+type diskCacheFill struct {
+	done  chan struct{}
+	entry *diskCacheEntry
+	err   error
 }
 
 // NewDiskCacheService wraps inner with an opt-in disk read cache.
@@ -62,6 +75,8 @@ func NewDiskCacheService(inner Service, opts DiskCacheOptions) Service {
 		ttl:      ttl,
 		host:     host,
 		cacheDir: cacheDir,
+		fills:    make(map[string]*diskCacheFill),
+		maxFiles: diskCacheMaxEntries,
 	}
 }
 
@@ -103,9 +118,24 @@ func (s *diskCacheService) readFromDisk(key string) *diskCacheEntry {
 	return &entry
 }
 
-func (s *diskCacheService) writeToDisk(key string, entry *diskCacheEntry) {
+func (s *diskCacheService) writeToDisk(
+	key string,
+	entry *diskCacheEntry,
+	fill *diskCacheFill,
+	gen int64,
+) {
+	go func() {
+		defer s.cleanupFill(key, fill)
+		if s.beforeDiskWrite != nil {
+			s.beforeDiskWrite()
+		}
+		s.writeToDiskSync(key, entry, gen)
+	}()
+}
+
+func (s *diskCacheService) writeToDiskSync(key string, entry *diskCacheEntry, gen int64) {
 	path := s.cachePath(key)
-	if path == "" {
+	if path == "" || !s.sameGeneration(gen) {
 		return
 	}
 	entry.Version = diskCacheVersion
@@ -121,7 +151,115 @@ func (s *diskCacheService) writeToDisk(key string, entry *diskCacheEntry) {
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return
 	}
-	_ = os.Rename(tmpPath, path)
+	if !s.sameGeneration(gen) {
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return
+	}
+	if !s.sameGeneration(gen) {
+		_ = os.Remove(path)
+		return
+	}
+	s.evictOldest()
+}
+
+func (s *diskCacheService) startFill(key string) (*diskCacheFill, int64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fills == nil {
+		s.fills = make(map[string]*diskCacheFill)
+	}
+	if fill := s.fills[key]; fill != nil {
+		return fill, s.gen, true
+	}
+	fill := &diskCacheFill{done: make(chan struct{})}
+	s.fills[key] = fill
+	return fill, s.gen, false
+}
+
+func (s *diskCacheService) waitForFill(
+	ctx context.Context,
+	fill *diskCacheFill,
+) (*diskCacheEntry, error) {
+	select {
+	case <-fill.done:
+		return fill.entry, fill.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (s *diskCacheService) finishFill(
+	key string,
+	fill *diskCacheFill,
+	entry *diskCacheEntry,
+	err error,
+) {
+	s.mu.Lock()
+	fill.entry = entry
+	fill.err = err
+	if err != nil && s.fills[key] == fill {
+		delete(s.fills, key)
+	}
+	close(fill.done)
+	s.mu.Unlock()
+}
+
+func (s *diskCacheService) cleanupFill(key string, fill *diskCacheFill) {
+	s.mu.Lock()
+	if s.fills[key] == fill {
+		delete(s.fills, key)
+	}
+	s.mu.Unlock()
+}
+
+func (s *diskCacheService) sameGeneration(gen int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gen == gen
+}
+
+func (s *diskCacheService) bumpGeneration() {
+	s.mu.Lock()
+	s.gen++
+	s.mu.Unlock()
+}
+
+func (s *diskCacheService) evictOldest() {
+	if s.cacheDir == "" || s.maxFiles <= 0 {
+		return
+	}
+	entries, err := os.ReadDir(s.cacheDir)
+	if err != nil {
+		return
+	}
+	type cacheFile struct {
+		path    string
+		modTime time.Time
+	}
+	files := make([]cacheFile, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(s.cacheDir, entry.Name())
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		files = append(files, cacheFile{path: path, modTime: info.ModTime()})
+	}
+	if len(files) <= s.maxFiles {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.Before(files[j].modTime)
+	})
+	for _, file := range files[:len(files)-s.maxFiles] {
+		_ = os.Remove(file.path)
+	}
 }
 
 // Read methods
@@ -131,15 +269,31 @@ func (s *diskCacheService) ListStarLists(
 	options ...ListOptions,
 ) ([]StarList, error) {
 	key := s.canonicalKey("lists")
-	if entry := s.readFromDisk(key); entry != nil && entry.Lists != nil {
-		return applyLimit(entry.Lists, limitFromOptions(options)), nil
+	limit := limitFromOptions(options)
+	for {
+		if entry := s.readFromDisk(key); entry != nil && entry.Lists != nil {
+			return applyLimit(entry.Lists, limit), nil
+		}
+		fill, gen, wait := s.startFill(key)
+		if !wait {
+			lists, err := s.inner.ListStarLists(ctx, options...)
+			if err != nil {
+				s.finishFill(key, fill, nil, err)
+				return nil, err
+			}
+			entry := &diskCacheEntry{Lists: lists}
+			s.finishFill(key, fill, entry, nil)
+			s.writeToDisk(key, entry, fill, gen)
+			return applyLimit(lists, limit), nil
+		}
+		entry, err := s.waitForFill(ctx, fill)
+		if err != nil {
+			return nil, err
+		}
+		if entry != nil && entry.Lists != nil {
+			return applyLimit(entry.Lists, limit), nil
+		}
 	}
-	lists, err := s.inner.ListStarLists(ctx, options...)
-	if err != nil {
-		return nil, err
-	}
-	s.writeToDisk(key, &diskCacheEntry{Lists: lists})
-	return applyLimit(lists, limitFromOptions(options)), nil
 }
 
 func (s *diskCacheService) ListRepositories(
@@ -149,15 +303,31 @@ func (s *diskCacheService) ListRepositories(
 ) ([]Repository, error) {
 	withTopics := withTopicsFromOptions(options)
 	key := s.canonicalKey("repos", listID, fmt.Sprintf("topics:%t", withTopics))
-	if entry := s.readFromDisk(key); entry != nil && entry.Repos != nil {
-		return applyLimit(entry.Repos, limitFromOptions(options)), nil
+	limit := limitFromOptions(options)
+	for {
+		if entry := s.readFromDisk(key); entry != nil && entry.Repos != nil {
+			return applyLimit(entry.Repos, limit), nil
+		}
+		fill, gen, wait := s.startFill(key)
+		if !wait {
+			repos, err := s.inner.ListRepositories(ctx, listID, options...)
+			if err != nil {
+				s.finishFill(key, fill, nil, err)
+				return nil, err
+			}
+			entry := &diskCacheEntry{Repos: repos}
+			s.finishFill(key, fill, entry, nil)
+			s.writeToDisk(key, entry, fill, gen)
+			return applyLimit(repos, limit), nil
+		}
+		entry, err := s.waitForFill(ctx, fill)
+		if err != nil {
+			return nil, err
+		}
+		if entry != nil && entry.Repos != nil {
+			return applyLimit(entry.Repos, limit), nil
+		}
 	}
-	repos, err := s.inner.ListRepositories(ctx, listID, options...)
-	if err != nil {
-		return nil, err
-	}
-	s.writeToDisk(key, &diskCacheEntry{Repos: repos})
-	return applyLimit(repos, limitFromOptions(options)), nil
 }
 
 func (s *diskCacheService) ListStarredRepositories(
@@ -166,15 +336,31 @@ func (s *diskCacheService) ListStarredRepositories(
 ) ([]Repository, error) {
 	withTopics := withTopicsFromOptions(options)
 	key := s.canonicalKey("starred", fmt.Sprintf("topics:%t", withTopics))
-	if entry := s.readFromDisk(key); entry != nil && entry.Repos != nil {
-		return applyLimit(entry.Repos, limitFromOptions(options)), nil
+	limit := limitFromOptions(options)
+	for {
+		if entry := s.readFromDisk(key); entry != nil && entry.Repos != nil {
+			return applyLimit(entry.Repos, limit), nil
+		}
+		fill, gen, wait := s.startFill(key)
+		if !wait {
+			repos, err := s.inner.ListStarredRepositories(ctx, options...)
+			if err != nil {
+				s.finishFill(key, fill, nil, err)
+				return nil, err
+			}
+			entry := &diskCacheEntry{Repos: repos}
+			s.finishFill(key, fill, entry, nil)
+			s.writeToDisk(key, entry, fill, gen)
+			return applyLimit(repos, limit), nil
+		}
+		entry, err := s.waitForFill(ctx, fill)
+		if err != nil {
+			return nil, err
+		}
+		if entry != nil && entry.Repos != nil {
+			return applyLimit(entry.Repos, limit), nil
+		}
 	}
-	repos, err := s.inner.ListStarredRepositories(ctx, options...)
-	if err != nil {
-		return nil, err
-	}
-	s.writeToDisk(key, &diskCacheEntry{Repos: repos})
-	return applyLimit(repos, limitFromOptions(options)), nil
 }
 
 func (s *diskCacheService) GetRepository(
@@ -182,15 +368,30 @@ func (s *diskCacheService) GetRepository(
 	nameWithOwner string,
 ) (Repository, error) {
 	key := s.canonicalKey("repo", nameWithOwner)
-	if entry := s.readFromDisk(key); entry != nil && entry.Repo != nil {
-		return *entry.Repo, nil
+	for {
+		if entry := s.readFromDisk(key); entry != nil && entry.Repo != nil {
+			return *entry.Repo, nil
+		}
+		fill, gen, wait := s.startFill(key)
+		if !wait {
+			repo, err := s.inner.GetRepository(ctx, nameWithOwner)
+			if err != nil {
+				s.finishFill(key, fill, nil, err)
+				return Repository{}, err
+			}
+			entry := &diskCacheEntry{Repo: &repo}
+			s.finishFill(key, fill, entry, nil)
+			s.writeToDisk(key, entry, fill, gen)
+			return repo, nil
+		}
+		entry, err := s.waitForFill(ctx, fill)
+		if err != nil {
+			return Repository{}, err
+		}
+		if entry != nil && entry.Repo != nil {
+			return *entry.Repo, nil
+		}
 	}
-	repo, err := s.inner.GetRepository(ctx, nameWithOwner)
-	if err != nil {
-		return Repository{}, err
-	}
-	s.writeToDisk(key, &diskCacheEntry{Repo: &repo})
-	return repo, nil
 }
 
 // Pass-through methods (no disk caching)
@@ -267,6 +468,7 @@ func (s *diskCacheService) RemoveStar(ctx context.Context, repoID string) error 
 
 // Invalidate removes all disk cache entries. Used by the TUI for manual refresh.
 func (s *diskCacheService) Invalidate() {
+	s.bumpGeneration()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cacheDir == "" {
@@ -302,6 +504,7 @@ func (s *diskCacheService) invalidateAll() {
 }
 
 func (s *diskCacheService) removeFile(key string) {
+	s.bumpGeneration()
 	path := s.cachePath(key)
 	if path == "" {
 		return

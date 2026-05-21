@@ -6,6 +6,49 @@ import (
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
+func TestLoadingCountO1(t *testing.T) {
+	t.Parallel()
+	p := newPreloader()
+	key1 := repoCacheKey{listID: "UL_1"}
+	key2 := repoCacheKey{listID: "UL_2"}
+	key3 := repoCacheKey{listID: "UL_3"}
+	key4 := repoCacheKey{listID: "UL_4"}
+
+	p.setCacheEntry(key1, &repoCacheEntry{state: repoCacheLoading})
+	p.setCacheEntry(key2, &repoCacheEntry{state: repoCacheLoading})
+	if p.loadingCount != 2 {
+		t.Fatalf("loadingCount after two loads = %d, want 2", p.loadingCount)
+	}
+	if !p.anyPendingInCache() {
+		t.Fatal("anyPendingInCache should be true while entries are loading")
+	}
+
+	p.deleteCacheEntry(key1)
+	if p.loadingCount != 1 {
+		t.Fatalf("loadingCount after cancel/delete = %d, want 1", p.loadingCount)
+	}
+
+	p.setCacheEntry(key2, &repoCacheEntry{state: repoCacheError})
+	if p.loadingCount != 0 {
+		t.Fatalf("loadingCount after error transition = %d, want 0", p.loadingCount)
+	}
+
+	p.setCacheEntry(key3, &repoCacheEntry{state: repoCacheLoading})
+	p.setCacheEntry(key3, &repoCacheEntry{state: repoCacheLoaded})
+	if p.loadingCount != 0 {
+		t.Fatalf("loadingCount after loaded transition = %d, want 0", p.loadingCount)
+	}
+
+	p.setCacheEntry(key4, &repoCacheEntry{state: repoCacheLoading})
+	p.clear()
+	if p.loadingCount != 0 {
+		t.Fatalf("loadingCount after clear = %d, want 0", p.loadingCount)
+	}
+	if p.anyPendingInCache() {
+		t.Fatal("anyPendingInCache should be false after clear")
+	}
+}
+
 func TestStaleReposLoadedMsgIgnored(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
@@ -57,9 +100,7 @@ func TestRepoCacheEntryWrittenOnLoad(t *testing.T) {
 	}
 }
 
-// TestAnyPendingDerivedFromMap verifies anyPending() returns true only when a
-// repoCacheLoading entry exists in the map.
-func TestAnyPendingDerivedFromMap(t *testing.T) {
+func TestAnyPendingUsesLoadingCount(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
@@ -72,14 +113,14 @@ func TestAnyPendingDerivedFromMap(t *testing.T) {
 
 	// Write a loading entry.
 	key := repoCacheKey{listID: "UL_1", withTopics: false}
-	m.preloader.cache[key] = &repoCacheEntry{state: repoCacheLoading}
+	m.preloader.setCacheEntry(key, &repoCacheEntry{state: repoCacheLoading})
 
 	if !m.anyPending() {
 		t.Error("anyPending should be true when a repoCacheLoading entry exists")
 	}
 
 	// Mark it loaded.
-	m.preloader.cache[key] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.setCacheEntry(key, &repoCacheEntry{state: repoCacheLoaded})
 
 	if m.anyPending() {
 		t.Error("anyPending should be false after entry transitions to repoCacheLoaded")

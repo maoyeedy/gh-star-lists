@@ -2,6 +2,11 @@ package githubapi
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -27,6 +32,7 @@ func TestDiskCacheWarmStart(t *testing.T) {
 	if len(repos1) != 1 || repos1[0].NameWithOwner != "owner/cached-repo" {
 		t.Fatalf("first call got %+v, want owner/cached-repo", repos1)
 	}
+	waitForDiskCacheEntry(t, ds1, ds1.canonicalKey("repos", "UL_1", "topics:false"))
 
 	// New service with different inner should return cached data on warm start.
 	inner2 := &fakeCacheInner{
@@ -71,6 +77,7 @@ func TestDiskCacheInvalidation(t *testing.T) {
 	if inner.listCalls != 1 {
 		t.Fatalf("inner calls after first = %d, want 1", inner.listCalls)
 	}
+	waitForDiskCacheEntry(t, ds, ds.canonicalKey("lists"))
 
 	// Mutation invalidates disk cache entry for lists.
 	_, err = ds.CreateStarList(ctx, StarListInput{Name: "new"})
@@ -89,6 +96,7 @@ func TestDiskCacheInvalidation(t *testing.T) {
 	if len(lists) != 1 || lists[0].Name != "original" {
 		t.Fatalf("lists = %+v, want original", lists)
 	}
+	waitForDiskCacheIdle(t, ds)
 }
 
 func TestDiskCacheTTLExpiry(t *testing.T) {
@@ -112,6 +120,7 @@ func TestDiskCacheTTLExpiry(t *testing.T) {
 	if inner.reposCalls["UL_1"] != 1 {
 		t.Fatalf("inner calls after first = %d, want 1", inner.reposCalls["UL_1"])
 	}
+	waitForDiskCacheIdle(t, ds)
 
 	// Wait for TTL to expire.
 	time.Sleep(2 * time.Millisecond)
@@ -124,4 +133,326 @@ func TestDiskCacheTTLExpiry(t *testing.T) {
 	if inner.reposCalls["UL_1"] != 2 {
 		t.Fatalf("inner calls after expiry = %d, want 2", inner.reposCalls["UL_1"])
 	}
+	waitForDiskCacheIdle(t, ds)
+}
+
+func TestDiskCacheEviction(t *testing.T) {
+	t.Parallel()
+	ds := NewDiskCacheService(&fakeCacheInner{}, DiskCacheOptions{TTL: time.Hour}).(*diskCacheService)
+	ds.cacheDir = t.TempDir()
+	ds.maxFiles = 3
+	base := time.Now().Add(-time.Hour)
+	keys := make([]string, 5)
+
+	for i := range keys {
+		keys[i] = ds.canonicalKey("repos", fmt.Sprintf("UL_%d", i), "topics:false")
+		ds.writeToDiskSync(keys[i], &diskCacheEntry{
+			Repos: []Repository{{NameWithOwner: fmt.Sprintf("owner/repo-%d", i)}},
+		}, 0)
+		path := ds.cachePath(keys[i])
+		if err := os.Chtimes(
+			path,
+			base.Add(time.Duration(i)*time.Second),
+			base.Add(time.Duration(i)*time.Second),
+		); err != nil {
+			t.Fatalf("Chtimes cache file %d: %v", i, err)
+		}
+	}
+
+	entries, err := os.ReadDir(ds.cacheDir)
+	if err != nil {
+		t.Fatalf("ReadDir cacheDir: %v", err)
+	}
+	if len(entries) != ds.maxFiles {
+		t.Fatalf("cache file count = %d, want %d", len(entries), ds.maxFiles)
+	}
+	for _, key := range keys[:2] {
+		if _, err := os.Stat(ds.cachePath(key)); !os.IsNotExist(err) {
+			t.Fatalf("oldest cache file %q still exists or stat failed: %v", key, err)
+		}
+	}
+	for _, key := range keys[2:] {
+		if _, err := os.Stat(ds.cachePath(key)); err != nil {
+			t.Fatalf("newer cache file %q missing: %v", key, err)
+		}
+	}
+}
+
+func TestConcurrentDiskCacheFillDeduplication(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	inner := &blockingRepoInner{
+		repos:   []Repository{{NameWithOwner: "owner/repo"}},
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	ds := NewDiskCacheService(inner, DiskCacheOptions{TTL: time.Hour}).(*diskCacheService)
+	ds.cacheDir = t.TempDir()
+	writeRelease := make(chan struct{})
+	ds.beforeDiskWrite = func() {
+		<-writeRelease
+	}
+
+	const callers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, callers)
+	start := make(chan struct{})
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			repos, err := ds.ListRepositories(ctx, "UL_1")
+			if err != nil {
+				errs <- err
+				return
+			}
+			if len(repos) != 1 || repos[0].NameWithOwner != "owner/repo" {
+				errs <- fmt.Errorf("repos = %+v, want owner/repo", repos)
+			}
+		}()
+	}
+
+	close(start)
+	<-inner.entered
+	waitForDiskCacheFill(t, ds, ds.canonicalKey("repos", "UL_1", "topics:false"))
+	close(inner.release)
+	wg.Wait()
+	close(writeRelease)
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls := atomic.LoadInt32(&inner.reposCalls); calls != 1 {
+		t.Fatalf("inner ListRepositories calls = %d, want 1", calls)
+	}
+}
+
+func TestDiskCacheWaitForFillRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+	inner := &blockingRepoInner{
+		repos:   []Repository{{NameWithOwner: "owner/repo"}},
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	ds := NewDiskCacheService(inner, DiskCacheOptions{TTL: time.Hour}).(*diskCacheService)
+	ds.cacheDir = t.TempDir()
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := ds.ListRepositories(context.Background(), "UL_1")
+		firstDone <- err
+	}()
+
+	<-inner.entered
+	waitForDiskCacheFill(t, ds, ds.canonicalKey("repos", "UL_1", "topics:false"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := ds.ListRepositories(ctx, "UL_1")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiting ListRepositories error = %v, want context.Canceled", err)
+	}
+	if calls := atomic.LoadInt32(&inner.reposCalls); calls != 1 {
+		t.Fatalf("inner ListRepositories calls = %d, want 1", calls)
+	}
+
+	close(inner.release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ListRepositories: %v", err)
+	}
+}
+
+func TestConcurrentDiskCacheFillSharesResultBeforeDiskWriteCompletes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	inner := &blockingRepoInner{
+		repos:   []Repository{{NameWithOwner: "owner/repo"}},
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	ds := NewDiskCacheService(inner, DiskCacheOptions{TTL: time.Hour}).(*diskCacheService)
+	ds.cacheDir = t.TempDir()
+	writeStarted := make(chan struct{})
+	writeRelease := make(chan struct{})
+	var writeOnce sync.Once
+	ds.beforeDiskWrite = func() {
+		writeOnce.Do(func() { close(writeStarted) })
+		<-writeRelease
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := ds.ListRepositories(ctx, "UL_1")
+		firstDone <- err
+	}()
+
+	<-inner.entered
+	waitForDiskCacheFill(t, ds, ds.canonicalKey("repos", "UL_1", "topics:false"))
+
+	waiterDone := make(chan error, 1)
+	go func() {
+		repos, err := ds.ListRepositories(ctx, "UL_1")
+		if err != nil {
+			waiterDone <- err
+			return
+		}
+		if len(repos) != 1 || repos[0].NameWithOwner != "owner/repo" {
+			waiterDone <- fmt.Errorf("repos = %+v, want owner/repo", repos)
+			return
+		}
+		waiterDone <- nil
+	}()
+
+	close(inner.release)
+	<-writeStarted
+
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ListRepositories: %v", err)
+	}
+	select {
+	case err := <-waiterDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("coalesced caller blocked while disk write was still running")
+	}
+
+	lateDone := make(chan error, 1)
+	go func() {
+		repos, err := ds.ListRepositories(ctx, "UL_1")
+		if err != nil {
+			lateDone <- err
+			return
+		}
+		if len(repos) != 1 || repos[0].NameWithOwner != "owner/repo" {
+			lateDone <- fmt.Errorf("repos = %+v, want owner/repo", repos)
+			return
+		}
+		lateDone <- nil
+	}()
+	select {
+	case err := <-lateDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("late coalesced caller blocked while disk write was still running")
+	}
+
+	close(writeRelease)
+	if calls := atomic.LoadInt32(&inner.reposCalls); calls != 1 {
+		t.Fatalf("inner ListRepositories calls = %d, want 1", calls)
+	}
+}
+
+func waitForDiskCacheEntry(t *testing.T, ds *diskCacheService, key string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if ds.readFromDisk(key) != nil {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for disk cache entry %q", key)
+}
+
+func waitForDiskCacheIdle(t *testing.T, ds *diskCacheService) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		ds.mu.Lock()
+		idle := len(ds.fills) == 0
+		ds.mu.Unlock()
+		if idle {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("timed out waiting for disk cache writes to finish")
+}
+
+func waitForDiskCacheFill(t *testing.T, ds *diskCacheService, key string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		ds.mu.Lock()
+		_, filling := ds.fills[key]
+		ds.mu.Unlock()
+		if filling {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for disk cache fill %q", key)
+}
+
+type blockingRepoInner struct {
+	repos      []Repository
+	reposCalls int32
+	entered    chan struct{}
+	release    chan struct{}
+	once       sync.Once
+}
+
+func (b *blockingRepoInner) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
+	return nil, nil
+}
+
+func (b *blockingRepoInner) ListRepositories(
+	context.Context,
+	string,
+	...ListOptions,
+) ([]Repository, error) {
+	atomic.AddInt32(&b.reposCalls, 1)
+	b.once.Do(func() { close(b.entered) })
+	<-b.release
+	return b.repos, nil
+}
+
+func (b *blockingRepoInner) ListStarredRepositories(
+	context.Context,
+	...ListOptions,
+) ([]Repository, error) {
+	return nil, nil
+}
+
+func (b *blockingRepoInner) GetRepository(context.Context, string) (Repository, error) {
+	return Repository{}, nil
+}
+
+func (b *blockingRepoInner) GetRepositoryMemberships(
+	context.Context,
+	string,
+) (string, []string, error) {
+	return "", nil, nil
+}
+
+func (b *blockingRepoInner) CreateStarList(context.Context, StarListInput) (StarList, error) {
+	return StarList{}, nil
+}
+
+func (b *blockingRepoInner) UpdateStarList(context.Context, UpdateStarListInput) (StarList, error) {
+	return StarList{}, nil
+}
+
+func (b *blockingRepoInner) DeleteStarList(context.Context, string) error {
+	return nil
+}
+
+func (b *blockingRepoInner) UpdateRepositoryLists(context.Context, string, []string) error {
+	return nil
+}
+
+func (b *blockingRepoInner) AddStar(context.Context, string) error {
+	return nil
+}
+
+func (b *blockingRepoInner) RemoveStar(context.Context, string) error {
+	return nil
 }

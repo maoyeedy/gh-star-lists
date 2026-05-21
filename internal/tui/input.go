@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"time"
@@ -214,11 +215,26 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			topicsKey := repoCacheKey{m.focusedList.ID, true}
 			e := m.preloader.cache[topicsKey]
 			if e == nil || e.state == repoCacheIdle {
-				m.preloader.cache[topicsKey] = &repoCacheEntry{
+				if m.preloader.topicsInFlight >= maxTopicsInFlight {
+					return m, nil
+				}
+				loadCtx, cancel := context.WithCancel(m.ctx)
+				if m.preloader.topicsCancels == nil {
+					m.preloader.topicsCancels = make(map[string]context.CancelFunc)
+				}
+				m.preloader.topicsCancels[m.focusedList.ID] = cancel
+				m.preloader.setCacheEntry(topicsKey, &repoCacheEntry{
 					state: repoCacheLoading,
 					gen:   m.preloader.generation,
-				}
-				return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, true, m.preloader.generation)
+				})
+				m.preloader.topicsInFlight++
+				return m, loadReposCmd(
+					loadCtx,
+					m.svc,
+					m.focusedList.ID,
+					true,
+					m.preloader.generation,
+				)
 			}
 		}
 		return m, nil

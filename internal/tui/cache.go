@@ -21,6 +21,8 @@ const (
 	repoCacheError
 )
 
+const maxTopicsInFlight = 2
+
 type repoCacheEntry struct {
 	state repoCacheState
 	repos []githubapi.Repository
@@ -32,6 +34,7 @@ type repoCacheEntry struct {
 type preloader struct {
 	cache          map[repoCacheKey]*repoCacheEntry
 	generation     uint64
+	loadingCount   int
 	queue          []string
 	inFlight       int
 	preloadCancels map[string]context.CancelFunc
@@ -60,7 +63,7 @@ func (p *preloader) schedulePreload(ctx context.Context, svc githubapi.Service) 
 			p.preloadCancels = make(map[string]context.CancelFunc)
 		}
 		p.preloadCancels[listID] = cancel
-		p.cache[key] = &repoCacheEntry{state: repoCacheLoading, gen: p.generation}
+		p.setCacheEntry(key, &repoCacheEntry{state: repoCacheLoading, gen: p.generation})
 		p.inFlight++
 		capturedID := listID
 		cmds = append(cmds, loadReposCmd(loadCtx, svc, capturedID, false, p.generation))
@@ -89,6 +92,7 @@ func (p *preloader) clear() {
 	p.generation++
 	p.cancelTopicsPreloads()
 	p.cache = make(map[repoCacheKey]*repoCacheEntry)
+	p.loadingCount = 0
 	for _, cancel := range p.preloadCancels {
 		cancel()
 	}
@@ -97,36 +101,46 @@ func (p *preloader) clear() {
 	p.inFlight = 0
 }
 
-// anyPendingInCache reports whether any repo cache entry is loading.
-func (p *preloader) anyPendingInCache() bool {
-	for _, e := range p.cache {
-		if e.state == repoCacheLoading {
-			return true
+func (p *preloader) setCacheEntry(key repoCacheKey, entry *repoCacheEntry) {
+	if existing := p.cache[key]; existing != nil && existing.state == repoCacheLoading {
+		if p.loadingCount > 0 {
+			p.loadingCount--
 		}
 	}
-	return false
+	if entry != nil && entry.state == repoCacheLoading {
+		p.loadingCount++
+	}
+	if entry == nil {
+		delete(p.cache, key)
+		return
+	}
+	p.cache[key] = entry
+}
+
+func (p *preloader) deleteCacheEntry(key repoCacheKey) {
+	p.setCacheEntry(key, nil)
+}
+
+// anyPendingInCache reports whether any repo cache entry is loading.
+func (p *preloader) anyPendingInCache() bool {
+	return p.loadingCount > 0
 }
 
 // cancelTopicsPreloads cancels all in-flight topics preloads and cleans up.
 func (p *preloader) cancelTopicsPreloads() {
 	for id, cancel := range p.topicsCancels {
 		cancel()
-		delete(p.cache, repoCacheKey{id, true})
+		p.deleteCacheEntry(repoCacheKey{id, true})
 	}
 	p.topicsCancels = nil
 	p.topicsInFlight = 0
 }
 
 // scheduleTopicsPreload starts withTopics=true loads for lists whose basic repos
-// are already cached. Basic preloads (queue + inFlight) always take precedence.
-// The focused list is prioritized. Max 2 concurrent topics loads.
+// are already cached. The focused list is prioritized. Max 2 concurrent topics loads.
 func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Service,
 	focusedList *githubapi.StarList, displayedLists []githubapi.StarList,
 ) tea.Cmd {
-	if len(p.queue) > 0 || p.inFlight > 0 {
-		return nil
-	}
-	const maxTopicsInFlight = 2
 	if p.topicsInFlight >= maxTopicsInFlight {
 		return nil
 	}
@@ -161,7 +175,7 @@ func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Ser
 			p.topicsCancels = make(map[string]context.CancelFunc)
 		}
 		p.topicsCancels[listID] = cancel
-		p.cache[topicsKey] = &repoCacheEntry{state: repoCacheLoading, gen: p.generation}
+		p.setCacheEntry(topicsKey, &repoCacheEntry{state: repoCacheLoading, gen: p.generation})
 		p.topicsInFlight++
 		cmds = append(cmds, loadReposCmd(loadCtx, svc, listID, true, p.generation))
 	}
@@ -217,7 +231,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 				if m.preloader.inFlight > 0 {
 					m.preloader.inFlight--
 				}
-				delete(m.preloader.cache, repoCacheKey{id, false})
+				m.preloader.deleteCacheEntry(repoCacheKey{id, false})
 			}
 		}
 		m.preloader.enqueueFront(list.ID)

@@ -144,3 +144,36 @@ func TestTopicsPreloadOnlyWhenPreviewEnabled(t *testing.T) {
 		)
 	}
 }
+
+func TestTopicsPreloadPerListReadiness(t *testing.T) {
+	t.Parallel()
+	svc := fiveListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.showPreview = true
+
+	loadedListID := m.focusedList.ID
+	m = update(m, reposLoadedMsg{
+		repos:  svc.repos,
+		listID: loadedListID,
+		gen:    m.preloader.generation,
+	})
+
+	topicsKey := repoCacheKey{listID: loadedListID, withTopics: true}
+	topicsEntry := m.preloader.cache[topicsKey]
+	if topicsEntry == nil {
+		t.Fatalf("topics cache entry for %s should be scheduled", loadedListID)
+	}
+	if topicsEntry.state != repoCacheLoading {
+		t.Fatalf("topics cache state = %d, want repoCacheLoading", topicsEntry.state)
+	}
+	if m.preloader.topicsInFlight != 1 {
+		t.Fatalf("topicsInFlight = %d, want 1", m.preloader.topicsInFlight)
+	}
+	if m.preloader.inFlight == 0 {
+		t.Fatal("basic repo preloads should still have work in flight")
+	}
+	if len(m.preloader.queue) == 0 {
+		t.Fatal("basic repo preload queue should still contain pending lists")
+	}
+}

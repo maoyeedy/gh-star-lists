@@ -250,7 +250,6 @@ func TestRepositorySearchScore(t *testing.T) {
 				tt.repo,
 				tt.terms,
 				tt.phrase,
-				make(map[string][]string),
 				&editPrev,
 				&editCurr,
 			)
@@ -276,11 +275,10 @@ func TestRepositorySearchScoreFieldWeights(t *testing.T) {
 	phrase := "alpha"
 
 	var editPrev, editCurr []int
-	tokenCache := make(map[string][]string)
-	nameScore := scoreRepository(nameRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
-	ownerScore := scoreRepository(ownerRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
-	descScore := scoreRepository(descRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
-	langScore := scoreRepository(langRepo, terms, phrase, tokenCache, &editPrev, &editCurr)
+	nameScore := scoreRepository(nameRepo, terms, phrase, &editPrev, &editCurr)
+	ownerScore := scoreRepository(ownerRepo, terms, phrase, &editPrev, &editCurr)
+	descScore := scoreRepository(descRepo, terms, phrase, &editPrev, &editCurr)
+	langScore := scoreRepository(langRepo, terms, phrase, &editPrev, &editCurr)
 
 	if nameScore <= ownerScore {
 		t.Errorf("name match should outscore owner match: name=%d owner=%d", nameScore, ownerScore)
@@ -449,6 +447,64 @@ func TestIsSubsequence(t *testing.T) {
 				t.Errorf("isSubsequence(%q, %q) = %v, want %v", c.needle, c.haystack, got, c.want)
 			}
 		})
+	}
+}
+
+func TestWalkTokens(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		input string
+		want  []string
+	}{
+		{"hello world", []string{"hello", "world"}},
+		{"foo-bar_baz", []string{"foo", "bar", "baz"}},
+		{"caf\u00e9 r\u00e9sum\u00e9", []string{"caf\u00e9", "r\u00e9sum\u00e9"}},
+		{"hello\U0001F44Bworld", []string{"hello", "world"}},
+		{"", nil},
+		{"---", nil},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.input, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			walkTokens(c.input, func(start, end int) bool {
+				got = append(got, c.input[start:end])
+				return true
+			})
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("walkTokens(%q) = %v, want %v", c.input, got, c.want)
+			}
+		})
+	}
+}
+
+func TestPhraseBonusWithinSingleField(t *testing.T) {
+	t.Parallel()
+
+	// Description contains the exact phrase -- phrase bonus (+120) should apply.
+	withPhrase := makeRepo("foo/bar", "Go web framework for building APIs", "Go", 100)
+	// Description has both terms but not adjacent -- no phrase bonus.
+	withoutPhrase := makeRepo(
+		"foo/baz",
+		"web things and also a framework for building stuff",
+		"Go",
+		100,
+	)
+
+	terms := []string{"web", "framework"}
+	phrase := "web framework"
+	var ep1, ec1, ep2, ec2 []int
+	scoreWith := scoreRepository(withPhrase, terms, phrase, &ep1, &ec1)
+	scoreWithout := scoreRepository(withoutPhrase, terms, phrase, &ep2, &ec2)
+
+	if scoreWith == 0 {
+		t.Fatal("expected nonzero score for phrase match in description")
+	}
+	if scoreWith <= scoreWithout {
+		t.Errorf("phrase match (%d) should outscore non-phrase match (%d)", scoreWith, scoreWithout)
 	}
 }
 

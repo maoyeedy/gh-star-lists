@@ -1,10 +1,15 @@
 // Benchmark results (2026-05-21, linux/amd64, i5-1135G7 @ 2.40GHz):
 //
-// BenchmarkFilterRepositories_500-8    560    2173078 ns/op    627131 B/op    4536 allocs/op
-// BenchmarkFilterRepositories_5000-8    44   24594505 ns/op   7353334 B/op   45155 allocs/op
-// BenchmarkFilterStarLists_500-8       567    2037170 ns/op    505104 B/op    3030 allocs/op
+// BenchmarkFilterRepositories_500-8    7411    452329 ns/op    153840 B/op    1007 allocs/op
+// BenchmarkFilterRepositories_5000-8    826   6284931 ns/op   1475962 B/op   10007 allocs/op
+// BenchmarkFilterStarLists_500-8       7830    465000 ns/op    138896 B/op     507 allocs/op
 //
-// FilterRepositories_500 = ~2.17 ms/op, well below the 5 ms debounce threshold.
+// Remaining ~2 allocs/repo are from strings.ToLower on mixed-case Description/Language
+// fields (bench data: "Description for...", "Go", "Python", etc.). These are unavoidable
+// without pre-normalizing at data-load time. To reduce further, normalize repo fields
+// once in the githubapi layer rather than per Filter call.
+//
+// FilterRepositories_500 = ~0.45 ms/op, well below the 5 ms debounce threshold.
 // Search stays synchronous -- no tea.Tick debounce needed.
 package search_test
 

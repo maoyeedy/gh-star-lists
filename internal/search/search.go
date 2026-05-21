@@ -1,18 +1,12 @@
 package search
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
-
-// Field is a scored text field used as input to Score.
-type Field struct {
-	Text   string
-	Weight int
-}
 
 // FilterRepositories returns repos matching query ranked by relevance
 // (score desc, stars desc, name asc). Returns repos unchanged if query is empty.
@@ -28,30 +22,31 @@ func FilterRepositories(repos []githubapi.Repository, query string) []githubapi.
 	phrase := normalize(query)
 
 	var editPrev, editCurr []int
-	tokenCache := make(map[string][]string)
 
 	type repoMatch struct {
-		repo  githubapi.Repository
-		score int
+		repo    githubapi.Repository
+		score   int
+		sortKey string
 	}
 	matches := make([]repoMatch, 0, len(repos))
 	for _, repo := range repos {
-		score := scoreRepository(repo, terms, phrase, tokenCache, &editPrev, &editCurr)
+		score := scoreRepository(repo, terms, phrase, &editPrev, &editCurr)
 		if score > 0 {
-			matches = append(matches, repoMatch{repo: repo, score: score})
+			matches = append(matches, repoMatch{
+				repo:    repo,
+				score:   score,
+				sortKey: strings.ToLower(repo.NameWithOwner),
+			})
 		}
 	}
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score > matches[j].score
+	slices.SortFunc(matches, func(a, b repoMatch) int {
+		if a.score != b.score {
+			return b.score - a.score
 		}
-		if matches[i].repo.StargazerCount != matches[j].repo.StargazerCount {
-			return matches[i].repo.StargazerCount > matches[j].repo.StargazerCount
+		if a.repo.StargazerCount != b.repo.StargazerCount {
+			return b.repo.StargazerCount - a.repo.StargazerCount
 		}
-		return strings.Compare(
-			strings.ToLower(matches[i].repo.NameWithOwner),
-			strings.ToLower(matches[j].repo.NameWithOwner),
-		) < 0
+		return strings.Compare(a.sortKey, b.sortKey)
 	})
 	out := make([]githubapi.Repository, len(matches))
 	for i, m := range matches {
@@ -74,27 +69,28 @@ func FilterStarLists(lists []githubapi.StarList, query string) []githubapi.StarL
 	phrase := normalize(query)
 
 	var editPrev, editCurr []int
-	tokenCache := make(map[string][]string)
 
 	type listMatch struct {
-		list  githubapi.StarList
-		score int
+		list    githubapi.StarList
+		score   int
+		sortKey string
 	}
 	matches := make([]listMatch, 0, len(lists))
 	for _, list := range lists {
-		score := scoreStarList(list, terms, phrase, tokenCache, &editPrev, &editCurr)
+		score := scoreStarList(list, terms, phrase, &editPrev, &editCurr)
 		if score > 0 {
-			matches = append(matches, listMatch{list: list, score: score})
+			matches = append(matches, listMatch{
+				list:    list,
+				score:   score,
+				sortKey: strings.ToLower(list.Name),
+			})
 		}
 	}
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score > matches[j].score
+	slices.SortFunc(matches, func(a, b listMatch) int {
+		if a.score != b.score {
+			return b.score - a.score
 		}
-		return strings.Compare(
-			strings.ToLower(matches[i].list.Name),
-			strings.ToLower(matches[j].list.Name),
-		) < 0
+		return strings.Compare(a.sortKey, b.sortKey)
 	})
 	out := make([]githubapi.StarList, len(matches))
 	for i, m := range matches {
@@ -109,7 +105,7 @@ func Tokens(text string) []string { return searchTerms(text) }
 func scorePrepared(
 	prepared []preparedField,
 	terms []string,
-	phrase, allText string,
+	phrase string,
 	editPrev, editCurr *[]int,
 ) int {
 	if len(terms) == 0 {
@@ -117,8 +113,13 @@ func scorePrepared(
 	}
 
 	score := 0
-	if phrase != "" && strings.Contains(allText, phrase) {
-		score += 120
+	if phrase != "" {
+		for _, field := range prepared {
+			if strings.Contains(field.text, phrase) {
+				score += 120
+				break
+			}
+		}
 	}
 	for _, term := range terms {
 		best := 0
@@ -139,7 +140,6 @@ func scoreRepository(
 	repo githubapi.Repository,
 	terms []string,
 	phrase string,
-	tokenCache map[string][]string,
 	editPrev, editCurr *[]int,
 ) int {
 	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
@@ -153,51 +153,28 @@ func scoreRepository(
 	prepared := make([]preparedField, 0, 5)
 
 	if normName != "" {
-		prepared = append(
-			prepared,
-			preparedField{normName, cachedSearchTerms(tokenCache, normName), 120},
-		)
+		prepared = append(prepared, preparedField{normName, 120})
 	}
 	if normNameWithOwner != "" {
-		prepared = append(
-			prepared,
-			preparedField{normNameWithOwner, cachedSearchTerms(tokenCache, normNameWithOwner), 100},
-		)
+		prepared = append(prepared, preparedField{normNameWithOwner, 100})
 	}
 	if normOwner != "" {
-		prepared = append(
-			prepared,
-			preparedField{normOwner, cachedSearchTerms(tokenCache, normOwner), 80},
-		)
+		prepared = append(prepared, preparedField{normOwner, 80})
 	}
 	if normDesc != "" {
-		prepared = append(
-			prepared,
-			preparedField{normDesc, cachedSearchTerms(tokenCache, normDesc), 55},
-		)
+		prepared = append(prepared, preparedField{normDesc, 55})
 	}
 	if normLang != "" {
-		prepared = append(
-			prepared,
-			preparedField{normLang, cachedSearchTerms(tokenCache, normLang), 45},
-		)
+		prepared = append(prepared, preparedField{normLang, 45})
 	}
 
-	var sb strings.Builder
-	sb.Grow(len(normNameWithOwner) + 1 + len(normDesc) + 1 + len(normLang))
-	sb.WriteString(normNameWithOwner)
-	sb.WriteByte(' ')
-	sb.WriteString(normDesc)
-	sb.WriteByte(' ')
-	sb.WriteString(normLang)
-	return scorePrepared(prepared, terms, phrase, sb.String(), editPrev, editCurr)
+	return scorePrepared(prepared, terms, phrase, editPrev, editCurr)
 }
 
 func scoreStarList(
 	list githubapi.StarList,
 	terms []string,
 	phrase string,
-	tokenCache map[string][]string,
 	editPrev, editCurr *[]int,
 ) int {
 	normName := normalize(list.Name)
@@ -206,29 +183,17 @@ func scoreStarList(
 	prepared := make([]preparedField, 0, 2)
 
 	if normName != "" {
-		prepared = append(
-			prepared,
-			preparedField{normName, cachedSearchTerms(tokenCache, normName), 120},
-		)
+		prepared = append(prepared, preparedField{normName, 120})
 	}
 	if normDesc != "" {
-		prepared = append(
-			prepared,
-			preparedField{normDesc, cachedSearchTerms(tokenCache, normDesc), 70},
-		)
+		prepared = append(prepared, preparedField{normDesc, 70})
 	}
 
-	var sb strings.Builder
-	sb.Grow(len(normName) + 1 + len(normDesc))
-	sb.WriteString(normName)
-	sb.WriteByte(' ')
-	sb.WriteString(normDesc)
-	return scorePrepared(prepared, terms, phrase, sb.String(), editPrev, editCurr)
+	return scorePrepared(prepared, terms, phrase, editPrev, editCurr)
 }
 
 type preparedField struct {
 	text   string
-	tokens []string
 	weight int
 }
 
@@ -237,7 +202,8 @@ func (f preparedField) scoreTerm(term string, editPrev, editCurr *[]int) int {
 		return f.weight + 100
 	}
 	best := 0
-	for _, token := range f.tokens {
+	walkTokens(f.text, func(start, end int) bool {
+		token := f.text[start:end]
 		switch {
 		case equivalentToken(token, term):
 			best = max(best, f.weight+80)
@@ -253,11 +219,34 @@ func (f preparedField) scoreTerm(term string, editPrev, editCurr *[]int) int {
 		); ok {
 			best = max(best, f.weight+35-(distance*10))
 		}
-	}
+		return true
+	})
 	if strings.Contains(f.text, term) {
 		best = max(best, f.weight+50)
 	}
 	return best
+}
+
+// walkTokens invokes fn(start, end) for each maximal run of letter/number runes in text.
+// fn returns false to stop early.
+func walkTokens(text string, fn func(start, end int) bool) {
+	start, inTok := -1, false
+	for i, r := range text {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if !inTok {
+				start = i
+				inTok = true
+			}
+		} else if inTok {
+			if !fn(start, i) {
+				return
+			}
+			inTok = false
+		}
+	}
+	if inTok {
+		fn(start, len(text))
+	}
 }
 
 func equivalentToken(left, right string) bool {
@@ -286,17 +275,6 @@ func searchTerms(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 	})
-}
-
-// cachedSearchTerms returns tokens for text, reusing cache to avoid re-tokenizing.
-// Callers must not mutate the returned slice.
-func cachedSearchTerms(cache map[string][]string, text string) []string {
-	if tokens, ok := cache[text]; ok {
-		return tokens
-	}
-	tokens := searchTerms(text)
-	cache[text] = tokens
-	return tokens
 }
 
 func normalize(text string) string {

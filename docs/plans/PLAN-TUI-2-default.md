@@ -6,8 +6,10 @@ Make the TUI the default experience for interactive use while keeping the CLI
 scripting surface intact. Split the TUI code into focused components after the
 v1 polish and async cache stages are stable.
 
-**Prerequisite:** TUI v1.4 shipped with narrow-layout polish, async repo cache,
-mouse, search, multi-select, and viewport behavior stable.
+**Prerequisite:** TUI v1.5 shipped with async repo cache, bounded preloader,
+pane-local pending states, modal pending UX, render-width cache, and preview
+scroll. v1.4 delivered narrow-layout polish, mouse, search, multi-select, and
+viewport behavior.
 
 ## Scope
 
@@ -82,8 +84,8 @@ This split is mechanical -- no behavior change. Do it as the first PR of v2.
 - YAML config. Do not add `config.yaml`, `--no-config`, or config loading.
 - Themes. Do not add light/dark theme selection or theme-aware rendering.
 - Configurable keybindings. Keep keybindings in code and document them in help.
-- Disk cache. Defer until the v1.4 runtime async cache proves insufficient.
-- Repo prefetch/performance work. This is owned by v1.4, not v2.
+- Disk cache. Defer until the v1.5 session cache proves insufficient in practice.
+- Repo prefetch/performance work. Owned by v1.5, not v2.
 - Multiple GitHub accounts or `--host` switching within a running TUI session.
 - Plugin system or scripting hooks.
 - Removing or deprecating any CLI subcommand.
@@ -106,6 +108,23 @@ These items were observed during v1.3 and are added to this plan:
 | Help overlay scrolling | Two-column help table exceeds terminal height on short windows (<20 rows). Add viewport scrolling (Up/Down while help is open) or paginate. Fits the v2 architecture split where help could become a proper sub-model. |
 | `Right` key when repos are loading | `Right` is a no-op if `len(m.repos) == 0`, even if a load is in-flight. After v1.4's session cache lands, `Right` can move focus to the repo pane showing the in-flight spinner rather than silently doing nothing. |
 | Mouse double-click detection | ~~Resolved in v1.4.~~ bubbletea v2.0.6 does not expose native double-click events; v1.4 worked around this with time-based tracking (`lastClickPane`, `lastClickIndex`, `lastClickTime` on the model, 300ms threshold). If a future bubbletea version exposes native double-click, replace the time-tracking fields with the native event. |
+
+## Deferred items from v1.5
+
+These were observed or measured during the v1.5 implementation and are worth
+addressing in v2. Items marked **critical** have a user-visible bug or a
+confirmed performance cost.
+
+| Priority | Item | Detail |
+|----------|------|--------|
+| **critical** | `FilterRepositories` allocation profile | Bench measured 4,536 allocs/op at 500 repos (2.17 ms/op). The edit-distance DP in `internal/search` allocates per-repo. The `command` package reuses `tokenCache`, `editPrev`, `editCurr` buffers via `growIntSlice` (`internal/command/search.go`) — the same pattern should be applied inside `search.FilterRepositories` itself. Debounce threshold was not hit but allocations will matter at larger corpora. |
+| **critical** | Double-click discards `focusList` cmd | `handleMouseClick` double-click calls `focusList` then immediately sets `active = paneRepo`, but the returned `tea.Cmd` is discarded. If the list was idle, no load is scheduled until the background preloader eventually reaches it — the repo pane shows a spinner longer than necessary. Fix: capture and return the cmd from `focusList` in the double-click branch. |
+| high | Bulk partial-failure keeps modal open | When a bulk add/remove/move partially fails, the modal closes and shows a count toast. A better UX would keep the modal open showing `failedNWOs` (already on `bulkDoneMsg`) with a retry affordance. Requires a multi-line error view in `modal.go`. |
+| high | `previewOffset` missing reset sites | `previewOffset` resets on list focus change but not when: repo cursor moves (Down in repo pane), sort order changes (repos reorder), search query changes (different visible repos), or `showPreview` toggles off then back on. Add `m.previewOffset = 0` at each state-change site. |
+| medium | Error recovery from list-load failure | If `loadListsCmd` fails (network error or auth), the TUI shows a global error and is stuck. Add a `ctrl+r to retry` line to the error view and wire the refresh key to clear the error and retry. Auto-retry with exponential backoff would be a further step. |
+| medium | In-flight load cancellation / debounced focus | The preloader promotes the focused list but does not cancel in-flight loads for other lists. Under rate limiting or large lists, a promoted load may wait 2 slots for uninteresting loads to finish. Options: (a) reduce the cap from 3 to 1 during rapid cursor movement (debounced focus intent via `tea.Tick`), or (b) track a `context.CancelFunc` per in-flight cmd and cancel on de-focus. |
+| low | `withTopics=true` background preload | When preview is on, topics data for non-focused lists is never preloaded — each list focus triggers a fresh topics fetch. After all `withTopics=false` preloads finish, optionally kick off `withTopics=true` loads for visible lists, still bounded and lowest priority. |
+| low | Disk cache (cold-start UX) | Session cache evaporates on exit. A simple on-disk JSON cache keyed by `(listID, withTopics, last-modified timestamp)` would make the browser feel instant on cold start. Deferred because v1.5 session cache must first prove insufficient in practice. |
 
 ## Verification
 

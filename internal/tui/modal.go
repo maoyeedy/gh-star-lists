@@ -32,7 +32,7 @@ type modal struct {
 	focusedIdx int
 	// visibility toggle: 0=unset, 1=public, 2=private
 	privateState int
-	formErr      string // inline error shown in modal
+	formErr      string // inline validation error shown in modal
 
 	// confirm-text modals (delete, unstar): typed name
 	confirmInput    textinput.Model
@@ -45,6 +45,13 @@ type modal struct {
 	// mutation to run on confirm (set by constructor)
 	// Returns (nil, cmd) when triggered.
 	onConfirm func(mo *modal) tea.Cmd
+
+	// submitting is true while a mutation command is in flight.
+	// Input events are discarded and the view shows a "submitting" indicator.
+	submitting bool
+	// submitErr holds the error message from the last failed mutation attempt.
+	// Cleared when submitting starts; displayed in the view when not submitting.
+	submitErr string
 
 	// context for cancel-without-side-effect
 	ctx context.Context
@@ -366,7 +373,13 @@ func newUnstarRepoModal(ctx context.Context, svc githubapi.Service,
 
 // update handles key events while a modal is active.
 // Returns (nil, nil) to close, or (updated modal, cmd).
+// Returns (nil, cmd) with cmd != nil when a mutation should be submitted;
+// the caller (model.Update) intercepts this to keep the modal open in submitting state.
 func (mo *modal) update(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
+	// While a mutation is in flight, discard all key input.
+	if mo.submitting {
+		return mo, nil
+	}
 	switch mo.kind {
 	case modalCreateList, modalEditList:
 		return mo.updateForm(msg)
@@ -532,7 +545,16 @@ func (mo *modal) view() string {
 	if mo.formErr != "" {
 		result += "\n" + styleError.Render(mo.formErr)
 	}
-	return result + "\n\n" + hint
+	// Show previous submission error (only when not currently submitting).
+	if mo.submitErr != "" && !mo.submitting {
+		result += "\n" + styleError.Render(mo.submitErr)
+	}
+	if mo.submitting {
+		result += "\n\n" + styleFaint.Render("  ... submitting...")
+	} else {
+		result += "\n\n" + hint
+	}
+	return result
 }
 
 func (mo *modal) viewForm() string {

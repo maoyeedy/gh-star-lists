@@ -14,8 +14,11 @@ import (
 type (
 	listsLoadedMsg struct{ lists []githubapi.StarList }
 	reposLoadedMsg struct {
-		repos  []githubapi.Repository
-		listID string
+		repos      []githubapi.Repository
+		err        error
+		listID     string
+		withTopics bool
+		gen        uint64
 	}
 )
 type errMsg struct{ err error }
@@ -35,6 +38,7 @@ func loadReposCmd(
 	svc githubapi.Service,
 	listID string,
 	withTopics bool,
+	gen uint64,
 ) tea.Cmd {
 	return func() tea.Msg {
 		opts := []githubapi.ListOptions{}
@@ -42,10 +46,13 @@ func loadReposCmd(
 			opts = append(opts, githubapi.ListOptions{WithTopics: true})
 		}
 		repos, err := svc.ListRepositories(ctx, listID, opts...)
-		if err != nil {
-			return errMsg{err}
+		return reposLoadedMsg{
+			repos:      repos,
+			err:        err,
+			listID:     listID,
+			withTopics: withTopics,
+			gen:        gen,
 		}
-		return reposLoadedMsg{repos, listID}
 	}
 }
 

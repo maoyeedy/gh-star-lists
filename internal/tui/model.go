@@ -44,6 +44,27 @@ const (
 	sortReposStarredAt
 )
 
+type repoCacheKey struct {
+	listID     string
+	withTopics bool
+}
+
+type repoCacheState int
+
+const (
+	repoCacheIdle repoCacheState = iota
+	repoCacheLoading
+	repoCacheLoaded
+	repoCacheError
+)
+
+type repoCacheEntry struct {
+	state repoCacheState
+	repos []githubapi.Repository
+	err   error
+	gen   uint64
+}
+
 type model struct {
 	svc         githubapi.Service
 	openBrowser func(string) error
@@ -53,8 +74,23 @@ type model struct {
 
 	active      pane
 	lists       []githubapi.StarList
-	repos       []githubapi.Repository
 	focusedList *githubapi.StarList
+
+	repoCache       map[repoCacheKey]*repoCacheEntry
+	generation      uint64
+	listsLoading    bool
+	mutationPending bool
+
+	// render-width cache (invalidated by cachedRepoSig sentinel)
+	cachedStarWidth int
+	cachedLangWidth int
+	cachedRepoSig   string
+
+	// preview pane scroll offset (lines scrolled down)
+	previewOffset int
+
+	preloadQueue    []string // list IDs waiting to be loaded, in sorted order
+	preloadInFlight int      // number of loads currently in flight (cap: 3)
 
 	listCursor int
 	listOffset int
@@ -64,8 +100,7 @@ type model struct {
 	sortLists sortListsKey
 	sortRepos sortReposKey
 
-	loading bool
-	err     error
+	err error
 
 	showHelp bool
 	width    int
@@ -94,14 +129,125 @@ type model struct {
 
 func newModel(ctx context.Context, svc githubapi.Service, opts Options) model {
 	return model{
-		svc:         svc,
-		openBrowser: opts.OpenBrowser,
-		noColor:     opts.NoColor,
-		mouse:       opts.Mouse,
-		ctx:         ctx,
-		loading:     true,
-		spinner:     spinner.New(spinner.WithSpinner(spinner.Line)),
+		svc:             svc,
+		openBrowser:     opts.OpenBrowser,
+		noColor:         opts.NoColor,
+		mouse:           opts.Mouse,
+		ctx:             ctx,
+		listsLoading:    true,
+		repoCache:       make(map[repoCacheKey]*repoCacheEntry),
+		spinner:         spinner.New(spinner.WithSpinner(spinner.Line)),
+		preloadQueue:    nil,
+		preloadInFlight: 0,
 	}
+}
+
+// schedulePreload starts up to (3 - m.preloadInFlight) repo loads from m.preloadQueue.
+// Returns a tea.Cmd (may be nil or a tea.Batch).
+func (m *model) schedulePreload() tea.Cmd {
+	const maxInFlight = 3
+	var cmds []tea.Cmd
+	for m.preloadInFlight < maxInFlight && len(m.preloadQueue) > 0 {
+		listID := m.preloadQueue[0]
+		m.preloadQueue = m.preloadQueue[1:]
+		key := repoCacheKey{listID, false}
+		if e := m.repoCache[key]; e != nil && e.state != repoCacheIdle {
+			continue // already loading or loaded: skip
+		}
+		m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
+		m.preloadInFlight++
+		capturedID := listID // capture for closure
+		cmds = append(cmds, loadReposCmd(m.ctx, m.svc, capturedID, false, m.generation))
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+// focusList sets the list cursor to idx, resolves focusedList, and updates the
+// repo pane immediately from the cache. Returns a cmd if a load must be started.
+func (m *model) focusList(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(m.displayedLists) {
+		return nil
+	}
+	m.previewOffset = 0
+	m.listCursor = idx
+	list := m.displayedLists[idx]
+	// Find the pointer in m.lists to keep focusedList pointing at the canonical slice.
+	for i := range m.lists {
+		if m.lists[i].ID == list.ID {
+			m.focusedList = &m.lists[i]
+			break
+		}
+	}
+	key := repoCacheKey{list.ID, false}
+	e := m.repoCache[key]
+	switch {
+	case e != nil && e.state == repoCacheLoaded:
+		// Populate display slice immediately from cache.
+		sorted := make([]githubapi.Repository, len(e.repos))
+		copy(sorted, e.repos)
+		sortRepos(sorted, m.sortRepos)
+		m.displayedRepos = sorted
+		if m.searchActive && m.searchQuery != "" {
+			*m = m.rebuildDisplayed()
+		}
+		m.repoCursor = 0
+		m.repoOffset = 0
+		return nil
+	case e != nil && e.state == repoCacheLoading:
+		m.displayedRepos = nil
+		return nil
+	case e != nil && e.state == repoCacheError:
+		m.displayedRepos = nil
+		return nil
+	default: // repoCacheIdle or absent: promote and start
+		// Remove from queue if present, prepend.
+		newQueue := make([]string, 0, len(m.preloadQueue)+1)
+		newQueue = append(newQueue, list.ID)
+		for _, id := range m.preloadQueue {
+			if id != list.ID {
+				newQueue = append(newQueue, id)
+			}
+		}
+		m.preloadQueue = newQueue
+		m.displayedRepos = nil
+		return m.schedulePreload()
+	}
+}
+
+func (m *model) setRepoCursor(idx int) {
+	if m.repoCursor != idx {
+		m.previewOffset = 0
+	}
+	m.repoCursor = idx
+}
+
+// currentRepos returns the repos for the focused list (using current withTopics state).
+// Returns nil when loading, idle, or no list is focused.
+func (m model) currentRepos() []githubapi.Repository {
+	if m.focusedList == nil {
+		return nil
+	}
+	e := m.repoCache[repoCacheKey{m.focusedList.ID, m.showPreview}]
+	if e == nil || e.state != repoCacheLoaded {
+		return nil
+	}
+	return e.repos
+}
+
+// anyPending reports whether any async work is in progress.
+func (m model) anyPending() bool {
+	if m.listsLoading || m.mutationPending {
+		return true
+	}
+	for _, e := range m.repoCache {
+		if e.state == repoCacheLoading {
+			return true
+		}
+	}
+	return false
 }
 
 // invalidatable is satisfied by cacheService.
@@ -122,79 +268,142 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case listsLoadedMsg:
 		m.lists = msg.lists
-		m.loading = false
+		m.listsLoading = false
 		sortStarLists(m.lists, m.sortLists)
 		m = m.rebuildDisplayed()
 		if m.listCursor >= len(m.displayedLists) && len(m.displayedLists) > 0 {
 			m.listCursor = len(m.displayedLists) - 1
 		}
-		// Eager initial load: auto-focus first list and kick off repo fetch.
+		// Eager initial load: auto-focus first list and build preload queue.
 		if m.focusedList == nil && len(m.lists) > 0 {
 			m.focusedList = &m.lists[0]
 			m.repoCursor = 0
+			m.previewOffset = 0
 			m.repoOffset = 0
 			m.selected = nil
-			m.loading = true
-			return m, loadReposCmd(m.ctx, m.svc, m.lists[0].ID, m.showPreview)
+			// Build the preload queue from the sorted displayed list IDs.
+			// Put the focused list first (it gets the first slot).
+			m.preloadQueue = make([]string, 0, len(m.displayedLists))
+			m.preloadQueue = append(m.preloadQueue, m.focusedList.ID)
+			for _, l := range m.displayedLists {
+				if l.ID != m.focusedList.ID {
+					m.preloadQueue = append(m.preloadQueue, l.ID)
+				}
+			}
+			m.preloadInFlight = 0
+			preloadCmd := (&m).schedulePreload()
+			return m, preloadCmd
 		}
 		return m, nil
 
 	case reposLoadedMsg:
-		m.repos = msg.repos
-		m.loading = false
-		sortRepos(m.repos, m.sortRepos)
-		m = m.rebuildDisplayed()
-		if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
-			m.repoCursor = len(m.displayedRepos) - 1
+		if msg.gen != m.generation {
+			return m, nil // stale: drop
 		}
-		// update focusedList from current lists
-		for i := range m.lists {
-			if m.lists[i].ID == msg.listID {
-				m.focusedList = &m.lists[i]
-				break
+		key := repoCacheKey{msg.listID, msg.withTopics}
+		if msg.err != nil {
+			m.repoCache[key] = &repoCacheEntry{state: repoCacheError, err: msg.err, gen: msg.gen}
+		} else {
+			entry := &repoCacheEntry{state: repoCacheLoaded, repos: msg.repos, gen: msg.gen}
+			m.repoCache[key] = entry
+			// Update displayed slice only if this is the focused list and matches current withTopics.
+			if m.focusedList != nil && msg.listID == m.focusedList.ID &&
+				msg.withTopics == m.showPreview {
+				sorted := make([]githubapi.Repository, len(entry.repos))
+				copy(sorted, entry.repos)
+				sortRepos(sorted, m.sortRepos)
+				m.displayedRepos = sorted
+				if m.searchActive && m.searchQuery != "" {
+					m = m.rebuildDisplayed()
+				}
+				if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
+					(&m).setRepoCursor(len(m.displayedRepos) - 1)
+				}
 			}
-		}
-		// Drop selected keys that no longer exist in the refreshed repo list.
-		if len(m.selected) > 0 {
-			existing := make(map[string]struct{}, len(m.repos))
-			for _, r := range m.repos {
-				existing[r.NameWithOwner] = struct{}{}
+			// Refresh focusedList pointer only if this load is for the focused list.
+			if m.focusedList != nil && m.focusedList.ID == msg.listID {
+				for i := range m.lists {
+					if m.lists[i].ID == msg.listID {
+						m.focusedList = &m.lists[i]
+						break
+					}
+				}
 			}
-			for nwo := range m.selected {
-				if _, ok := existing[nwo]; !ok {
-					delete(m.selected, nwo)
+			// Drop selected keys that no longer exist in the refreshed repo list.
+			if len(m.selected) > 0 {
+				repos := m.currentRepos()
+				existing := make(map[string]struct{}, len(repos))
+				for _, r := range repos {
+					existing[r.NameWithOwner] = struct{}{}
+				}
+				for nwo := range m.selected {
+					if _, ok := existing[nwo]; !ok {
+						delete(m.selected, nwo)
+					}
 				}
 			}
 		}
-		return m, nil
+		// Only count non-topics loads toward the preloader inflight cap.
+		if !msg.withTopics {
+			if m.preloadInFlight > 0 {
+				m.preloadInFlight--
+			}
+		}
+		return m, (&m).schedulePreload()
 
 	case errMsg:
 		m.err = msg.err
-		m.loading = false
+		m.listsLoading = false
+		for k, e := range m.repoCache {
+			if e.state == repoCacheLoading {
+				m.repoCache[k] = &repoCacheEntry{state: repoCacheError, err: msg.err, gen: e.gen}
+			}
+		}
 		return m, nil
 
 	case mutationDoneMsg:
-		m.modal = nil
+		m.mutationPending = false
 		if msg.err != nil {
-			m.err = msg.err
+			// Keep modal open, show error inline.
+			if m.modal != nil {
+				m.modal.submitting = false
+				m.modal.submitErr = msg.err.Error()
+			}
 			return m, nil
 		}
+		m.modal = nil
 		m.statusMsg = "Done."
 		m.statusExpiry = time.Now().Add(2 * time.Second)
-		m.loading = true
+		m.listsLoading = true
 		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
+		// Invalidate repo cache for focused list.
+		if m.focusedList != nil {
+			delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
+			delete(m.repoCache, repoCacheKey{m.focusedList.ID, true})
+		}
+		// For repo-pane mutations, trigger re-fetch of the focused list.
 		if m.active == paneRepo && m.focusedList != nil {
-			cmds = append(cmds, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview))
+			key := repoCacheKey{m.focusedList.ID, m.showPreview}
+			m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
+			cmds = append(
+				cmds,
+				loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.generation),
+			)
 		}
 		return m, tea.Batch(cmds...)
 
 	case bulkDoneMsg:
-		m.modal = nil
+		m.mutationPending = false
 		m.selected = nil
 		if msg.failed > 0 && msg.succeeded == 0 {
-			m.err = fmt.Errorf("%d repos failed to %s", msg.failed, msg.verb)
+			// Full failure: keep modal open with error.
+			if m.modal != nil {
+				m.modal.submitting = false
+				m.modal.submitErr = fmt.Sprintf("%d repos failed to %s", msg.failed, msg.verb)
+			}
 			return m, nil
 		}
+		m.modal = nil
 		if msg.failed > 0 {
 			names := msg.failedNWOs
 			var failDetail string
@@ -228,10 +437,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.bulkFailedNWOs = nil
 		}
-		m.loading = true
+		m.listsLoading = true
 		cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
+		// Invalidate repo cache for focused list.
+		if m.focusedList != nil {
+			delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
+			delete(m.repoCache, repoCacheKey{m.focusedList.ID, true})
+		}
 		if m.active == paneRepo && m.focusedList != nil {
-			cmds = append(cmds, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview))
+			key := repoCacheKey{m.focusedList.ID, m.showPreview}
+			m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
+			cmds = append(
+				cmds,
+				loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.generation),
+			)
 		}
 		return m, tea.Batch(cmds...)
 
@@ -254,29 +473,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Scroll the pane under the pointer, regardless of which pane is active.
 		g := calcPaneGeometry(m.width, m.showPreview)
-		if msg.X < g.sep1Col {
+		switch {
+		case msg.X < g.sep1Col:
 			// List pane.
 			m.listCursor = clampInt(m.listCursor+delta, 0, len(m.displayedLists)-1)
 			m = m.slideListOffset()
-		} else if !m.showPreview || g.sep2Col < 0 || msg.X < g.sep2Col {
-			// Repo pane.
-			m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1)
+		case m.showPreview && g.sep2Col >= 0 && msg.X > g.sep2Col:
+			// Preview pane wheel scroll.
+			contentH := m.height - 2
+			viewH := contentH
+			content := countPreviewLines(m, g.previewWidth, contentH)
+			previewDelta := 3
+			if delta < 0 {
+				previewDelta = -3
+			}
+			m.previewOffset = slidePreviewOffset(m.previewOffset, previewDelta, content, viewH)
+		default:
+			// Repo pane (between sep1Col and sep2Col, or sep2Col < 0).
+			(&m).setRepoCursor(clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1))
 			m = m.slideRepoOffset()
 		}
-		// Wheel over preview pane: no-op until preview scroll is implemented.
 		return m, nil
 
 	case tea.MouseClickMsg:
 		if m.modal != nil || m.searchActive {
 			return m, nil
 		}
-		m = m.handleMouseClick(msg)
-		return m, nil
+		var cmd tea.Cmd
+		m, cmd = m.handleMouseClick(msg)
+		return m, cmd
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		if m.loading {
+		if m.anyPending() {
 			return m, cmd
 		}
 		return m, nil
@@ -284,6 +514,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if m.modal != nil {
 			updated, cmd := m.modal.update(msg)
+			if updated == nil && cmd != nil {
+				// Modal signalled submit: keep it open in submitting state.
+				m.modal.submitting = true
+				m.modal.submitErr = ""
+				m.mutationPending = true
+				return m, tea.Batch(cmd, m.spinner.Tick)
+			}
 			m.modal = updated
 			return m, cmd
 		}
@@ -324,59 +561,76 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Right):
-		if m.active == paneList && m.focusedList != nil && len(m.repos) > 0 {
+		if m.active == paneList && m.focusedList != nil {
 			m.active = paneRepo
 		}
 		return m, nil
 
 	case key.Matches(msg, keys.Up):
-		m = m.moveCursor(-1)
+		if m.active == paneList {
+			newIdx := clampInt(m.listCursor-1, 0, len(m.displayedLists)-1)
+			cmd := (&m).focusList(newIdx)
+			m = m.slideListOffset()
+			return m, cmd
+		}
+		(&m).setRepoCursor(clampInt(m.repoCursor-1, 0, len(m.displayedRepos)-1))
+		m = m.slideRepoOffset()
 		return m, nil
 
 	case key.Matches(msg, keys.Down):
-		m = m.moveCursor(1)
+		if m.active == paneList {
+			newIdx := clampInt(m.listCursor+1, 0, len(m.displayedLists)-1)
+			cmd := (&m).focusList(newIdx)
+			m = m.slideListOffset()
+			return m, cmd
+		}
+		(&m).setRepoCursor(clampInt(m.repoCursor+1, 0, len(m.displayedRepos)-1))
+		m = m.slideRepoOffset()
 		return m, nil
 
 	case key.Matches(msg, keys.PgUp):
 		paneH := max(1, m.height-2)
 		if m.active == paneList {
-			m.listCursor = clampInt(m.listCursor-(paneH-1), 0, len(m.displayedLists)-1)
+			newIdx := clampInt(m.listCursor-(paneH-1), 0, len(m.displayedLists)-1)
+			cmd := (&m).focusList(newIdx)
 			m = m.slideListOffset()
-		} else {
-			m.repoCursor = clampInt(m.repoCursor-(paneH-1), 0, len(m.displayedRepos)-1)
-			m = m.slideRepoOffset()
+			return m, cmd
 		}
+		(&m).setRepoCursor(clampInt(m.repoCursor-(paneH-1), 0, len(m.displayedRepos)-1))
+		m = m.slideRepoOffset()
 		return m, nil
 
 	case key.Matches(msg, keys.PgDn):
 		paneH := max(1, m.height-2)
 		if m.active == paneList {
-			m.listCursor = clampInt(m.listCursor+(paneH-1), 0, len(m.displayedLists)-1)
+			newIdx := clampInt(m.listCursor+(paneH-1), 0, len(m.displayedLists)-1)
+			cmd := (&m).focusList(newIdx)
 			m = m.slideListOffset()
-		} else {
-			m.repoCursor = clampInt(m.repoCursor+(paneH-1), 0, len(m.displayedRepos)-1)
-			m = m.slideRepoOffset()
+			return m, cmd
 		}
+		(&m).setRepoCursor(clampInt(m.repoCursor+(paneH-1), 0, len(m.displayedRepos)-1))
+		m = m.slideRepoOffset()
 		return m, nil
 
 	case key.Matches(msg, keys.Home):
 		if m.active == paneList {
-			m.listCursor = 0
+			cmd := (&m).focusList(0)
 			m.listOffset = 0
-		} else {
-			m.repoCursor = 0
-			m.repoOffset = 0
+			return m, cmd
 		}
+		(&m).setRepoCursor(0)
+		m.repoOffset = 0
 		return m, nil
 
 	case key.Matches(msg, keys.End):
 		if m.active == paneList {
-			m.listCursor = max(0, len(m.displayedLists)-1)
+			newIdx := max(0, len(m.displayedLists)-1)
+			cmd := (&m).focusList(newIdx)
 			m = m.slideListOffset()
-		} else {
-			m.repoCursor = max(0, len(m.displayedRepos)-1)
-			m = m.slideRepoOffset()
+			return m, cmd
 		}
+		(&m).setRepoCursor(max(0, len(m.displayedRepos)-1))
+		m = m.slideRepoOffset()
 		return m, nil
 
 	case key.Matches(msg, keys.Enter):
@@ -478,9 +732,15 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Preview):
 		m.showPreview = !m.showPreview
-		if m.showPreview && m.active == paneRepo && m.focusedList != nil {
-			m.loading = true
-			return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, true)
+		m.previewOffset = 0
+		if m.showPreview && m.focusedList != nil {
+			// Only schedule a withTopics=true load for the focused list if not already loaded/loading.
+			topicsKey := repoCacheKey{m.focusedList.ID, true}
+			e := m.repoCache[topicsKey]
+			if e == nil || e.state == repoCacheIdle {
+				m.repoCache[topicsKey] = &repoCacheEntry{state: repoCacheLoading, gen: m.generation}
+				return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, true, m.generation)
+			}
 		}
 		return m, nil
 
@@ -489,6 +749,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.searchQuery = ""
 		m.listCursor = 0
 		m.repoCursor = 0
+		m.previewOffset = 0
 		m.listOffset = 0
 		m.repoOffset = 0
 		m = m.rebuildDisplayed()
@@ -518,21 +779,10 @@ func (m model) selectedNWOs() []string {
 	return slices.Sorted(maps.Keys(m.selected))
 }
 
-func (m model) moveCursor(delta int) model {
-	if m.active == paneList {
-		m.listCursor = clampInt(m.listCursor+delta, 0, len(m.displayedLists)-1)
-		m = m.slideListOffset()
-	} else {
-		m.repoCursor = clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1)
-		m = m.slideRepoOffset()
-	}
-	return m
-}
-
-func (m model) handleMouseClick(msg tea.MouseClickMsg) model {
+func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 	contentRow := msg.Y - 1 // row 0 is the header
 	if contentRow < 0 {
-		return m
+		return m, nil
 	}
 	g := calcPaneGeometry(m.width, m.showPreview)
 	if msg.X < g.sep1Col {
@@ -540,49 +790,57 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) model {
 		m.active = paneList
 		idx := contentRow + m.listOffset
 		if idx < 0 || idx >= len(m.displayedLists) {
-			return m
+			return m, nil
 		}
-		m.listCursor = idx
 
 		// Double-click detection: two clicks on same pane+row within 300ms drills to repo pane.
 		now := time.Now()
 		if m.lastClickPane == int(paneList) && m.lastClickIndex == idx &&
 			!m.lastClickTime.IsZero() && now.Sub(m.lastClickTime) < 300*time.Millisecond {
-			// Double-click: drill into the list (same logic as Enter).
-			if idx < len(m.displayedLists) {
-				focused := m.displayedLists[idx]
-				m.focusedList = nil
-				for i := range m.lists {
-					if m.lists[i].ID == focused.ID {
-						m.focusedList = &m.lists[i]
-						break
-					}
-				}
-				m.active = paneRepo
-				m.repoCursor = 0
-				m.repoOffset = 0
-				m.selected = nil
-			}
+			// Double-click: drill into the list, ensure load starts if idle.
+			_ = (&m).focusList(idx)
+			m.active = paneRepo
+			m.repoCursor = 0
+			m.previewOffset = 0
+			m.repoOffset = 0
+			m.selected = nil
 			// Reset tracker.
 			m.lastClickTime = time.Time{}
-		} else {
-			// Single click: record for double-click detection.
+			return m, nil
+		}
+		// Single click.
+		if idx != m.listCursor {
+			cmd := (&m).focusList(idx)
 			m.lastClickPane = int(paneList)
 			m.lastClickIndex = idx
 			m.lastClickTime = now
+			return m, cmd
 		}
+		// Already focused: if idle, trigger load without switching pane.
+		m.lastClickPane = int(paneList)
+		m.lastClickIndex = idx
+		m.lastClickTime = now
+		if m.focusedList != nil {
+			cacheKey := repoCacheKey{m.focusedList.ID, false}
+			e := m.repoCache[cacheKey]
+			if e == nil || e.state == repoCacheIdle {
+				cmd := (&m).focusList(idx)
+				return m, cmd
+			}
+		}
+		return m, nil
 	} else if msg.X > g.sep1Col && (g.sep2Col < 0 || msg.X < g.sep2Col) {
 		// Repo pane click.
 		if m.focusedList != nil && len(m.displayedRepos) > 0 {
 			m.active = paneRepo
 			idx := contentRow + m.repoOffset
 			if idx >= 0 && idx < len(m.displayedRepos) {
-				m.repoCursor = idx
+				(&m).setRepoCursor(idx)
 			}
 		}
 	}
 	// Clicks in the preview pane (msg.X > g.sep2Col when showPreview) are no-ops for now.
-	return m
+	return m, nil
 }
 
 func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -593,6 +851,7 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m = m.rebuildDisplayed()
 		m.listCursor = 0
 		m.repoCursor = 0
+		m.previewOffset = 0
 		m.listOffset = 0
 		m.repoOffset = 0
 		return m, nil
@@ -604,6 +863,7 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m = m.rebuildDisplayed()
 		m.listCursor = 0
 		m.repoCursor = 0
+		m.previewOffset = 0
 		m.listOffset = 0
 		m.repoOffset = 0
 		return m, nil
@@ -619,6 +879,7 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m = m.rebuildDisplayed()
 		m.listCursor = 0
 		m.repoCursor = 0
+		m.previewOffset = 0
 		m.listOffset = 0
 		m.repoOffset = 0
 	}
@@ -667,12 +928,13 @@ func clampInt(v, lo, hi int) int {
 }
 
 func (m model) rebuildDisplayed() model {
+	repos := m.currentRepos()
 	if m.searchQuery == "" {
 		m.displayedLists = m.lists
-		m.displayedRepos = m.repos
+		m.displayedRepos = repos
 	} else {
 		m.displayedLists = search.FilterStarLists(m.lists, m.searchQuery)
-		m.displayedRepos = search.FilterRepositories(m.repos, m.searchQuery)
+		m.displayedRepos = search.FilterRepositories(repos, m.searchQuery)
 	}
 	return m
 }
@@ -685,27 +947,78 @@ func dropLastRune(s string) string {
 	return s[:len(s)-size]
 }
 
+// slidePreviewOffset clamps next = current+delta within [0, max(0, contentH-viewH)].
+func slidePreviewOffset(current, delta, contentH, viewH int) int {
+	next := current + delta
+	maxOffset := contentH - viewH
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if next < 0 {
+		next = 0
+	}
+	if next > maxOffset {
+		next = maxOffset
+	}
+	return next
+}
+
+// countPreviewLines returns the number of content lines the preview pane would produce
+// for the given repo (before scroll offset is applied).
+func countPreviewLines(m model, w, _ int) int {
+	if m.active != paneRepo || len(m.displayedRepos) == 0 {
+		return 1
+	}
+	return len(m.previewContentLines(w))
+}
+
+// ensureRepoWidths computes and caches the star and language column widths for the
+// current displayedRepos slice. The sentinel incorporates the focused list ID, sort
+// key, search query, and count, so it auto-invalidates when any of those change.
+func (m *model) ensureRepoWidths() {
+	sig := ""
+	if m.focusedList != nil {
+		sig = m.focusedList.ID
+	}
+	sig += fmt.Sprintf("|%d|%s|%d", m.sortRepos, m.searchQuery, len(m.displayedRepos))
+	if sig == m.cachedRepoSig {
+		return // cache hit
+	}
+	m.cachedRepoSig = sig
+	maxStars, maxLang := 0, 0
+	for _, r := range m.displayedRepos {
+		if n := len(fmt.Sprintf("%d", r.StargazerCount)); n > maxStars {
+			maxStars = n
+		}
+		if n := len(r.Language); n > maxLang {
+			maxLang = n
+		}
+	}
+	if maxLang > 12 {
+		maxLang = 12
+	}
+	m.cachedStarWidth = maxStars
+	m.cachedLangWidth = maxLang
+}
+
 func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.active == paneList {
 		if len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		focused := m.displayedLists[m.listCursor]
-		// Find pointer into backing slice so reposLoadedMsg can resolve it.
-		m.focusedList = nil
-		for i := range m.lists {
-			if m.lists[i].ID == focused.ID {
-				m.focusedList = &m.lists[i]
-				break
-			}
+		var cmd tea.Cmd
+		key := repoCacheKey{m.displayedLists[m.listCursor].ID, m.showPreview}
+		e := m.repoCache[key]
+		if e == nil || e.state == repoCacheIdle {
+			// Idle: start the load via focusList.
+			cmd = (&m).focusList(m.listCursor)
 		}
 		m.active = paneRepo
-		m.repos = nil
 		m.repoCursor = 0
+		m.previewOffset = 0
 		m.repoOffset = 0
 		m.selected = nil
-		m.loading = true
-		return m, loadReposCmd(m.ctx, m.svc, focused.ID, m.showPreview)
+		return m, cmd
 	}
 	// paneRepo: open in browser
 	return m.openFocusedRepoURL()
@@ -744,8 +1057,9 @@ func (m model) cycleSort() model {
 		m.listOffset = 0
 	} else {
 		m.sortRepos = (m.sortRepos + 1) % 6
-		sortRepos(m.repos, m.sortRepos)
+		sortRepos(m.displayedRepos, m.sortRepos)
 		m.repoCursor = 0
+		m.previewOffset = 0
 		m.repoOffset = 0
 	}
 	return m
@@ -755,19 +1069,22 @@ func (m model) handleRefresh() (tea.Model, tea.Cmd) {
 	if inv, ok := m.svc.(invalidatable); ok {
 		inv.Invalidate()
 	}
-	m.loading = true
+	m.generation++
+	m.repoCache = make(map[repoCacheKey]*repoCacheEntry)
+	m.preloadQueue = nil
+	m.preloadInFlight = 0
+	m.listsLoading = true
 	m.err = nil
-	if m.active == paneRepo && m.focusedList != nil {
-		return m, loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview)
-	}
 	m.lists = nil
-	m.repos = nil
+	m.displayedRepos = nil
 	m.focusedList = nil
 	m.active = paneList
 	m.listCursor = 0
 	m.listOffset = 0
 	m.repoCursor = 0
+	m.previewOffset = 0
 	m.repoOffset = 0
+	m.cachedRepoSig = ""
 	return m, loadListsCmd(m.ctx, m.svc)
 }
 
@@ -1077,7 +1394,7 @@ func (m model) renderListPane(w, h int) string {
 		h--
 	}
 
-	if m.loading && m.focusedList == nil {
+	if m.listsLoading && m.focusedList == nil {
 		out = append(out, "  Loading "+m.spinner.View())
 		for len(out) < totalH {
 			out = append(out, "")
@@ -1193,13 +1510,28 @@ func (m model) renderRepoPane(w, h int) string {
 		return strings.Join(out, "\n")
 	}
 
-	// Loading state.
-	if m.loading {
-		out = append(out, "  Loading "+m.spinner.View())
-		for len(out) < totalH {
-			out = append(out, "")
+	// Loading/error state: check focused list's cache entry.
+	if m.focusedList != nil {
+		entry := m.repoCache[repoCacheKey{m.focusedList.ID, m.showPreview}]
+		if entry != nil && entry.state == repoCacheError {
+			errStr := entry.err.Error()
+			const maxErrW = 60
+			if len(errStr) > maxErrW {
+				errStr = errStr[:maxErrW] + "..."
+			}
+			out = append(out, styleError.Render("error: "+errStr+"  (ctrl+r to retry)"))
+			for len(out) < totalH {
+				out = append(out, "")
+			}
+			return strings.Join(out, "\n")
 		}
-		return strings.Join(out, "\n")
+		if entry == nil || entry.state == repoCacheLoading {
+			out = append(out, "  Loading "+m.spinner.View())
+			for len(out) < totalH {
+				out = append(out, "")
+			}
+			return strings.Join(out, "\n")
+		}
 	}
 
 	// Empty state.
@@ -1226,7 +1558,20 @@ func (m model) renderRepoPane(w, h int) string {
 
 	hasSel := len(m.selected) > 0
 
-	// ---- Column widths from visible rows ----
+	// ---- Column widths (cached across frames) ----
+	(&m).ensureRepoWidths()
+
+	// starWidth: digits + " " + glyph = cachedStarWidth+2; minimum 4.
+	starWidth := 4
+	if sw := m.cachedStarWidth + 2; sw > starWidth {
+		starWidth = sw
+	}
+	// langWidth: minimum 4; capped at 12 by ensureRepoWidths.
+	langWidth := 4
+	if lw := m.cachedLangWidth; lw > langWidth {
+		langWidth = lw
+	}
+
 	start := m.repoOffset
 	end := min(start+h, len(m.displayedRepos))
 
@@ -1234,31 +1579,6 @@ func (m model) renderRepoPane(w, h int) string {
 		cursorW = 2 // "> " or "  "
 		markerW = 4 // "[x] " or "[ ] " - only when hasSel
 	)
-
-	// Compute star and language column widths from visible rows.
-	starWidth := 4 // minimum: "0 " + glyph = 3, but keep at least 4
-	langWidth := 4 // minimum
-	if showStars || showLang {
-		for i := start; i < end; i++ {
-			r := m.displayedRepos[i]
-			if showStars {
-				countStr := fmt.Sprintf("%d", r.StargazerCount)
-				w2 := len(countStr) + 2 // count + " " + glyph
-				if w2 > starWidth {
-					starWidth = w2
-				}
-			}
-			if showLang && r.Language != "" {
-				lw := lipgloss.Width(r.Language)
-				if lw > langWidth {
-					langWidth = lw
-				}
-			}
-		}
-	}
-	if langWidth > 12 {
-		langWidth = 12
-	}
 
 	for i := start; i < end; i++ {
 		r := m.displayedRepos[i]
@@ -1410,11 +1730,18 @@ func truncateToWidth(s string, maxW int) string {
 	return string(runes) + ellipsis
 }
 
-func (m model) renderPreviewPane(w, h int) string {
-	if m.active != paneRepo || len(m.displayedRepos) == 0 {
-		return lipgloss.NewStyle().Width(w).Height(h).Render("(select a repo)")
-	}
+// previewContentLines builds the full list of styled content lines for the focused
+// repo in the preview pane. The returned slice is not clipped to any height; the
+// caller applies the scroll offset and pads to the desired height.
+func (m model) previewContentLines(w int) []string {
 	repo := m.displayedRepos[m.repoCursor]
+	// Use the withTopics=true cache entry for topic data when available.
+	if m.focusedList != nil {
+		if e := m.repoCache[repoCacheKey{m.focusedList.ID, true}]; e != nil &&
+			e.state == repoCacheLoaded && m.repoCursor < len(e.repos) {
+			repo = e.repos[m.repoCursor]
+		}
+	}
 
 	maxW := w - 2
 	if maxW < 1 {
@@ -1424,16 +1751,16 @@ func (m model) renderPreviewPane(w, h int) string {
 	now := time.Now().UTC()
 	var lines []string
 
-	// ---- Line 1: NameWithOwner ----
+	// Line 1: NameWithOwner
 	lines = append(lines, stylePaneTitle.Render(truncateToWidth(repo.NameWithOwner, maxW)))
 
-	// ---- Line 2: URL ----
+	// Line 2: URL
 	lines = append(lines, styleRepoURL.Render(truncateToWidth(repo.URL, maxW)))
 
-	// ---- Blank line ----
+	// Blank line
 	lines = append(lines, "")
 
-	// ---- Line 4: stars  language  badge ----
+	// Line 4: stars  language  badge
 	starsStr := styleRepoStars.Render(
 		fmt.Sprintf("%s %s", formatStars(repo.StargazerCount), starGlyph),
 	)
@@ -1457,10 +1784,10 @@ func (m model) renderPreviewPane(w, h int) string {
 
 	lines = append(lines, starsStr+langStr+badge)
 
-	// ---- Blank line ----
+	// Blank line
 	lines = append(lines, "")
 
-	// ---- Description label + text ----
+	// Description
 	lines = append(lines, stylePaneSubtitle.Render("Description"))
 	if repo.Description != "" {
 		lines = append(lines, styleRepoName.Render(truncateToWidth(repo.Description, maxW)))
@@ -1468,20 +1795,20 @@ func (m model) renderPreviewPane(w, h int) string {
 		lines = append(lines, styleEmptyState.Render("(no description)"))
 	}
 
-	// ---- Blank line ----
+	// Blank line
 	lines = append(lines, "")
 
-	// ---- License ----
+	// License
 	licenseVal := repo.License
 	if licenseVal == "" {
 		licenseVal = styleEmptyState.Render("-")
 	}
 	lines = append(lines, stylePaneSubtitle.Render("License:")+" "+licenseVal)
 
-	// ---- Pushed ----
+	// Pushed
 	lines = append(lines, stylePaneSubtitle.Render("Pushed:")+" "+shortAge(repo.PushedAt, now))
 
-	// ---- Starred ----
+	// Starred
 	starredVal := repo.StarredAt
 	if starredVal == "" {
 		starredVal = styleEmptyState.Render("-")
@@ -1490,7 +1817,7 @@ func (m model) renderPreviewPane(w, h int) string {
 	}
 	lines = append(lines, stylePaneSubtitle.Render("Starred:")+" "+starredVal)
 
-	// ---- Topics ----
+	// Topics
 	topicsVal := ""
 	if len(repo.Topics) > 0 {
 		topicsVal = truncateToWidth(strings.Join(repo.Topics, ", "), maxW)
@@ -1499,14 +1826,32 @@ func (m model) renderPreviewPane(w, h int) string {
 	}
 	lines = append(lines, stylePaneSubtitle.Render("Topics:")+" "+topicsVal)
 
-	// Pad / truncate to height.
-	for len(lines) < h {
-		lines = append(lines, "")
+	return lines
+}
+
+func (m model) renderPreviewPane(w, h int) string {
+	if m.active != paneRepo || len(m.displayedRepos) == 0 {
+		return lipgloss.NewStyle().Width(w).Height(h).Render("(select a repo)")
 	}
-	if len(lines) > h {
-		lines = lines[:h]
+
+	lines := m.previewContentLines(w)
+
+	// Apply scroll offset: slice [previewOffset, previewOffset+h].
+	contentLen := len(lines)
+	start := m.previewOffset
+	if start > contentLen {
+		start = contentLen
 	}
-	return strings.Join(lines, "\n")
+	end := start + h
+	if end > contentLen {
+		end = contentLen
+	}
+	visible := lines[start:end]
+	// Pad to height.
+	for len(visible) < h {
+		visible = append(visible, "")
+	}
+	return strings.Join(visible, "\n")
 }
 
 func formatStars(n int) string {

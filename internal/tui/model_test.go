@@ -149,6 +149,23 @@ func update(m model, msg tea.Msg) model {
 	return next.(model)
 }
 
+// executeBatch runs a cmd (which may be a BatchMsg) and collects all tea.Msg results.
+// This is used in tests that need to inspect what messages a batch produces.
+func executeBatch(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var results []tea.Msg
+		for _, c := range batch {
+			results = append(results, executeBatch(c)...)
+		}
+		return results
+	}
+	return []tea.Msg{msg}
+}
+
 // TestListsLoadedPopulatesLists verifies that receiving listsLoadedMsg
 // sets the lists field. After P4 eager-load, the first list is auto-focused
 // and a repo load is kicked off (loading stays true until repos arrive).
@@ -162,17 +179,19 @@ func TestListsLoadedPopulatesLists(t *testing.T) {
 	if len(m2.lists) != 3 {
 		t.Fatalf("lists len = %d, want 3", len(m2.lists))
 	}
-	// Eager load: focusedList is set and loading is true (awaiting repos).
+	// Eager load: focusedList is set and anyPending is true (awaiting repos).
 	if m2.focusedList == nil {
 		t.Error("focusedList should be non-nil after eager initial load")
 	}
-	if !m2.loading {
-		t.Error("loading should be true after listsLoadedMsg (eager repo fetch in flight)")
+	if !m2.anyPending() {
+		t.Error("anyPending should be true after listsLoadedMsg (eager repo fetch in flight)")
 	}
 }
 
 // TestReposLoadedPopulatesRepos verifies that receiving reposLoadedMsg
-// sets the repos field and resolves focusedList from the current lists.
+// populates the repo cache and resolves focusedList from the current lists.
+// With the preloader, all three lists start loading after listsLoadedMsg, so
+// we deliver all three responses to reach a fully idle state.
 func TestReposLoadedPopulatesRepos(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
@@ -180,13 +199,16 @@ func TestReposLoadedPopulatesRepos(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.active = paneRepo
 
+	// Deliver repos for all lists so preloading completes and anyPending is false.
 	m2 := update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m2 = update(m2, reposLoadedMsg{repos: svc.repos, listID: "UL_2"})
+	m2 = update(m2, reposLoadedMsg{repos: svc.repos, listID: "UL_3"})
 
-	if len(m2.repos) != 2 {
-		t.Fatalf("repos len = %d, want 2", len(m2.repos))
+	if len(m2.currentRepos()) != 2 {
+		t.Fatalf("currentRepos len = %d, want 2", len(m2.currentRepos()))
 	}
-	if m2.loading {
-		t.Error("loading should be false after reposLoadedMsg")
+	if m2.anyPending() {
+		t.Error("anyPending should be false after all reposLoadedMsg delivered")
 	}
 	if m2.focusedList == nil || m2.focusedList.ID != "UL_1" {
 		t.Errorf("focusedList = %v, want ID UL_1", m2.focusedList)
@@ -205,8 +227,8 @@ func TestErrMsgSetsError(t *testing.T) {
 	if !errors.Is(m2.err, sentinel) {
 		t.Errorf("err = %v, want %v", m2.err, sentinel)
 	}
-	if m2.loading {
-		t.Error("loading should be false after errMsg")
+	if m2.anyPending() {
+		t.Error("anyPending should be false after errMsg")
 	}
 }
 
@@ -284,8 +306,8 @@ func TestDrillIntoListOnEnter(t *testing.T) {
 	if m2.active != paneRepo {
 		t.Errorf("active = %v, want paneRepo", m2.active)
 	}
-	if !m2.loading {
-		t.Error("loading should be true after drilling into list")
+	if !m2.anyPending() {
+		t.Error("anyPending should be true after drilling into list")
 	}
 }
 
@@ -297,8 +319,10 @@ func TestBackFromRepoPane(t *testing.T) {
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.active = paneRepo
-	m.repos = svc.repos
 	m.focusedList = &m.lists[0]
+	// Populate cache for the focused list.
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo // reposLoadedMsg may not change active pane
 
 	m2 := update(m, specialKey(tea.KeyEscape))
 
@@ -308,7 +332,7 @@ func TestBackFromRepoPane(t *testing.T) {
 	if m2.focusedList == nil {
 		t.Error("focusedList should be preserved after back")
 	}
-	if len(m2.repos) == 0 {
+	if len(m2.currentRepos()) == 0 {
 		t.Error("repos should be preserved after back")
 	}
 }
@@ -434,8 +458,8 @@ func TestRefreshNoInvalidateOnPlainService(t *testing.T) {
 
 	// Must not panic
 	m2 := update(m, ctrlKey('r'))
-	if !m2.loading {
-		t.Error("loading should be true after refresh")
+	if !m2.listsLoading {
+		t.Error("listsLoading should be true after refresh")
 	}
 }
 
@@ -630,7 +654,7 @@ func TestErrorRendersInView(t *testing.T) {
 	svc := &fakeService{}
 	m := newTestModel(svc)
 	m.err = errors.New("api error")
-	m.loading = false
+	m.listsLoading = false
 	m.width = 80
 	m.height = 24
 
@@ -645,7 +669,7 @@ func TestLoadingRendersInView(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
-	m.loading = true
+	m.listsLoading = true
 	m.width = 80
 	m.height = 24
 
@@ -918,18 +942,33 @@ func TestDeleteListModalCorrectName(t *testing.T) {
 	for _, ch := range "mylist" {
 		m = update(m, keyPress(ch))
 	}
-	_, cmd := m.Update(specialKey(tea.KeyEnter))
+	m2, cmd := m.Update(specialKey(tea.KeyEnter))
+	m = m2.(model)
 	if cmd == nil {
 		t.Error("correct name should produce a cmd (delete mutation)")
 	}
-	// Execute the cmd to get mutationDoneMsg.
-	msg := cmd()
-	doneMsg, ok := msg.(mutationDoneMsg)
-	if !ok {
-		t.Fatalf("cmd returned %T, want mutationDoneMsg", msg)
+	// Modal should now be in submitting state (kept open, not closed).
+	if m.modal == nil {
+		t.Fatal("modal should remain open while submitting")
 	}
-	if doneMsg.kind != modalDeleteList {
-		t.Errorf("doneMsg.kind = %v, want modalDeleteList", doneMsg.kind)
+	if !m.modal.submitting {
+		t.Error("modal.submitting should be true after submit")
+	}
+	// The batch contains the mutation cmd. Execute cmds to find mutationDoneMsg.
+	msgs := executeBatch(cmd)
+	var found *mutationDoneMsg
+	for _, msg := range msgs {
+		if d, ok := msg.(mutationDoneMsg); ok {
+			d := d
+			found = &d
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("batch should contain a mutationDoneMsg producer")
+	}
+	if found.kind != modalDeleteList {
+		t.Errorf("doneMsg.kind = %v, want modalDeleteList", found.kind)
 	}
 }
 
@@ -947,35 +986,43 @@ func TestEditListNoOpInRepoPane(t *testing.T) {
 	}
 }
 
-// TestMutationListErrorDisplayed verifies that mutationDoneMsg with an error sets model.err.
+// TestMutationListErrorDisplayed verifies that mutationDoneMsg with an error keeps the modal
+// open and stores the error in modal.submitErr (P3 behavior).
 func TestMutationListErrorDisplayed(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
+	// Modal must be open for submitErr to be stored.
+	m.modal = &modal{kind: modalDeleteList, submitting: true}
 	sentinel := errors.New("delete failed")
 
 	m2 := update(m, mutationDoneMsg{kind: modalDeleteList, err: sentinel})
-	if !errors.Is(m2.err, sentinel) {
-		t.Errorf("err = %v, want sentinel", m2.err)
+	if m2.modal == nil {
+		t.Error("modal should remain open after error (P3 inline error)")
 	}
-	if m2.modal != nil {
-		t.Error("modal should be nil after error")
+	if m2.modal != nil && !strings.Contains(m2.modal.submitErr, sentinel.Error()) {
+		t.Errorf("modal.submitErr = %q, want to contain %q", m2.modal.submitErr, sentinel.Error())
+	}
+	if m2.modal != nil && m2.modal.submitting {
+		t.Error("modal.submitting should be false after mutation error")
 	}
 }
 
-// TestMutationErrorSetsErrField verifies mutationDoneMsg with err sets model.err.
+// TestMutationErrorSetsErrField verifies mutationDoneMsg with err stores error in modal.submitErr.
 func TestMutationErrorSetsErrField(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
+	// Modal must be open for submitErr to be stored.
+	m.modal = &modal{kind: modalCreateList, submitting: true}
 	sentinel := errors.New("create failed")
 
 	m2 := update(m, mutationDoneMsg{kind: modalCreateList, err: sentinel})
-	if !errors.Is(m2.err, sentinel) {
-		t.Errorf("err = %v, want %v", m2.err, sentinel)
+	if m2.modal == nil {
+		t.Error("modal should remain open after error (P3 inline error)")
 	}
-	if m2.modal != nil {
-		t.Error("modal should be closed after error")
+	if m2.modal != nil && !strings.Contains(m2.modal.submitErr, sentinel.Error()) {
+		t.Errorf("modal.submitErr = %q, want to contain %q", m2.modal.submitErr, sentinel.Error())
 	}
 }
 
@@ -1217,7 +1264,9 @@ func TestPreviewToggleLoadsTopics(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: inner.lists})
 	m.active = paneRepo
 	m.focusedList = &m.lists[0]
-	m.repos = inner.repos
+	// Populate repo cache for focused list (without topics).
+	m = update(m, reposLoadedMsg{repos: inner.repos, listID: inner.lists[0].ID})
+	m.active = paneRepo // restore pane after update
 
 	// Toggle preview on.
 	_, cmd := m.Update(keyPress('p'))
@@ -2055,7 +2104,8 @@ func TestLoadingRendersInsidePane(t *testing.T) {
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.focusedList = &m.lists[0]
-	m.loading = true
+	// Mark the focused list's cache entry as loading to simulate repo fetch in flight.
+	m.repoCache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{state: repoCacheLoading}
 	m.width = 120
 	m.height = 24
 
@@ -2120,7 +2170,7 @@ func TestSpinnerTickMsgUpdatesSpinner(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
-	m.loading = true
+	// listsLoading is already true from newTestModel (listsLoading: true).
 
 	// Capture initial View output.
 	before := m.spinner.View()
@@ -2152,7 +2202,8 @@ func TestLoadingViewUsesSpinnerView(t *testing.T) {
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.focusedList = &m.lists[0]
-	m.loading = true
+	// Mark the focused list's cache entry as loading to simulate repo fetch in flight.
+	m.repoCache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{state: repoCacheLoading}
 
 	spinnerStr := m.spinner.View()
 	rendered := repoPane(m, 80, 20)
@@ -2855,5 +2906,658 @@ func TestDoubleClickDifferentRowNoSwitch(t *testing.T) {
 			"active after clicks on different rows = %v, want paneList (no double-click switch)",
 			m3.active,
 		)
+	}
+}
+
+// --- P1 cache tests ---
+
+// TestStaleReposLoadedMsgIgnored verifies that a reposLoadedMsg with a stale
+// generation is silently dropped and does not update the cache.
+func TestStaleReposLoadedMsgIgnored(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	// Bump generation so gen=0 messages are stale.
+	m.generation = 1
+
+	staleMsg := reposLoadedMsg{
+		repos:  svc.repos,
+		listID: m.focusedList.ID,
+		gen:    0, // stale: model.generation is now 1
+	}
+	m2 := update(m, staleMsg)
+
+	key := repoCacheKey{m.focusedList.ID, false}
+	entry := m2.repoCache[key]
+	if entry != nil && entry.state == repoCacheLoaded {
+		t.Error("stale reposLoadedMsg should not write a repoCacheLoaded entry")
+	}
+}
+
+// TestRepoCacheEntryWrittenOnLoad verifies that a fresh reposLoadedMsg writes a
+// repoCacheLoaded entry and currentRepos() reflects the loaded data.
+func TestRepoCacheEntryWrittenOnLoad(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	firstListID := m.lists[0].ID
+
+	m2 := update(m, reposLoadedMsg{
+		repos:      svc.repos,
+		listID:     firstListID,
+		withTopics: false,
+		gen:        0,
+	})
+
+	key := repoCacheKey{firstListID, false}
+	entry := m2.repoCache[key]
+	if entry == nil {
+		t.Fatal("repoCache entry should exist after reposLoadedMsg")
+	}
+	if entry.state != repoCacheLoaded {
+		t.Errorf("entry.state = %d, want repoCacheLoaded", entry.state)
+	}
+	if len(m2.currentRepos()) != len(svc.repos) {
+		t.Errorf("currentRepos len = %d, want %d", len(m2.currentRepos()), len(svc.repos))
+	}
+}
+
+// TestAnyPendingDerivedFromMap verifies anyPending() returns true only when a
+// repoCacheLoading entry exists in the map.
+func TestAnyPendingDerivedFromMap(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	// newTestModel sets listsLoading=true; clear it so we can test repoCache alone.
+	m.listsLoading = false
+
+	if m.anyPending() {
+		t.Error("anyPending should be false with empty cache and no flags set")
+	}
+
+	// Write a loading entry.
+	key := repoCacheKey{listID: "UL_1", withTopics: false}
+	m.repoCache[key] = &repoCacheEntry{state: repoCacheLoading}
+
+	if !m.anyPending() {
+		t.Error("anyPending should be true when a repoCacheLoading entry exists")
+	}
+
+	// Mark it loaded.
+	m.repoCache[key] = &repoCacheEntry{state: repoCacheLoaded}
+
+	if m.anyPending() {
+		t.Error("anyPending should be false after entry transitions to repoCacheLoaded")
+	}
+}
+
+// --- P2: bounded preloader and live pane update tests ---
+
+// fiveListsSvc returns a service with 5 lists and 2 repos.
+func fiveListsSvc() *fakeService {
+	lists := []githubapi.StarList{
+		{ID: "UL_1", Name: "list-one", RepoCount: 2},
+		{ID: "UL_2", Name: "list-two", RepoCount: 2},
+		{ID: "UL_3", Name: "list-three", RepoCount: 2},
+		{ID: "UL_4", Name: "list-four", RepoCount: 2},
+		{ID: "UL_5", Name: "list-five", RepoCount: 2},
+	}
+	repos := []githubapi.Repository{
+		{ID: "R_1", NameWithOwner: "owner/repo-a", StargazerCount: 1},
+		{ID: "R_2", NameWithOwner: "owner/repo-b", StargazerCount: 2},
+	}
+	return &fakeService{lists: lists, repos: repos}
+}
+
+// TestPreloaderRespectsConcurrencyCap verifies that after listsLoadedMsg with 5
+// lists, at most 3 loads are in flight; delivering one reposLoadedMsg schedules
+// the 4th.
+func TestPreloaderRespectsConcurrencyCap(t *testing.T) {
+	t.Parallel()
+	svc := fiveListsSvc()
+	m := newTestModel(svc)
+
+	next, _ := m.Update(listsLoadedMsg{lists: svc.lists})
+	m = next.(model)
+
+	// At most 3 loads should be in flight.
+	if m.preloadInFlight > 3 {
+		t.Errorf("preloadInFlight = %d after listsLoadedMsg, want <= 3", m.preloadInFlight)
+	}
+	if m.preloadInFlight != 3 {
+		t.Errorf("preloadInFlight = %d, want exactly 3 (cap not filled)", m.preloadInFlight)
+	}
+	if len(m.preloadQueue) != 2 {
+		t.Errorf("preloadQueue len = %d, want 2 (remaining lists)", len(m.preloadQueue))
+	}
+
+	// Deliver one success -- a 4th load should now be scheduled.
+	inflight := m.preloadInFlight
+	next2, _ := m.Update(
+		reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID, gen: m.generation},
+	)
+	m2 := next2.(model)
+
+	// preloadInFlight should have decreased by 1 then increased by 1 (net same or +0).
+	// It decreased when the response arrived, and then schedulePreload added the next one.
+	// Since there are 2 in the queue, one is scheduled: inflight stays the same.
+	if m2.preloadInFlight != inflight {
+		t.Errorf(
+			"preloadInFlight = %d after one reposLoadedMsg, want %d (one freed, one scheduled)",
+			m2.preloadInFlight, inflight,
+		)
+	}
+	// Queue should have shrunk by 1 (one was promoted to in-flight).
+	if len(m2.preloadQueue) != 1 {
+		t.Errorf("preloadQueue len = %d after one response, want 1", len(m2.preloadQueue))
+	}
+}
+
+// TestCursorMoveUsesCacheNoNewCmd verifies that moving the cursor down to a
+// cached list immediately populates displayedRepos with no new load command.
+func TestCursorMoveUsesCacheNoNewCmd(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Pre-populate cache for all three lists so no loads are needed.
+	reposA := []githubapi.Repository{{ID: "A_1", NameWithOwner: "owner/a-list-repo"}}
+	reposB := []githubapi.Repository{{ID: "B_1", NameWithOwner: "owner/b-list-repo"}}
+	reposC := []githubapi.Repository{{ID: "C_1", NameWithOwner: "owner/c-list-repo"}}
+	m = update(m, reposLoadedMsg{repos: reposA, listID: m.lists[0].ID, gen: m.generation})
+	m = update(m, reposLoadedMsg{repos: reposB, listID: m.lists[1].ID, gen: m.generation})
+	m = update(m, reposLoadedMsg{repos: reposC, listID: m.lists[2].ID, gen: m.generation})
+
+	// All lists are cached now; reset cursor to 0 and ensure list pane is active.
+	m.active = paneList
+	m.listCursor = 0
+	inflightBefore := m.preloadInFlight
+
+	// Move cursor down -- should use cache, no new load.
+	next, _ := m.Update(specialKey(tea.KeyDown))
+	m2 := next.(model)
+
+	if m2.preloadInFlight != inflightBefore {
+		t.Errorf(
+			"preloadInFlight changed from %d to %d after cursor move to cached list",
+			inflightBefore, m2.preloadInFlight,
+		)
+	}
+	// displayedRepos should be populated from the cache for lists[1].
+	if len(m2.displayedRepos) == 0 {
+		t.Error("displayedRepos should be populated from cache after cursor move")
+	}
+	if m2.listCursor != 1 {
+		t.Errorf("listCursor = %d, want 1", m2.listCursor)
+	}
+}
+
+// TestCursorMoveIdleListSchedulesLoad verifies that moving the cursor to an idle
+// list (no cache entry) creates a repoCacheLoading entry and increments
+// preloadInFlight.
+func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Simulate: deliver repos for first list only, then manually clear all other
+	// cache entries to simulate idle state for lists[1] and lists[2].
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.generation})
+	// Remove loading/loaded entries for UL_2 and UL_3 (simulate idle).
+	delete(m.repoCache, repoCacheKey{m.lists[1].ID, false})
+	delete(m.repoCache, repoCacheKey{m.lists[2].ID, false})
+	m.preloadInFlight = 0
+	m.preloadQueue = nil
+
+	m.active = paneList
+	m.listCursor = 0
+	inflightBefore := m.preloadInFlight
+
+	// Move down to lists[1] which has no cache entry.
+	m2 := update(m, specialKey(tea.KeyDown))
+
+	cacheEntry := m2.repoCache[repoCacheKey{m2.lists[1].ID, false}]
+	if cacheEntry == nil {
+		t.Fatal("repoCache entry for list[1] should exist after cursor move to idle list")
+	}
+	if cacheEntry.state != repoCacheLoading {
+		t.Errorf("cache entry state = %d, want repoCacheLoading", cacheEntry.state)
+	}
+	if m2.preloadInFlight <= inflightBefore {
+		t.Errorf(
+			"preloadInFlight did not increase: before=%d after=%d",
+			inflightBefore, m2.preloadInFlight,
+		)
+	}
+}
+
+// TestSingleClickFocusedUncachedTriggersLoad verifies that a single click on the
+// already-focused list row (with idle cache entry) triggers a repo load without
+// switching to the repo pane.
+func TestSingleClickFocusedUncachedTriggersLoad(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Clear the focused list's cache entry to simulate idle state.
+	if m.focusedList != nil {
+		delete(m.repoCache, repoCacheKey{m.focusedList.ID, false})
+	}
+	m.preloadInFlight = 0
+	m.preloadQueue = nil
+	m.active = paneList
+	m.listCursor = 0
+	m.width = 120
+	m.height = 24
+
+	// Single click on the already-focused row (idx 0, which is listCursor).
+	// g.sep1Col at width=120 showPreview=false: leftW=36, sep1Col=36.
+	// Y=1 => contentRow=0 => idx=0 (matches listCursor=0).
+	click := tea.MouseClickMsg{X: 5, Y: 1, Button: tea.MouseLeft}
+	// Record as if we already clicked (so next click is treated as first click on same row).
+	m.lastClickPane = int(paneList)
+	m.lastClickIndex = 0
+	m.lastClickTime = time.Now().Add(-400 * time.Millisecond) // older than 300ms window
+
+	m2 := update(m, click)
+
+	// Should still be in list pane.
+	if m2.active != paneList {
+		t.Errorf("active = %v after single click on focused row, want paneList", m2.active)
+	}
+	// Load should be triggered.
+	if m2.focusedList == nil {
+		t.Fatal("focusedList is nil")
+	}
+	entry := m2.repoCache[repoCacheKey{m2.focusedList.ID, false}]
+	if entry == nil || entry.state != repoCacheLoading {
+		var state repoCacheState = -1
+		if entry != nil {
+			state = entry.state
+		}
+		t.Errorf(
+			"cache entry state = %d after single click on idle focused row, want repoCacheLoading",
+			state,
+		)
+	}
+}
+
+// TestEnterListPaneNoLoadWhenCached verifies that pressing Enter in the list pane
+// when the focused list's repos are already cached switches to paneRepo without
+// issuing a new load command.
+func TestEnterListPaneNoLoadWhenCached(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Pre-populate cache for the focused list.
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.generation})
+	m.active = paneList
+	m.listCursor = 0
+	inflightBefore := m.preloadInFlight
+
+	// Press Enter -- should switch to paneRepo with no new load.
+	next, cmd := m.Update(specialKey(tea.KeyEnter))
+	m2 := next.(model)
+
+	if m2.active != paneRepo {
+		t.Errorf("active = %v after Enter with cached list, want paneRepo", m2.active)
+	}
+	if cmd != nil {
+		// Allow nil cmd (no load) -- if cmd is non-nil, check that inflight didn't increase.
+		if m2.preloadInFlight > inflightBefore {
+			t.Errorf(
+				"preloadInFlight increased from %d to %d after Enter with cached list (should not start new load)",
+				inflightBefore,
+				m2.preloadInFlight,
+			)
+		}
+	}
+}
+
+// --- P3: nine new tests ---
+
+// TestRefreshBumpsGenerationAndClearsCache verifies ctrl+r increments m.generation
+// and empties m.repoCache.
+func TestRefreshBumpsGenerationAndClearsCache(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Populate cache with a loaded entry.
+	m.repoCache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
+	genBefore := m.generation
+
+	m2 := update(m, ctrlKey('r'))
+
+	if m2.generation != genBefore+1 {
+		t.Errorf("generation = %d, want %d after ctrl+r", m2.generation, genBefore+1)
+	}
+	if len(m2.repoCache) != 0 {
+		t.Errorf("repoCache len = %d, want 0 after ctrl+r", len(m2.repoCache))
+	}
+	if !m2.listsLoading {
+		t.Error("listsLoading should be true after ctrl+r")
+	}
+}
+
+// TestStaleMsgDroppedAfterRefresh verifies that a reposLoadedMsg from the prior
+// generation is dropped and does not install a loaded entry.
+func TestStaleMsgDroppedAfterRefresh(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Refresh bumps generation to 1.
+	m = update(m, ctrlKey('r'))
+	if m.generation != 1 {
+		t.Fatalf("generation = %d after ctrl+r, want 1", m.generation)
+	}
+
+	// Deliver a stale message (gen 0).
+	stale := reposLoadedMsg{repos: svc.repos, listID: "UL_1", gen: 0}
+	m2 := update(m, stale)
+
+	entry := m2.repoCache[repoCacheKey{"UL_1", false}]
+	if entry != nil && entry.state == repoCacheLoaded {
+		t.Error(
+			"stale reposLoadedMsg (gen=0) should not create a loaded entry after refresh (gen=1)",
+		)
+	}
+}
+
+// TestMutationModalStaysOpenWhileSubmitting verifies that submitting a modal form
+// keeps the modal open with submitting=true and mutationPending=true.
+func TestMutationModalStaysOpenWhileSubmitting(t *testing.T) {
+	t.Parallel()
+	svc := &recordingFakeService{
+		fakeService: fakeService{
+			lists: []githubapi.StarList{{ID: "UL_1", Name: "existing"}},
+		},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	// Open create-list modal.
+	m = update(m, keyPress('n'))
+	if m.modal == nil {
+		t.Fatal("create modal should be open")
+	}
+
+	// Type a name.
+	for _, ch := range "NewList" {
+		m = update(m, keyPress(ch))
+	}
+
+	// Submit: advance to last field, then submit.
+	m = update(m, specialKey(tea.KeyEnter)) // advance to desc
+	m = update(m, specialKey(tea.KeyEnter)) // advance to visibility or submit
+
+	// Keep pressing enter until modal is submitting or we give up.
+	for i := 0; i < 5; i++ {
+		if m.modal != nil && m.modal.submitting {
+			break
+		}
+		m = update(m, specialKey(tea.KeyEnter))
+	}
+
+	if m.modal == nil {
+		t.Fatal("modal should remain open while submitting")
+	}
+	if !m.modal.submitting {
+		t.Error("modal.submitting should be true after submit")
+	}
+	if !m.mutationPending {
+		t.Error("mutationPending should be true while modal is submitting")
+	}
+}
+
+// TestMutationDoneClosesModalAndInvalidatesEntry verifies that a successful
+// mutationDoneMsg closes the modal, sets a toast, and removes the focused list's
+// cache entries.
+func TestMutationDoneClosesModalAndInvalidatesEntry(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[0]
+
+	// Pre-populate a cache entry to confirm it gets invalidated.
+	m.repoCache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
+	m.repoCache[repoCacheKey{"UL_1", true}] = &repoCacheEntry{state: repoCacheLoaded}
+
+	// Open a modal in submitting state.
+	m.modal = &modal{kind: modalCreateList, submitting: true}
+	m.mutationPending = true
+
+	m2 := update(m, mutationDoneMsg{kind: modalCreateList})
+
+	if m2.modal != nil {
+		t.Error("modal should be nil after successful mutationDoneMsg")
+	}
+	if m2.statusMsg == "" {
+		t.Error("statusMsg should be set after successful mutation")
+	}
+	if m2.mutationPending {
+		t.Error("mutationPending should be false after successful mutation")
+	}
+	// Both cache entries for UL_1 should be deleted (invalidated).
+	if e := m2.repoCache[repoCacheKey{"UL_1", false}]; e != nil && e.state == repoCacheLoaded {
+		t.Error("repoCache[UL_1, false] should be invalidated after mutation")
+	}
+	if e := m2.repoCache[repoCacheKey{"UL_1", true}]; e != nil && e.state == repoCacheLoaded {
+		t.Error("repoCache[UL_1, true] should be invalidated after mutation")
+	}
+}
+
+// TestMutationErrorKeepsModalOpenWithMessage verifies that a failed mutationDoneMsg
+// keeps the modal open with submitting=false and submitErr set.
+func TestMutationErrorKeepsModalOpenWithMessage(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{}
+	m := newTestModel(svc)
+	m.modal = &modal{kind: modalCreateList, submitting: true}
+	m.mutationPending = true
+	someErr := errors.New("network timeout")
+
+	m2 := update(m, mutationDoneMsg{kind: modalCreateList, err: someErr})
+
+	if m2.modal == nil {
+		t.Fatal("modal should remain open after mutation error")
+	}
+	if m2.modal.submitting {
+		t.Error("modal.submitting should be false after error")
+	}
+	if !strings.Contains(m2.modal.submitErr, someErr.Error()) {
+		t.Errorf("modal.submitErr = %q, want to contain %q", m2.modal.submitErr, someErr.Error())
+	}
+	if m2.mutationPending {
+		t.Error("mutationPending should be false after error")
+	}
+}
+
+// TestBulkMutationModalSubmittingState verifies that submitting a bulk-add modal
+// sets submitting=true on the modal.
+func TestBulkMutationModalSubmittingState(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	// Select a repo.
+	m.selected = map[string]struct{}{"owner/b-repo": {}}
+
+	// Open bulk-add modal.
+	m = update(m, keyPress('a'))
+	if m.modal == nil {
+		t.Fatal("bulk-add modal should open")
+	}
+
+	// Submit (enter on the picker).
+	m = update(m, specialKey(tea.KeyEnter))
+
+	if m.modal == nil {
+		t.Fatal("modal should remain open while submitting (bulk)")
+	}
+	if !m.modal.submitting {
+		t.Error("modal.submitting should be true after bulk-add submit")
+	}
+}
+
+// TestRepoWidthsCachedAcrossScrolls verifies that ensureRepoWidths populates the star
+// and language width cache fields and that the sentinel is stable across repeated calls
+// with the same displayedRepos.
+func TestRepoWidthsCachedAcrossScrolls(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.width = 120
+	m.height = 24
+
+	// Call ensureRepoWidths directly on a pointer so mutations are visible.
+	(&m).ensureRepoWidths()
+	sig1 := m.cachedRepoSig
+	sw1 := m.cachedStarWidth
+	lw1 := m.cachedLangWidth
+
+	if sig1 == "" {
+		t.Error("cachedRepoSig should be non-empty after ensureRepoWidths")
+	}
+	if sw1 <= 0 {
+		t.Errorf("cachedStarWidth = %d, want > 0", sw1)
+	}
+
+	// Second call -- sentinel unchanged, widths stable (cache hit).
+	(&m).ensureRepoWidths()
+	if m.cachedRepoSig != sig1 {
+		t.Errorf("cachedRepoSig changed on second call: %q -> %q", sig1, m.cachedRepoSig)
+	}
+	if m.cachedStarWidth != sw1 {
+		t.Errorf("cachedStarWidth changed on second call: %d -> %d", sw1, m.cachedStarWidth)
+	}
+	if m.cachedLangWidth != lw1 {
+		t.Errorf("cachedLangWidth changed on second call: %d -> %d", lw1, m.cachedLangWidth)
+	}
+
+	// Verify sentinel invalidates when list changes.
+	m.focusedList = &m.lists[1]
+	m.displayedRepos = svc.repos // same repos, different focused list
+	(&m).ensureRepoWidths()
+	if m.cachedRepoSig == sig1 {
+		t.Error("cachedRepoSig should change when focused list changes")
+	}
+}
+
+// TestPreviewWheelScrollsOffset verifies that a mouse wheel event over the preview
+// column increases m.previewOffset.
+func TestPreviewWheelScrollsOffset(t *testing.T) {
+	t.Parallel()
+	// Use a repo with enough data that the preview pane has more than viewH lines.
+	repo := githubapi.Repository{
+		ID:             "R_1",
+		NameWithOwner:  "owner/repo",
+		Description:    "A test repo with topics to make preview content long",
+		URL:            "https://github.com/owner/repo",
+		StargazerCount: 42,
+		Language:       "Go",
+		License:        "MIT",
+		PushedAt:       "2024-01-01T00:00:00Z",
+		StarredAt:      "2024-03-01T00:00:00Z",
+		Topics:         []string{"topic1", "topic2", "topic3"},
+	}
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "list", RepoCount: 1}},
+		repos: []githubapi.Repository{repo},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.width = 160
+	m.height = 8 // small height so content overflows
+
+	// sep2Col at width=160, showPreview=true, totalWidth>120:
+	//   leftW = 160*22/100 = 35, midW = 160*28/100 = 44
+	//   sep2Col = 35 + 1 + 44 = 80
+	// So X=100 is in the preview pane.
+	g := calcPaneGeometry(m.width, m.showPreview)
+	previewX := g.sep2Col + 2 // safely inside preview pane
+
+	before := m.previewOffset
+	wheel := tea.MouseWheelMsg{X: previewX, Y: 3, Button: tea.MouseWheelDown}
+	m2 := update(m, wheel)
+
+	if m2.previewOffset <= before {
+		t.Errorf(
+			"previewOffset = %d after wheel-down over preview, want > %d",
+			m2.previewOffset,
+			before,
+		)
+	}
+}
+
+func TestPreviewOffsetResetsOnRepoCursorChange(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.focusedList = &m.lists[0]
+	m.active = paneRepo
+	m.showPreview = true
+	m.previewOffset = 4
+
+	m2 := update(m, specialKey(tea.KeyDown))
+
+	if m2.repoCursor != 1 {
+		t.Fatalf("repoCursor = %d after down, want 1", m2.repoCursor)
+	}
+	if m2.previewOffset != 0 {
+		t.Errorf("previewOffset = %d after repo cursor change, want 0", m2.previewOffset)
+	}
+}
+
+// TestPreviewToggleSchedulesTopicsLoadForFocusedListOnly verifies that toggling
+// showPreview on only creates a withTopics=true loading entry for the focused list,
+// not for other lists.
+func TestPreviewToggleSchedulesTopicsLoadForFocusedListOnly(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	// Focused list is lists[0] = UL_1.
+	m.focusedList = &m.lists[0]
+	m.active = paneRepo
+
+	// Toggle preview on.
+	m2 := update(m, keyPress('p'))
+
+	// Only UL_1 should have a withTopics=true entry.
+	e1 := m2.repoCache[repoCacheKey{"UL_1", true}]
+	if e1 == nil {
+		t.Error("repoCache[UL_1, true] should exist after preview toggle for focused list")
+	}
+	// Other lists should NOT have withTopics=true entries.
+	if e := m2.repoCache[repoCacheKey{"UL_2", true}]; e != nil {
+		t.Errorf("repoCache[UL_2, true] should not exist; focused list is UL_1")
+	}
+	if e := m2.repoCache[repoCacheKey{"UL_3", true}]; e != nil {
+		t.Errorf("repoCache[UL_3, true] should not exist; focused list is UL_1")
 	}
 }

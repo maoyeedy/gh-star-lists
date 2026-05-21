@@ -114,7 +114,7 @@ type Parsed struct {
 	DeleteSource   bool
 }
 
-func (p Parsed) hasOutputFlags() bool {
+func (p Parsed) hasCLIFlags() bool {
 	if p.Mode != format.OutputHuman {
 		return true
 	}

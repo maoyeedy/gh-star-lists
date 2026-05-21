@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -253,4 +255,30 @@ func newGoGHGraphQLService(options ProductionOptions) (Service, error) {
 
 type graphQLDoer interface {
 	DoWithContext(ctx context.Context, query string, variables map[string]any, response any) error
+}
+
+// ModifyRepositoryMemberships fetches the current list memberships for a
+// repository, applies the given additions and removals to the membership set,
+// and persists the result through svc.UpdateRepositoryLists.
+func ModifyRepositoryMemberships(
+	ctx context.Context,
+	svc Service,
+	nameWithOwner string,
+	addIDs, removeIDs []string,
+) error {
+	repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nameWithOwner)
+	if err != nil {
+		return err
+	}
+	next := make(map[string]struct{}, len(currentIDs)+len(addIDs))
+	for _, id := range currentIDs {
+		next[id] = struct{}{}
+	}
+	for _, id := range addIDs {
+		next[id] = struct{}{}
+	}
+	for _, id := range removeIDs {
+		delete(next, id)
+	}
+	return svc.UpdateRepositoryLists(ctx, repoID, slices.Sorted(maps.Keys(next)))
 }

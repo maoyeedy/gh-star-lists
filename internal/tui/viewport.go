@@ -66,6 +66,3 @@ func countPreviewLines(m model, w, _ int) int {
 	}
 	return len(m.previewContentLines(w))
 }
-
-// ensureRepoWidths computes and caches the star and language column widths for the
-// current displayedRepos slice. The sentinel incorporates the focused list ID, sort

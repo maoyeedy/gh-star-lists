@@ -41,13 +41,19 @@ func TestBulkFailureRetryUsesFailedNWOsOnly(t *testing.T) {
 	}
 	executeBatch(cmd)
 
-	want := []string{"owner/b-repo", "owner/c-repo"}
-	if len(svc.membershipsCalls) != len(want) {
-		t.Fatalf("membershipsCalls = %v, want %v", svc.membershipsCalls, want)
+	want := map[string]bool{"owner/b-repo": true, "owner/c-repo": true}
+	got := make(map[string]bool, len(svc.membershipsCalls))
+	for _, nwo := range svc.membershipsCalls {
+		got[nwo] = true
 	}
-	for i := range want {
-		if svc.membershipsCalls[i] != want[i] {
-			t.Errorf("membershipsCalls[%d] = %q, want %q", i, svc.membershipsCalls[i], want[i])
+	for nwo := range want {
+		if !got[nwo] {
+			t.Errorf("membershipsCalls missing %q", nwo)
+		}
+	}
+	for nwo := range got {
+		if !want[nwo] {
+			t.Errorf("membershipsCalls unexpected %q", nwo)
 		}
 	}
 }

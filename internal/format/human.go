@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/cli/go-gh/v2/pkg/jq"
 	"github.com/cli/go-gh/v2/pkg/template"
@@ -79,35 +78,4 @@ func writeTemplate[T any](w io.Writer, options Options, data []T) error {
 		return fmt.Errorf("template execute error: %w", err)
 	}
 	return t.Flush()
-}
-
-func shortAge(value string, now time.Time) string {
-	if value == "" {
-		return "-"
-	}
-	parsed, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return value
-	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	if parsed.After(now) {
-		return parsed.Format("2006-01-02")
-	}
-	duration := now.Sub(parsed)
-	switch {
-	case duration < time.Minute:
-		return "now"
-	case duration < time.Hour:
-		return fmt.Sprintf("%dm ago", int(duration.Minutes()))
-	case duration < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(duration.Hours()))
-	case duration < 30*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(duration.Hours()/24))
-	case duration < 365*24*time.Hour:
-		return fmt.Sprintf("%dmo ago", int(duration.Hours()/(24*30)))
-	default:
-		return fmt.Sprintf("%dy ago", int(duration.Hours()/(24*365)))
-	}
 }

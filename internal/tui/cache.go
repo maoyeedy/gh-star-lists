@@ -268,7 +268,6 @@ func (m model) anyPending() bool {
 	return m.preloader.anyPendingInCache()
 }
 
-// invalidatable is satisfied by cacheService.
 type invalidatable interface {
 	Invalidate()
 }

@@ -32,10 +32,6 @@ type model struct {
 	listsLoading    bool
 	mutationPending bool
 
-	// render-width cache (invalidated by cachedRepoSig sentinel)
-	cachedStarWidth int
-	cachedRepoSig   string
-
 	// preview pane scroll offset (lines scrolled down)
 	previewOffset int
 

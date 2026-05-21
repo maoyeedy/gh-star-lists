@@ -6,6 +6,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/tableprinter"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/humanize"
 )
 
 // WriteStarLists writes Star Lists to w in the requested output mode.
@@ -83,7 +84,10 @@ func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarLis
 	for _, list := range lists {
 		table.AddField(list.Name, tableprinter.WithColor(boldFn))
 		table.AddField(fmt.Sprintf("%d", list.RepoCount), tableprinter.WithTruncate(nil))
-		table.AddField(shortAge(list.LastAddedAt, options.Now), tableprinter.WithTruncate(nil))
+		table.AddField(
+			humanize.ShortAge(list.LastAddedAt, options.Now),
+			tableprinter.WithTruncate(nil),
+		)
 		table.AddField(list.ID, tableprinter.WithColor(faintFn))
 		table.AddField(list.URL, tableprinter.WithTruncate(nil))
 		table.EndRow()

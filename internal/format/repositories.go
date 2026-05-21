@@ -7,6 +7,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/tableprinter"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/humanize"
 )
 
 // WriteRepositories writes repositories to w in the requested output mode.
@@ -95,7 +96,10 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))
 		table.AddField(repo.Language, tableprinter.WithTruncate(nil))
 		table.AddField(yesNo(repo.IsFork), tableprinter.WithTruncate(nil))
-		table.AddField(shortAge(repo.PushedAt, options.Now), tableprinter.WithTruncate(nil))
+		table.AddField(
+			humanize.ShortAge(repo.PushedAt, options.Now),
+			tableprinter.WithTruncate(nil),
+		)
 		table.AddField(repo.URL, tableprinter.WithColor(faintFn))
 		table.EndRow()
 	}

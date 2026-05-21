@@ -35,9 +35,9 @@ func newBulkAddModal(
 		}
 		targetID := m.choices[m.choiceCursor].ID
 		m.bulkRetry = func(failedNWOs []string) tea.Cmd {
-			return bulkAddReposCmd(ctx, svc, failedNWOs, targetID)
+			return bulkMutateReposCmd(ctx, svc, failedNWOs, "added", []string{targetID}, nil)
 		}
-		return bulkAddReposCmd(ctx, svc, nwos, targetID)
+		return bulkMutateReposCmd(ctx, svc, nwos, "added", []string{targetID}, nil)
 	}
 	return mo
 }
@@ -55,10 +55,10 @@ func newBulkRemoveModal(
 		svc:   svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
-		return bulkRemoveReposCmd(ctx, svc, nwos, fromListID)
+		return bulkMutateReposCmd(ctx, svc, nwos, "removed", nil, []string{fromListID})
 	}
 	mo.bulkRetry = func(failedNWOs []string) tea.Cmd {
-		return bulkRemoveReposCmd(ctx, svc, failedNWOs, fromListID)
+		return bulkMutateReposCmd(ctx, svc, failedNWOs, "removed", nil, []string{fromListID})
 	}
 	return mo
 }
@@ -89,9 +89,16 @@ func newBulkMoveModal(
 		}
 		targetID := m.choices[m.choiceCursor].ID
 		m.bulkRetry = func(failedNWOs []string) tea.Cmd {
-			return bulkMoveReposCmd(ctx, svc, failedNWOs, fromListID, targetID)
+			return bulkMutateReposCmd(
+				ctx,
+				svc,
+				failedNWOs,
+				"moved",
+				[]string{targetID},
+				[]string{fromListID},
+			)
 		}
-		return bulkMoveReposCmd(ctx, svc, nwos, fromListID, targetID)
+		return bulkMutateReposCmd(ctx, svc, nwos, "moved", []string{targetID}, []string{fromListID})
 	}
 	return mo
 }

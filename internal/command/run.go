@@ -272,45 +272,18 @@ func RunWithOptions(
 			)
 			return ExitUsage
 		}
-		// Wrap openBrowser for the TUI path so that any child-process stderr
-		// is discarded. The browser opener normally writes to os.Stderr, which
-		// would corrupt the alt-screen while the TUI is running.
-		tuiBrowser := func(url string) error {
-			// Temporarily replace the package-level openBrowser so the browser
-			// library writes to io.Discard instead of os.Stderr. We achieve
-			// this by constructing a fresh browser instance that writes to
-			// io.Discard for both stdout and stderr.
-			_ = browser.New("", io.Discard, io.Discard).Browse(url)
-			return nil
-		}
-		tuiSvc := wrapServiceForTUI(service, originalService, cacheTTL, parsed.Host)
-		if err := runTUI(ctx, tuiSvc, tui.Options{
-			NoColor:     parsed.NoColor,
-			Mouse:       parsed.Mouse,
-			Stderr:      stderr,
-			OpenBrowser: tuiBrowser,
-		}); err != nil {
-			_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%v\n", err)
-			return ExitFailure
-		}
-		return ExitSuccess
+		return launchTUI(ctx, stderr, parsed, service, originalService, cacheTTL, diagnosticOptions)
 	case ActionList:
-		if canPrompt() && !parsed.hasOutputFlags() {
-			tuiBrowser := func(url string) error {
-				_ = browser.New("", io.Discard, io.Discard).Browse(url)
-				return nil
-			}
-			tuiSvc := wrapServiceForTUI(service, originalService, cacheTTL, parsed.Host)
-			if err := runTUI(ctx, tuiSvc, tui.Options{
-				NoColor:     parsed.NoColor,
-				Mouse:       parsed.Mouse,
-				Stderr:      stderr,
-				OpenBrowser: tuiBrowser,
-			}); err != nil {
-				_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%v\n", err)
-				return ExitFailure
-			}
-			return ExitSuccess
+		if canPrompt() && !parsed.hasCLIFlags() {
+			return launchTUI(
+				ctx,
+				stderr,
+				parsed,
+				service,
+				originalService,
+				cacheTTL,
+				diagnosticOptions,
+			)
 		}
 		lists, err := service.ListStarLists(ctx, directListOptions(parsed, false))
 		if err != nil {
@@ -1688,6 +1661,30 @@ func newCombinedInvalidator(
 			}
 		},
 	}
+}
+
+func launchTUI(
+	ctx context.Context,
+	stderr io.Writer,
+	parsed Parsed,
+	svc, originalSvc githubapi.Service,
+	cacheTTL time.Duration,
+	diagnosticOpts format.Options,
+) int {
+	tuiSvc := wrapServiceForTUI(svc, originalSvc, cacheTTL, parsed.Host)
+	if err := runTUI(ctx, tuiSvc, tui.Options{
+		NoColor: parsed.NoColor,
+		Mouse:   parsed.Mouse,
+		Stderr:  stderr,
+		OpenBrowser: func(url string) error {
+			_ = browser.New("", io.Discard, io.Discard).Browse(url)
+			return nil
+		},
+	}); err != nil {
+		_ = writeErrorDiagnostic(stderr, diagnosticOpts, "%v\n", err)
+		return ExitFailure
+	}
+	return ExitSuccess
 }
 
 // wrapServiceForTUI builds a TUI service chain: in-memory cache over disk cache,

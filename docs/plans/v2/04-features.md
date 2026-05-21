@@ -19,6 +19,13 @@ Safer, clearer modal copy and confirmations | Changing machine output contracts
 ## Current state
 
 - TUI has list/repo panes, optional repo preview, modals, search, sort, selection, bulk operations, mouse support, and browser open.
+- Bulk operations (`bulkMutateReposCmd`) run concurrently via `errgroup.SetLimit(5)` with `atomic.Int64` result tracking.
+- Single-repo mutations (`addRepoToListCmd`, `moveRepoCmd`, `removeRepoFromListCmd`) delegate to `githubapi.ModifyRepositoryMemberships`.
+- `copyListCmd` uses `ModifyRepositoryMemberships` per-repo in an errgroup.
+- `internal/humanize` package provides shared `ShortAge` formatting to both TUI and CLI.
+- Column widths use a constant (`starWidth = 6`); per-frame width-caching infrastructure was removed as dead code.
+- Sort enums use sentinel values (`sortListsEnd`, `sortReposEnd`); cycle bounds use `% int(sortXxxEnd)`.
+- TUI launch wiring extracted into `launchTUI()` in `command/run.go`; the two call sites (explicit `browse` and list fallback) share it.
 - Footer hints are useful but sparse and manually selected.
 - Preview focuses on repositories only.
 - Sort is cycle-only.
@@ -31,6 +38,7 @@ Safer, clearer modal copy and confirmations | Changing machine output contracts
 - Keep advanced features discoverable but not noisy.
 - Avoid new config; choose conservative defaults in code.
 - Prefer TUI affordances that reuse existing service methods and CLI behavior.
+- Follow CLAUDE.md "When Planning New Features" section: shared before specialized, interface vs. package-level helper, concurrency-by-default for bulk, no speculative cache infrastructure, sentinel enum values, test concurrency safety.
 
 ## Phases
 
@@ -58,7 +66,7 @@ Exit criteria:
 
 ### P2 - Preview affordances
 
-Make preview useful in both panes. List focus should show list name, privacy, description, repo count, URL, and last-added date. Repo focus should keep current repository details and add keyboard preview scrolling. Preview position can adapt to terminal width: right side when wide, bottom when narrow.
+Make preview useful in both panes. List focus should show list name, privacy, description, repo count, URL, and last-added date (using `humanize.ShortAge`). Repo focus should keep current repository details and add keyboard preview scrolling. Preview position can adapt to terminal width: right side when wide, bottom when narrow.
 
 ```text
 Exit criteria:
@@ -130,7 +138,9 @@ go run . browse --mouse
 
 ## Reused utilities
 
-- `truncateToWidth`, `padRight`, `padLeft` - stable text fitting
+- `truncateToWidth`, `padRight`, `padLeft` - stable text fitting (TUI-side)
+- `humanize.ShortAge(value, now)` - shared relative-age formatting used by both TUI and CLI
+- `githubapi.ModifyRepositoryMemberships(ctx, svc, nwo, addIDs, removeIDs)` - shared membership mutation used by single-repo commands, copy, and bulk operations
 - `lipgloss.Width` - visual width calculations
 - Existing CLI concepts: `--all`, `--unlisted`, add/remove/move/unstar semantics
 - `githubapi.Service` - all data and mutations stay behind the service boundary

@@ -14,6 +14,7 @@ const (
 	sortListsName
 	sortListsRepos
 	sortListsAdded
+	sortListsEnd
 )
 
 type sortReposKey int
@@ -25,6 +26,7 @@ const (
 	sortReposPushed
 	sortReposLanguage
 	sortReposStarredAt
+	sortReposEnd
 )
 
 func sortStarLists(lists []githubapi.StarList, key sortListsKey) {
@@ -101,12 +103,12 @@ func sortRepos(repos []githubapi.Repository, key sortReposKey) {
 
 func (m model) cycleSort() model {
 	if m.active == paneList {
-		m.sortLists = (m.sortLists + 1) % 4
+		m.sortLists = sortListsKey((int(m.sortLists) + 1) % int(sortListsEnd))
 		sortStarLists(m.lists, m.sortLists)
 		m.listCursor = 0
 		m.listOffset = 0
 	} else {
-		m.sortRepos = (m.sortRepos + 1) % 6
+		m.sortRepos = sortReposKey((int(m.sortRepos) + 1) % int(sortReposEnd))
 		sortRepos(m.displayedRepos, m.sortRepos)
 		m.repoCursor = 0
 		m.previewOffset = 0

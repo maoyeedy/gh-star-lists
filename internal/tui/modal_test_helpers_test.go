@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"sync"
 
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
@@ -37,34 +38,39 @@ func (f *recordingFakeService) DeleteStarList(_ context.Context, id string) erro
 
 type repoMutationFakeService struct {
 	fakeService
+	mu                sync.Mutex
 	membershipsResult struct {
 		repoID  string
 		listIDs []string
 		err     error
 	}
-	membershipsCalls []string // nameWithOwner values called
+	membershipsCalls []string
 	updateListsCalls []struct {
 		repoID  string
 		listIDs []string
 	}
-	removeStarCalls []string // repoIDs
+	removeStarCalls []string
 	removeStarErr   error
 }
 
 func (f *repoMutationFakeService) GetRepositoryMemberships(
 	_ context.Context, nameWithOwner string,
 ) (string, []string, error) {
+	f.mu.Lock()
 	f.membershipsCalls = append(f.membershipsCalls, nameWithOwner)
+	f.mu.Unlock()
 	return f.membershipsResult.repoID, f.membershipsResult.listIDs, f.membershipsResult.err
 }
 
 func (f *repoMutationFakeService) UpdateRepositoryLists(
 	_ context.Context, repoID string, listIDs []string,
 ) error {
+	f.mu.Lock()
 	f.updateListsCalls = append(f.updateListsCalls, struct {
 		repoID  string
 		listIDs []string
 	}{repoID, listIDs})
+	f.mu.Unlock()
 	return nil
 }
 

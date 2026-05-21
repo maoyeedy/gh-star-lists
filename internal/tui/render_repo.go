@@ -1,25 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	lipgloss "charm.land/lipgloss/v2"
 )
-
-func (m *model) ensureRepoWidths() {
-	sig := ""
-	if m.focusedList != nil {
-		sig = m.focusedList.ID
-	}
-	sig += fmt.Sprintf("|%d|%s|%d", m.sortRepos, m.repoSearchQuery, len(m.displayedRepos))
-	if sig == m.cachedRepoSig {
-		return // cache hit
-	}
-	m.cachedRepoSig = sig
-	m.cachedStarWidth = 4
-}
 
 const (
 	starGlyph = "\u2605"
@@ -107,14 +93,7 @@ func (m model) renderRepoPane(w, h int) string {
 
 	hasSel := len(m.selected) > 0
 
-	// ---- Column widths (cached across frames) ----
-	(&m).ensureRepoWidths()
-
-	// starWidth: digits + " " + glyph = cachedStarWidth+2; minimum 4.
-	starWidth := 4
-	if sw := m.cachedStarWidth + 2; sw > starWidth {
-		starWidth = sw
-	}
+	const starWidth = 6 // " " + up to 4 star digits + " " + glyph
 
 	start := m.repoOffset
 	end := min(start+h, len(m.displayedRepos))

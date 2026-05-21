@@ -2,8 +2,8 @@ package tui
 
 import (
 	"context"
-	"maps"
-	"slices"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -117,17 +117,13 @@ func addRepoToListCmd(
 	nameWithOwner, targetListID string,
 ) tea.Cmd {
 	return func() tea.Msg {
-		repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nameWithOwner)
-		if err != nil {
-			return mutationDoneMsg{kind: modalPickList, err: err}
-		}
-		next := make(map[string]struct{}, len(currentIDs)+1)
-		for _, id := range currentIDs {
-			next[id] = struct{}{}
-		}
-		next[targetListID] = struct{}{}
-		newIDs := slices.Sorted(maps.Keys(next))
-		err = svc.UpdateRepositoryLists(ctx, repoID, newIDs)
+		err := githubapi.ModifyRepositoryMemberships(
+			ctx,
+			svc,
+			nameWithOwner,
+			[]string{targetListID},
+			nil,
+		)
 		return mutationDoneMsg{kind: modalPickList, err: err}
 	}
 }
@@ -138,18 +134,13 @@ func moveRepoCmd(
 	nameWithOwner, fromListID, toListID string,
 ) tea.Cmd {
 	return func() tea.Msg {
-		repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nameWithOwner)
-		if err != nil {
-			return mutationDoneMsg{kind: modalPickList, err: err}
-		}
-		next := make(map[string]struct{}, len(currentIDs))
-		for _, id := range currentIDs {
-			next[id] = struct{}{}
-		}
-		delete(next, fromListID)
-		next[toListID] = struct{}{}
-		newIDs := slices.Sorted(maps.Keys(next))
-		err = svc.UpdateRepositoryLists(ctx, repoID, newIDs)
+		err := githubapi.ModifyRepositoryMemberships(
+			ctx,
+			svc,
+			nameWithOwner,
+			[]string{toListID},
+			[]string{fromListID},
+		)
 		return mutationDoneMsg{kind: modalPickList, err: err}
 	}
 }
@@ -160,17 +151,13 @@ func removeRepoFromListCmd(
 	nameWithOwner, fromListID string,
 ) tea.Cmd {
 	return func() tea.Msg {
-		repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nameWithOwner)
-		if err != nil {
-			return mutationDoneMsg{kind: modalConfirmYesNo, err: err}
-		}
-		next := make(map[string]struct{}, len(currentIDs))
-		for _, id := range currentIDs {
-			next[id] = struct{}{}
-		}
-		delete(next, fromListID)
-		newIDs := slices.Sorted(maps.Keys(next))
-		err = svc.UpdateRepositoryLists(ctx, repoID, newIDs)
+		err := githubapi.ModifyRepositoryMemberships(
+			ctx,
+			svc,
+			nameWithOwner,
+			nil,
+			[]string{fromListID},
+		)
 		return mutationDoneMsg{kind: modalConfirmYesNo, err: err}
 	}
 }
@@ -191,19 +178,13 @@ func copyListCmd(
 		for _, repo := range repos {
 			repo := repo
 			group.Go(func() error {
-				repoID, currentIDs, e := svc.GetRepositoryMemberships(groupCtx, repo.NameWithOwner)
-				if e != nil {
-					return e
-				}
-				next := make(map[string]struct{}, len(currentIDs)+1)
-				for _, id := range currentIDs {
-					next[id] = struct{}{}
-				}
-				if _, already := next[toListID]; already {
-					return nil // already a member, skip
-				}
-				next[toListID] = struct{}{}
-				return svc.UpdateRepositoryLists(groupCtx, repoID, slices.Sorted(maps.Keys(next)))
+				return githubapi.ModifyRepositoryMemberships(
+					groupCtx,
+					svc,
+					repo.NameWithOwner,
+					[]string{toListID},
+					nil,
+				)
 			})
 		}
 		if e := group.Wait(); e != nil {
@@ -229,125 +210,39 @@ func unstarRepoCmd(ctx context.Context, svc githubapi.Service, nameWithOwner str
 	}
 }
 
-func bulkAddReposCmd(
+func bulkMutateReposCmd(
 	ctx context.Context,
 	svc githubapi.Service,
 	nwos []string,
-	targetListID string,
+	verb string,
+	addIDs, removeIDs []string,
 ) tea.Cmd {
 	return func() tea.Msg {
-		succeeded, failed := 0, 0
+		var succeeded, failed atomic.Int64
+		var mu sync.Mutex
 		var failedNWOs []string
+		group, groupCtx := errgroup.WithContext(ctx)
+		group.SetLimit(5)
 		for _, nwo := range nwos {
-			if ctx.Err() != nil {
-				break
-			}
-			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
-			if err != nil {
-				failed++
-				failedNWOs = append(failedNWOs, nwo)
-				continue
-			}
-			next := make(map[string]struct{}, len(currentIDs)+1)
-			for _, id := range currentIDs {
-				next[id] = struct{}{}
-			}
-			next[targetListID] = struct{}{}
-			newIDs := slices.Sorted(maps.Keys(next))
-			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
-				failed++
-				failedNWOs = append(failedNWOs, nwo)
-			} else {
-				succeeded++
-			}
+			nwo := nwo
+			group.Go(func() error {
+				err := githubapi.ModifyRepositoryMemberships(groupCtx, svc, nwo, addIDs, removeIDs)
+				if err != nil {
+					failed.Add(1)
+					mu.Lock()
+					failedNWOs = append(failedNWOs, nwo)
+					mu.Unlock()
+					return nil
+				}
+				succeeded.Add(1)
+				return nil
+			})
 		}
+		_ = group.Wait()
 		return bulkDoneMsg{
-			verb:       "added",
-			succeeded:  succeeded,
-			failed:     failed,
-			failedNWOs: failedNWOs,
-		}
-	}
-}
-
-func bulkRemoveReposCmd(
-	ctx context.Context,
-	svc githubapi.Service,
-	nwos []string,
-	fromListID string,
-) tea.Cmd {
-	return func() tea.Msg {
-		succeeded, failed := 0, 0
-		var failedNWOs []string
-		for _, nwo := range nwos {
-			if ctx.Err() != nil {
-				break
-			}
-			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
-			if err != nil {
-				failed++
-				failedNWOs = append(failedNWOs, nwo)
-				continue
-			}
-			next := make(map[string]struct{}, len(currentIDs))
-			for _, id := range currentIDs {
-				next[id] = struct{}{}
-			}
-			delete(next, fromListID)
-			newIDs := slices.Sorted(maps.Keys(next))
-			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
-				failed++
-				failedNWOs = append(failedNWOs, nwo)
-			} else {
-				succeeded++
-			}
-		}
-		return bulkDoneMsg{
-			verb:       "removed",
-			succeeded:  succeeded,
-			failed:     failed,
-			failedNWOs: failedNWOs,
-		}
-	}
-}
-
-func bulkMoveReposCmd(
-	ctx context.Context,
-	svc githubapi.Service,
-	nwos []string,
-	fromListID, toListID string,
-) tea.Cmd {
-	return func() tea.Msg {
-		succeeded, failed := 0, 0
-		var failedNWOs []string
-		for _, nwo := range nwos {
-			if ctx.Err() != nil {
-				break
-			}
-			repoID, currentIDs, err := svc.GetRepositoryMemberships(ctx, nwo)
-			if err != nil {
-				failed++
-				failedNWOs = append(failedNWOs, nwo)
-				continue
-			}
-			next := make(map[string]struct{}, len(currentIDs))
-			for _, id := range currentIDs {
-				next[id] = struct{}{}
-			}
-			delete(next, fromListID)
-			next[toListID] = struct{}{}
-			newIDs := slices.Sorted(maps.Keys(next))
-			if err = svc.UpdateRepositoryLists(ctx, repoID, newIDs); err != nil {
-				failed++
-				failedNWOs = append(failedNWOs, nwo)
-			} else {
-				succeeded++
-			}
-		}
-		return bulkDoneMsg{
-			verb:       "moved",
-			succeeded:  succeeded,
-			failed:     failed,
+			verb:       verb,
+			succeeded:  int(succeeded.Load()),
+			failed:     int(failed.Load()),
 			failedNWOs: failedNWOs,
 		}
 	}

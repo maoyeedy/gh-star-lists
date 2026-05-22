@@ -197,6 +197,7 @@ func TestDiskCacheRemoveStarInvalidatesListRepositories(t *testing.T) {
 	if inner.reposCalls["UL_1"] != 2 {
 		t.Fatalf("repos calls = %d, want 2", inner.reposCalls["UL_1"])
 	}
+	waitForDiskCacheIdle(t, ds)
 }
 
 func TestDiskCacheTTLExpiry(t *testing.T) {
@@ -365,6 +366,7 @@ func TestDiskCacheWaitForFillRespectsContextCancellation(t *testing.T) {
 	if err := <-firstDone; err != nil {
 		t.Fatalf("first ListRepositories: %v", err)
 	}
+	waitForDiskCacheIdle(t, ds)
 }
 
 func TestConcurrentDiskCacheFillSharesResultBeforeDiskWriteCompletes(t *testing.T) {
@@ -457,6 +459,7 @@ func waitForDiskCacheEntry(t *testing.T, ds *diskCacheService, key string) {
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		if ds.readFromDisk(key) != nil {
+			waitForDiskCacheIdle(t, ds)
 			return
 		}
 		time.Sleep(time.Millisecond)

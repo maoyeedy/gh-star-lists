@@ -5,118 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"slices"
-	"strings"
-	"time"
 
-	"github.com/cli/go-gh/v2/pkg/browser"
-	"github.com/cli/go-gh/v2/pkg/prompter"
-	ghterm "github.com/cli/go-gh/v2/pkg/term"
-	"github.com/maoyeedy/gh-star-lists/internal/app"
-	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
-
-const (
-	ExitSuccess     = 0
-	ExitFailure     = 1
-	ExitUsage       = 2
-	ExitAuth        = 3
-	ExitNotFound    = 4
-	ExitRateLimited = 5
-)
-
-var openBrowser = func(url string) error {
-	return browser.New("", os.Stdout, os.Stderr).Browse(url)
-}
-
-var canPrompt = func() bool {
-	return ghterm.IsTerminal(os.Stdin) && ghterm.IsTerminal(os.Stderr)
-}
-
-var confirmAction = func(prompt string) (bool, error) {
-	value, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).Confirm(prompt, false)
-	return value, normalizePromptError(err)
-}
-
-var promptForList = func(label, defaultValue string, choices []string) (int, error) {
-	idx, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).Select(label, defaultValue, choices)
-	return idx, normalizePromptError(err)
-}
-
-var promptInput = func(label, defaultValue string) (string, error) {
-	value, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).Input(label, defaultValue)
-	return value, normalizePromptError(err)
-}
-
-var promptMultiSelect = func(label string, defaults, choices []string) ([]int, error) {
-	values, err := prompter.New(os.Stdin, os.Stdout, os.Stderr).
-		MultiSelect(label, defaults, choices)
-	return values, normalizePromptError(err)
-}
-
-// ErrPromptCancelled is returned when the user cancels an interactive prompt.
-var ErrPromptCancelled = fmt.Errorf("cancelled")
-
-func OpenBrowserForTest(fn func(string) error) func(string) error {
-	prev := openBrowser
-	openBrowser = fn
-	return prev
-}
-
-func CanPromptForTest(fn func() bool) func() bool {
-	prev := canPrompt
-	canPrompt = fn
-	return prev
-}
-
-func PromptForListForTest(
-	fn func(string, string, []string) (int, error),
-) func(string, string, []string) (int, error) {
-	prev := promptForList
-	promptForList = fn
-	return prev
-}
-
-func PromptInputForTest(
-	fn func(string, string) (string, error),
-) func(string, string) (string, error) {
-	prev := promptInput
-	promptInput = fn
-	return prev
-}
-
-func PromptMultiSelectForTest(
-	fn func(string, []string, []string) ([]int, error),
-) func(string, []string, []string) ([]int, error) {
-	prev := promptMultiSelect
-	promptMultiSelect = fn
-	return prev
-}
-
-func ConfirmActionForTest(fn func(string) (bool, error)) func(string) (bool, error) {
-	prev := confirmAction
-	confirmAction = fn
-	return prev
-}
-
-func toAppFilters(filters []Filter) []app.Filter {
-	out := make([]app.Filter, len(filters))
-	for i, f := range filters {
-		out[i] = app.Filter{Key: f.Key, Value: f.Value}
-	}
-	return out
-}
-
-func toAppSortTerms(terms []SortTerm) []app.SortTerm {
-	out := make([]app.SortTerm, len(terms))
-	for i, t := range terms {
-		out[i] = app.SortTerm{Key: t.Key, Desc: t.Desc}
-	}
-	return out
-}
 
 func Run(
 	ctx context.Context,
@@ -144,542 +36,95 @@ func RunWithOptions(
 
 	parsed, err := Parse(args)
 	if err != nil {
-		var unknownErr *UnknownCommandError
-		if errors.As(err, &unknownErr) {
-			_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%s\n", unknownErr.Error())
-			_ = writeHintDiagnostic(
-				stderr,
-				diagnosticOptions,
-				"Run 'gh star-lists --help' for usage.\n",
-			)
-			return ExitUsage
-		}
-		var usageErr *UsageError
-		if errors.As(err, &usageErr) {
-			_ = writeStyledDiagnostic(
-				stderr,
-				diagnosticOptions,
-				format.Yellow,
-				"error: %s\n\n%s",
-				usageErr.Message,
-				UsageText(),
-			)
-			return ExitUsage
-		}
-		return writeFailure(stderr, err, diagnosticOptions)
+		return writeParseFailure(stderr, err, diagnosticOptions)
 	}
 
 	if parsed.Action == ActionHelp {
-		helpOptions := outputOptionsForMode(format.OutputHuman)
-		if _, err := io.WriteString(
-			stdout,
-			HelpTextFor(Action(parsed.HelpTopic), parsed.FullHelp, helpOptions),
-		); err != nil {
-			_ = writeDiagnostic(stderr, "error: failed to write help: %v\n", err)
-			return ExitFailure
-		}
-		return ExitSuccess
+		return writeHelp(stdout, stderr, parsed, outputOptionsForMode)
 	}
 
-	if service == nil {
-		_ = writeDiagnostic(stderr, "error: GitHub service is not configured\n")
+	inv, closeOutput, exitCode := prepareRunInvocation(
+		ctx,
+		parsed,
+		stdout,
+		stderr,
+		service,
+		outputOptionsForMode,
+		diagnosticOptions,
+	)
+	if closeOutput != nil {
+		defer closeOutput()
+	}
+	if exitCode != ExitSuccess {
+		return exitCode
+	}
+
+	return runParsedAction(inv)
+}
+
+func writeParseFailure(stderr io.Writer, err error, diagnosticOptions format.Options) int {
+	var unknownErr *UnknownCommandError
+	if errors.As(err, &unknownErr) {
+		_ = writeErrorDiagnostic(stderr, diagnosticOptions, "%s\n", unknownErr.Error())
+		_ = writeHintDiagnostic(
+			stderr,
+			diagnosticOptions,
+			"Run 'gh star-lists --help' for usage.\n",
+		)
+		return ExitUsage
+	}
+	var usageErr *UsageError
+	if errors.As(err, &usageErr) {
+		_ = writeStyledDiagnostic(
+			stderr,
+			diagnosticOptions,
+			format.Yellow,
+			"error: %s\n\n%s",
+			usageErr.Message,
+			UsageText(),
+		)
+		return ExitUsage
+	}
+	return writeFailure(stderr, err, diagnosticOptions)
+}
+
+func writeHelp(
+	stdout, stderr io.Writer,
+	parsed Parsed,
+	outputOptionsForMode func(format.OutputMode) format.Options,
+) int {
+	helpOptions := outputOptionsForMode(format.OutputHuman)
+	if _, err := io.WriteString(
+		stdout,
+		HelpTextFor(Action(parsed.HelpTopic), parsed.FullHelp, helpOptions),
+	); err != nil {
+		_ = writeDiagnostic(stderr, "error: failed to write help: %v\n", err)
 		return ExitFailure
 	}
-
-	outputOptions := outputOptionsForMode(parsed.Mode)
-	outputOptions.Template = parsed.Template
-	outputOptions.JQ = parsed.JQ
-	if parsed.NoColor {
-		outputOptions.Color = false
-	}
-	diagnosticOptions.Color = outputOptions.Color
-	cacheTTL := 5 * time.Minute
-	if parsed.CacheTTL != nil {
-		cacheTTL = *parsed.CacheTTL
-	}
-	originalService := service
-	if cacheTTL > 0 {
-		service = githubapi.NewCacheServiceWithOptions(
-			service,
-			githubapi.CacheOptions{TTL: cacheTTL},
-		)
-	}
-	if parsed.Action == ActionRepos {
-		if err := ensureReposListSelector(ctx, service, &parsed); err != nil {
-			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
-				return ExitSuccess
-			}
-			var ue *UsageError
-			if errors.As(err, &ue) {
-				return writeUsageFailure(stderr, err, diagnosticOptions)
-			}
-			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err, diagnosticOptions)
-		}
-	}
-	if parsed.OutputPath != "" {
-		if _, statErr := os.Stat(parsed.OutputPath); statErr == nil {
-			if !parsed.Yes {
-				if !canPrompt() {
-					_ = writeDiagnostic(stderr,
-						"error: --output target %s already exists; pass --yes to overwrite\n",
-						parsed.OutputPath)
-					return ExitFailure
-				}
-				confirmed, err := confirmAction(fmt.Sprintf("Overwrite %s?", parsed.OutputPath))
-				if err != nil {
-					_ = writeDiagnostic(stderr, "error: %v\n", err)
-					return ExitFailure
-				}
-				if !confirmed {
-					return ExitFailure
-				}
-			}
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			_ = writeDiagnostic(stderr, "error: failed to stat output file: %v\n", statErr)
-			return ExitFailure
-		}
-		f, err := os.OpenFile(parsed.OutputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-		if err != nil {
-			_ = writeDiagnostic(stderr, "error: failed to open output file: %v\n", err)
-			return ExitFailure
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-		stdout = f
-	}
-	switch parsed.Action {
-	case ActionList:
-		appSvc := app.NewStarListService(service)
-		lists, err := appSvc.ListLists(ctx, app.ListListsOptions{
-			Filters:   toAppFilters(parsed.Filters),
-			SortKeys:  parsed.SortKeys,
-			SortTerms: toAppSortTerms(parsed.SortTerms),
-			SortDesc:  parsed.SortDesc,
-			Limit:     parsed.Limit,
-		})
-		if err != nil {
-			return writeRuntimeFailure(stderr, ActionList, "", err)
-		}
-		if err := format.WriteStarListsWithOptions(stdout, outputOptions, lists); err != nil {
-			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
-		}
-	case ActionRepos:
-		if parsed.Web {
-			rl, err := resolveList(ctx, service, parsed.ListID)
-			if err != nil {
-				return writeRuntimeFailure(
-					stderr,
-					ActionRepos,
-					parsed.ListID,
-					err,
-					diagnosticOptions,
-				)
-			}
-			listURL := rl.URL
-			if listURL == "" {
-				listURL = rl.ID
-			}
-			if err := openBrowser(listURL); err != nil {
-				return writeFailure(
-					stderr,
-					fmt.Errorf("failed to open browser: %w", err),
-					diagnosticOptions,
-				)
-			}
-			return ExitSuccess
-		}
-		appSvc := app.NewStarListService(service)
-		repos, err := appSvc.ListRepos(ctx, parsed.ListID, app.ListReposOptions{
-			All:       parsed.All,
-			Unlisted:  parsed.Unlisted,
-			Filters:   toAppFilters(parsed.Filters),
-			SortKeys:  parsed.SortKeys,
-			SortTerms: toAppSortTerms(parsed.SortTerms),
-			SortDesc:  parsed.SortDesc,
-			Limit:     parsed.Limit,
-			Search:    parsed.Search,
-			Topics:    topicsNeeded(parsed),
-		})
-		if err != nil {
-			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err, diagnosticOptions)
-		}
-		if err := format.WriteRepositoriesWithOptions(stdout, outputOptions, repos); err != nil {
-			return writeFailure(
-				stderr,
-				fmt.Errorf("failed to write output: %w", err),
-				diagnosticOptions,
-			)
-		}
-	case ActionCreate:
-		if err := ensureCreateInputs(&parsed); err != nil {
-			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
-				return ExitSuccess
-			}
-			return writeUsageFailure(stderr, err, diagnosticOptions)
-		}
-		if parsed.DryRun {
-			_, _ = fmt.Fprintf(stdout, "Would create Star List %q.\n", parsed.Name)
-			return ExitSuccess
-		}
-		appSvc := app.NewStarListService(service)
-		list, err := appSvc.CreateList(ctx, domain.StarListInput{
-			Name:        parsed.Name,
-			Description: parsed.Description,
-			Private:     parsed.Private,
-		})
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.Name, err, diagnosticOptions)
-		}
-		_, _ = fmt.Fprintln(
-			stdout,
-			styleText(
-				format.Green,
-				outputOptions.Color,
-				fmt.Sprintf("Created Star List %q (%s).", list.Name, list.ID),
-			),
-		)
-	case ActionEdit:
-		// Fetch current list first so ensureEditInputs can seed prompt defaults.
-		appSvc := app.NewStarListService(service)
-		lists, err := appSvc.Service().ListStarLists(ctx)
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
-		}
-		currentList, found := listByRaw(lists, parsed.ListID)
-		if err := ensureEditInputs(&parsed, currentList); err != nil {
-			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
-				return ExitSuccess
-			}
-			return writeUsageFailure(stderr, err, diagnosticOptions)
-		}
-		var resolvedID string
-		if found {
-			resolvedID = currentList.ID
-		} else {
-			resolvedID = parsed.ListID
-		}
-		if parsed.DryRun {
-			_, _ = fmt.Fprintf(
-				stdout,
-				"Would update Star List %q.\n",
-				displayListName(currentList, parsed.ListID),
-			)
-			return ExitSuccess
-		}
-		private := (*bool)(nil)
-		if parsed.PrivateSet {
-			private = &parsed.Private
-		}
-		list, err := appSvc.UpdateList(ctx, domain.UpdateStarListInput{
-			ID:          resolvedID,
-			Name:        parsed.Name,
-			Description: parsed.Description,
-			Private:     private,
-		})
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
-		}
-		_, _ = fmt.Fprintln(
-			stdout,
-			styleText(
-				format.Green,
-				outputOptions.Color,
-				fmt.Sprintf("Updated Star List %q (%s).", list.Name, list.ID),
-			),
-		)
-	case ActionDelete:
-		// Resolve first so the confirmation prompt can name the target.
-		rl, err := resolveList(ctx, service, parsed.ListID)
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
-		}
-		listName := rl.Name
-		if listName == "" {
-			listName = parsed.ListID
-		}
-		if err := requireYes(parsed, fmt.Sprintf("delete Star List %q", listName)); err != nil {
-			return writeUsageFailure(stderr, err, diagnosticOptions)
-		}
-		if parsed.DryRun {
-			_, _ = fmt.Fprintf(stdout, "Would delete Star List %q.\n", listName)
-			return ExitSuccess
-		}
-		appSvc := app.NewStarListService(service)
-		if err := appSvc.DeleteList(ctx, rl.ID); err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
-		}
-		_, _ = fmt.Fprintln(
-			stdout,
-			styleText(
-				format.Yellow,
-				outputOptions.Color,
-				fmt.Sprintf("Deleted Star List %q.", listName),
-			),
-		)
-	case ActionAdd, ActionRemove, ActionMove:
-		fetchedLists, err := ensureListSelectors(ctx, service, &parsed)
-		if err != nil {
-			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
-				return ExitSuccess
-			}
-			var ue *UsageError
-			if errors.As(err, &ue) {
-				return writeUsageFailure(stderr, err, diagnosticOptions)
-			}
-			return writeRuntimeFailure(
-				stderr,
-				parsed.Action,
-				parsed.RepoName,
-				err,
-				diagnosticOptions,
-			)
-		}
-		if parsed.Action != ActionAdd {
-			fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
-			toList, _ := listByRaw(fetchedLists, parsed.ToListID)
-			var actionPhrase string
-			switch parsed.Action {
-			case ActionRemove:
-				actionPhrase = fmt.Sprintf(
-					"remove %s from %q",
-					parsed.RepoName,
-					displayListName(fromList, parsed.FromListID),
-				)
-			case ActionMove:
-				actionPhrase = fmt.Sprintf(
-					"move %s from %q to %q",
-					parsed.RepoName,
-					displayListName(fromList, parsed.FromListID),
-					displayListName(toList, parsed.ToListID),
-				)
-			default:
-				actionPhrase = string(parsed.Action) + " a repository"
-			}
-			if err := requireYes(parsed, actionPhrase); err != nil {
-				return writeUsageFailure(stderr, err, diagnosticOptions)
-			}
-		}
-		appSvc := app.NewStarListService(service)
-		return runRepoListMutation(
-			ctx,
-			stdout,
-			stderr,
-			appSvc,
-			parsed,
-			fetchedLists,
-			outputOptions,
-		)
-	case ActionCopy, ActionMerge:
-		fetchedLists, err := ensureListSelectors(ctx, service, &parsed)
-		if err != nil {
-			if errors.Is(err, ErrPromptCancelled) {
-				_ = writeHintDiagnostic(stderr, diagnosticOptions, "No changes made.\n")
-				return ExitSuccess
-			}
-			var ue *UsageError
-			if errors.As(err, &ue) {
-				return writeUsageFailure(stderr, err, diagnosticOptions)
-			}
-			return writeRuntimeFailure(
-				stderr,
-				parsed.Action,
-				parsed.FromListID,
-				err,
-				diagnosticOptions,
-			)
-		}
-		if parsed.Action == ActionMerge || parsed.DeleteSource {
-			fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
-			toList, _ := listByRaw(fetchedLists, parsed.ToListID)
-			var actionPhrase string
-			if parsed.Action == ActionMerge {
-				actionPhrase = fmt.Sprintf(
-					"merge %q into %q",
-					displayListName(fromList, parsed.FromListID),
-					displayListName(toList, parsed.ToListID),
-				)
-			} else {
-				actionPhrase = fmt.Sprintf(
-					"copy and delete %q",
-					displayListName(fromList, parsed.FromListID),
-				)
-			}
-			if err := requireYes(parsed, actionPhrase); err != nil {
-				return writeUsageFailure(stderr, err, diagnosticOptions)
-			}
-		}
-		appSvc := app.NewStarListService(service)
-		return runListCopy(ctx, stdout, stderr, appSvc, parsed, fetchedLists, outputOptions)
-	case ActionUnstar:
-		// Resolve first so the confirmation prompt can name the target.
-		appSvc := app.NewStarListService(service)
-		repo, err := appSvc.GetRepository(ctx, parsed.RepoName)
-		if err != nil {
-			return writeRuntimeFailure(
-				stderr,
-				parsed.Action,
-				parsed.RepoName,
-				err,
-				diagnosticOptions,
-			)
-		}
-		if err := requireYes(parsed, fmt.Sprintf("unstar %s", repo.NameWithOwner)); err != nil {
-			return writeUsageFailure(stderr, err, diagnosticOptions)
-		}
-		if parsed.DryRun {
-			_, _ = fmt.Fprintf(stdout, "Would unstar %s.\n", repo.NameWithOwner)
-			return ExitSuccess
-		}
-		if err := appSvc.RemoveStar(ctx, repo.ID); err != nil {
-			return writeRuntimeFailure(
-				stderr,
-				parsed.Action,
-				parsed.RepoName,
-				err,
-				diagnosticOptions,
-			)
-		}
-		_, _ = fmt.Fprintln(
-			stdout,
-			styleText(
-				format.Yellow,
-				outputOptions.Color,
-				fmt.Sprintf("Unstarred %s.", repo.NameWithOwner),
-			),
-		)
-	case ActionTUI:
-		if !canPrompt() {
-			_ = writeDiagnostic(
-				stderr,
-				"error: tui requires a terminal; use 'gh star-lists --help' for non-interactive commands\n",
-			)
-			return ExitUsage
-		}
-		return launchTUI(ctx, stderr, parsed, service, originalService, cacheTTL, diagnosticOptions)
-	default:
-		panic(fmt.Sprintf("unhandled action %q - this is a bug in Parse", parsed.Action))
-	}
-
 	return ExitSuccess
 }
 
-func sameStringSet(before []string, after []string) bool {
-	if len(before) != len(after) {
-		return false
-	}
-	counts := make(map[string]int, len(before))
-	for _, value := range before {
-		counts[value]++
-	}
-	for _, value := range after {
-		counts[value]--
-		if counts[value] < 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func displayListName(list domain.StarList, fallback string) string {
-	if list.Name != "" {
-		return list.Name
-	}
-	return fallback
-}
-
-func listByRaw(lists []domain.StarList, raw string) (domain.StarList, bool) {
-	for _, l := range lists {
-		if strings.EqualFold(l.Name, raw) || l.ID == raw {
-			return l, true
-		}
-	}
-	return domain.StarList{}, false
-}
-
-func actionNeedsFrom(a Action) bool {
-	return a == ActionRemove || a == ActionMove || a == ActionCopy || a == ActionMerge
-}
-
-func actionNeedsTo(a Action) bool {
-	return a == ActionAdd || a == ActionMove || a == ActionCopy || a == ActionMerge
-}
-
-func missingSelectorError(a Action, needFrom, needTo bool) error {
-	switch {
-	case needFrom && needTo:
-		return usage("%s requires --from and --to (or run in a TTY to choose interactively)", a)
-	case needFrom:
-		return usage(
-			"%s requires --from <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)",
-			a,
-		)
+func runParsedAction(inv runInvocation) int {
+	switch inv.parsed.Action {
+	case ActionList:
+		return runListAction(inv)
+	case ActionRepos:
+		return runReposAction(inv)
+	case ActionCreate:
+		return runCreateAction(inv)
+	case ActionEdit:
+		return runEditAction(inv)
+	case ActionDelete:
+		return runDeleteAction(inv)
+	case ActionAdd, ActionRemove, ActionMove:
+		return runRepoMembershipAction(inv)
+	case ActionCopy, ActionMerge:
+		return runListCopyAction(inv)
+	case ActionUnstar:
+		return runUnstarAction(inv)
+	case ActionTUI:
+		return runTUIAction(inv)
 	default:
-		return usage(
-			"%s requires --to <LIST_ID_OR_NAME> (or run in a TTY to choose interactively)",
-			a,
-		)
+		panic(fmt.Sprintf("unhandled action %q - this is a bug in Parse", inv.parsed.Action))
 	}
-}
-
-func pickList(lists []domain.StarList, label, excludeID string) (string, error) {
-	var filtered []domain.StarList
-	var choices []string
-	nameCount := make(map[string]int)
-	for _, l := range lists {
-		if l.ID == excludeID {
-			continue
-		}
-		nameCount[l.Name]++
-	}
-	for _, l := range lists {
-		if l.ID == excludeID {
-			continue
-		}
-		filtered = append(filtered, l)
-		if nameCount[l.Name] > 1 {
-			choices = append(choices, fmt.Sprintf("%s (%s, %d repos)", l.Name, l.ID, l.RepoCount))
-		} else {
-			choices = append(choices, fmt.Sprintf("%s (%d repos)", l.Name, l.RepoCount))
-		}
-	}
-	if len(choices) == 0 {
-		return "", fmt.Errorf("no eligible Star Lists to select")
-	}
-	idx, err := promptForList(label, "", choices)
-	if err != nil {
-		return "", err
-	}
-	if idx < 0 || idx >= len(filtered) {
-		return "", fmt.Errorf("invalid Star List selection")
-	}
-	return filtered[idx].ID, nil
-}
-
-type resolvedList struct {
-	ID   string
-	URL  string
-	Name string
-}
-
-func resolveList(ctx context.Context, service githubapi.Service, raw string) (resolvedList, error) {
-	if raw == "" {
-		return resolvedList{}, nil
-	}
-	lists, err := service.ListStarLists(ctx)
-	if err != nil {
-		return resolvedList{}, err
-	}
-	if l, ok := listByRaw(lists, raw); ok {
-		return resolvedList{ID: l.ID, URL: l.URL, Name: l.Name}, nil
-	}
-	return resolvedList{ID: raw}, nil
-}
-
-func argsContainNoColor(args []string) bool {
-	return slices.Contains(args, "--no-color")
 }

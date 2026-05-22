@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -20,6 +21,384 @@ func topicsNeeded(parsed Parsed) bool {
 		}
 	}
 	return parsed.Template != "" && strings.Contains(parsed.Template, "Topics")
+}
+
+func runListAction(inv runInvocation) int {
+	appSvc := app.NewStarListService(inv.service)
+	lists, err := appSvc.ListLists(inv.ctx, app.ListListsOptions{
+		Filters:   toAppFilters(inv.parsed.Filters),
+		SortKeys:  inv.parsed.SortKeys,
+		SortTerms: toAppSortTerms(inv.parsed.SortTerms),
+		SortDesc:  inv.parsed.SortDesc,
+		Limit:     inv.parsed.Limit,
+	})
+	if err != nil {
+		return writeRuntimeFailure(inv.stderr, ActionList, "", err)
+	}
+	if err := format.WriteStarListsWithOptions(inv.stdout, inv.outputOptions, lists); err != nil {
+		return writeFailure(inv.stderr, fmt.Errorf("failed to write output: %w", err))
+	}
+	return ExitSuccess
+}
+
+func runReposAction(inv runInvocation) int {
+	if inv.parsed.Web {
+		rl, err := resolveList(inv.ctx, inv.service, inv.parsed.ListID)
+		if err != nil {
+			return writeRuntimeFailure(
+				inv.stderr,
+				ActionRepos,
+				inv.parsed.ListID,
+				err,
+				inv.diagnosticOptions,
+			)
+		}
+		listURL := rl.URL
+		if listURL == "" {
+			listURL = rl.ID
+		}
+		if err := openBrowser(listURL); err != nil {
+			return writeFailure(
+				inv.stderr,
+				fmt.Errorf("failed to open browser: %w", err),
+				inv.diagnosticOptions,
+			)
+		}
+		return ExitSuccess
+	}
+	appSvc := app.NewStarListService(inv.service)
+	repos, err := appSvc.ListRepos(inv.ctx, inv.parsed.ListID, app.ListReposOptions{
+		All:       inv.parsed.All,
+		Unlisted:  inv.parsed.Unlisted,
+		Filters:   toAppFilters(inv.parsed.Filters),
+		SortKeys:  inv.parsed.SortKeys,
+		SortTerms: toAppSortTerms(inv.parsed.SortTerms),
+		SortDesc:  inv.parsed.SortDesc,
+		Limit:     inv.parsed.Limit,
+		Search:    inv.parsed.Search,
+		Topics:    topicsNeeded(inv.parsed),
+	})
+	if err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			ActionRepos,
+			inv.parsed.ListID,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	if err := format.WriteRepositoriesWithOptions(
+		inv.stdout,
+		inv.outputOptions,
+		repos,
+	); err != nil {
+		return writeFailure(
+			inv.stderr,
+			fmt.Errorf("failed to write output: %w", err),
+			inv.diagnosticOptions,
+		)
+	}
+	return ExitSuccess
+}
+
+func runCreateAction(inv runInvocation) int {
+	parsed := inv.parsed
+	if err := ensureCreateInputs(&parsed); err != nil {
+		if errors.Is(err, ErrPromptCancelled) {
+			_ = writeHintDiagnostic(inv.stderr, inv.diagnosticOptions, "No changes made.\n")
+			return ExitSuccess
+		}
+		return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
+	}
+	if parsed.DryRun {
+		_, _ = fmt.Fprintf(inv.stdout, "Would create Star List %q.\n", parsed.Name)
+		return ExitSuccess
+	}
+	appSvc := app.NewStarListService(inv.service)
+	list, err := appSvc.CreateList(inv.ctx, domain.StarListInput{
+		Name:        parsed.Name,
+		Description: parsed.Description,
+		Private:     parsed.Private,
+	})
+	if err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.Name,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	_, _ = fmt.Fprintln(
+		inv.stdout,
+		styleText(
+			format.Green,
+			inv.outputOptions.Color,
+			fmt.Sprintf("Created Star List %q (%s).", list.Name, list.ID),
+		),
+	)
+	return ExitSuccess
+}
+
+func runEditAction(inv runInvocation) int {
+	parsed := inv.parsed
+	appSvc := app.NewStarListService(inv.service)
+	lists, err := appSvc.Service().ListStarLists(inv.ctx)
+	if err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.ListID,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	currentList, found := listByRaw(lists, parsed.ListID)
+	if err := ensureEditInputs(&parsed, currentList); err != nil {
+		if errors.Is(err, ErrPromptCancelled) {
+			_ = writeHintDiagnostic(inv.stderr, inv.diagnosticOptions, "No changes made.\n")
+			return ExitSuccess
+		}
+		return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
+	}
+	var resolvedID string
+	if found {
+		resolvedID = currentList.ID
+	} else {
+		resolvedID = parsed.ListID
+	}
+	if parsed.DryRun {
+		_, _ = fmt.Fprintf(
+			inv.stdout,
+			"Would update Star List %q.\n",
+			displayListName(currentList, parsed.ListID),
+		)
+		return ExitSuccess
+	}
+	private := (*bool)(nil)
+	if parsed.PrivateSet {
+		private = &parsed.Private
+	}
+	list, err := appSvc.UpdateList(inv.ctx, domain.UpdateStarListInput{
+		ID:          resolvedID,
+		Name:        parsed.Name,
+		Description: parsed.Description,
+		Private:     private,
+	})
+	if err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.ListID,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	_, _ = fmt.Fprintln(
+		inv.stdout,
+		styleText(
+			format.Green,
+			inv.outputOptions.Color,
+			fmt.Sprintf("Updated Star List %q (%s).", list.Name, list.ID),
+		),
+	)
+	return ExitSuccess
+}
+
+func runDeleteAction(inv runInvocation) int {
+	parsed := inv.parsed
+	rl, err := resolveList(inv.ctx, inv.service, parsed.ListID)
+	if err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.ListID,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	listName := rl.Name
+	if listName == "" {
+		listName = parsed.ListID
+	}
+	if err := requireYes(parsed, fmt.Sprintf("delete Star List %q", listName)); err != nil {
+		return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
+	}
+	if parsed.DryRun {
+		_, _ = fmt.Fprintf(inv.stdout, "Would delete Star List %q.\n", listName)
+		return ExitSuccess
+	}
+	appSvc := app.NewStarListService(inv.service)
+	if err := appSvc.DeleteList(inv.ctx, rl.ID); err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.ListID,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	_, _ = fmt.Fprintln(
+		inv.stdout,
+		styleText(
+			format.Yellow,
+			inv.outputOptions.Color,
+			fmt.Sprintf("Deleted Star List %q.", listName),
+		),
+	)
+	return ExitSuccess
+}
+
+func runRepoMembershipAction(inv runInvocation) int {
+	parsed := inv.parsed
+	fetchedLists, err := ensureListSelectors(inv.ctx, inv.service, &parsed)
+	if err != nil {
+		return handleSelectorError(
+			inv.stderr,
+			parsed.Action,
+			parsed.RepoName,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	if parsed.Action != ActionAdd {
+		fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
+		toList, _ := listByRaw(fetchedLists, parsed.ToListID)
+		var actionPhrase string
+		switch parsed.Action {
+		case ActionRemove:
+			actionPhrase = fmt.Sprintf(
+				"remove %s from %q",
+				parsed.RepoName,
+				displayListName(fromList, parsed.FromListID),
+			)
+		case ActionMove:
+			actionPhrase = fmt.Sprintf(
+				"move %s from %q to %q",
+				parsed.RepoName,
+				displayListName(fromList, parsed.FromListID),
+				displayListName(toList, parsed.ToListID),
+			)
+		default:
+			actionPhrase = string(parsed.Action) + " a repository"
+		}
+		if err := requireYes(parsed, actionPhrase); err != nil {
+			return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
+		}
+	}
+	appSvc := app.NewStarListService(inv.service)
+	return runRepoListMutation(
+		inv.ctx,
+		inv.stdout,
+		inv.stderr,
+		appSvc,
+		parsed,
+		fetchedLists,
+		inv.outputOptions,
+	)
+}
+
+func runListCopyAction(inv runInvocation) int {
+	parsed := inv.parsed
+	fetchedLists, err := ensureListSelectors(inv.ctx, inv.service, &parsed)
+	if err != nil {
+		return handleSelectorError(
+			inv.stderr,
+			parsed.Action,
+			parsed.FromListID,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	if parsed.Action == ActionMerge || parsed.DeleteSource {
+		fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
+		toList, _ := listByRaw(fetchedLists, parsed.ToListID)
+		var actionPhrase string
+		if parsed.Action == ActionMerge {
+			actionPhrase = fmt.Sprintf(
+				"merge %q into %q",
+				displayListName(fromList, parsed.FromListID),
+				displayListName(toList, parsed.ToListID),
+			)
+		} else {
+			actionPhrase = fmt.Sprintf(
+				"copy and delete %q",
+				displayListName(fromList, parsed.FromListID),
+			)
+		}
+		if err := requireYes(parsed, actionPhrase); err != nil {
+			return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
+		}
+	}
+	appSvc := app.NewStarListService(inv.service)
+	return runListCopy(
+		inv.ctx,
+		inv.stdout,
+		inv.stderr,
+		appSvc,
+		parsed,
+		fetchedLists,
+		inv.outputOptions,
+	)
+}
+
+func runUnstarAction(inv runInvocation) int {
+	parsed := inv.parsed
+	appSvc := app.NewStarListService(inv.service)
+	repo, err := appSvc.GetRepository(inv.ctx, parsed.RepoName)
+	if err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.RepoName,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	if err := requireYes(parsed, fmt.Sprintf("unstar %s", repo.NameWithOwner)); err != nil {
+		return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
+	}
+	if parsed.DryRun {
+		_, _ = fmt.Fprintf(inv.stdout, "Would unstar %s.\n", repo.NameWithOwner)
+		return ExitSuccess
+	}
+	if err := appSvc.RemoveStar(inv.ctx, repo.ID); err != nil {
+		return writeRuntimeFailure(
+			inv.stderr,
+			parsed.Action,
+			parsed.RepoName,
+			err,
+			inv.diagnosticOptions,
+		)
+	}
+	_, _ = fmt.Fprintln(
+		inv.stdout,
+		styleText(
+			format.Yellow,
+			inv.outputOptions.Color,
+			fmt.Sprintf("Unstarred %s.", repo.NameWithOwner),
+		),
+	)
+	return ExitSuccess
+}
+
+func runTUIAction(inv runInvocation) int {
+	if !canPrompt() {
+		_ = writeDiagnostic(
+			inv.stderr,
+			"error: tui requires a terminal; use 'gh star-lists --help' for non-interactive commands\n",
+		)
+		return ExitUsage
+	}
+	return launchTUI(
+		inv.ctx,
+		inv.stderr,
+		inv.parsed,
+		inv.service,
+		inv.originalService,
+		inv.cacheTTL,
+		inv.diagnosticOptions,
+	)
 }
 
 func runRepoListMutation(

@@ -5,14 +5,14 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestBulkFailureRetryUsesFailedNWOsOnly(t *testing.T) {
 	t.Parallel()
 	svc := &repoMutationFakeService{}
-	svc.lists = []githubapi.StarList{{ID: "UL_1", Name: "one"}}
-	svc.repos = []githubapi.Repository{
+	svc.lists = []domain.StarList{{ID: "UL_1", Name: "one"}}
+	svc.repos = []domain.Repository{
 		{ID: "R_b", NameWithOwner: "owner/b-repo"},
 		{ID: "R_c", NameWithOwner: "owner/c-repo"},
 	}

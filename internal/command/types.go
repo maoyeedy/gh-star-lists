@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/maoyeedy/gh-star-lists/internal/app"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 )
 
@@ -26,24 +27,24 @@ const (
 )
 
 const (
-	SortKeyAdded     = "added"
-	SortKeyName      = "name"
-	SortKeyStars     = "stars"
-	SortKeyPushed    = "pushed"
-	SortKeyLanguage  = "language"
-	SortKeyRepoCount = "repos"
-	SortKeyStarred   = "starred"
+	SortKeyAdded     = app.SortKeyAdded
+	SortKeyName      = app.SortKeyName
+	SortKeyStars     = app.SortKeyStars
+	SortKeyPushed    = app.SortKeyPushed
+	SortKeyLanguage  = app.SortKeyLanguage
+	SortKeyRepoCount = app.SortKeyRepoCount
+	SortKeyStarred   = app.SortKeyStarred
 )
 
 const (
-	FilterKeyName     = "name"
-	FilterKeyFork     = "fork"
-	FilterKeyLanguage = "language"
-	FilterKeyArchived = "archived"
-	FilterKeyLicense  = "license"
-	FilterKeyMinStars = "min-stars"
-	FilterKeyMaxStars = "max-stars"
-	FilterKeyTopic    = "topic"
+	FilterKeyName     = app.FilterKeyName
+	FilterKeyFork     = app.FilterKeyFork
+	FilterKeyLanguage = app.FilterKeyLanguage
+	FilterKeyArchived = app.FilterKeyArchived
+	FilterKeyLicense  = app.FilterKeyLicense
+	FilterKeyMinStars = app.FilterKeyMinStars
+	FilterKeyMaxStars = app.FilterKeyMaxStars
+	FilterKeyTopic    = app.FilterKeyTopic
 )
 
 var commandAliases = map[string]string{

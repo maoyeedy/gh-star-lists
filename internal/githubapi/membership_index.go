@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -20,7 +21,7 @@ type repositoryMembership struct {
 // this once and reuse it.
 type MembershipIndex struct {
 	byRepo      map[string]repositoryMembership
-	reposByList map[string][]Repository
+	reposByList map[string][]domain.Repository
 }
 
 // LoadMembershipIndex scans all provided lists with bounded concurrency and
@@ -28,11 +29,11 @@ type MembershipIndex struct {
 func LoadMembershipIndex(
 	ctx context.Context,
 	service Service,
-	lists []StarList,
+	lists []domain.StarList,
 ) (MembershipIndex, error) {
 	index := MembershipIndex{
 		byRepo:      make(map[string]repositoryMembership),
-		reposByList: make(map[string][]Repository),
+		reposByList: make(map[string][]domain.Repository),
 	}
 	var mu sync.Mutex
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -102,6 +103,6 @@ func (i MembershipIndex) ContainsRepository(repoName string) bool {
 }
 
 // RepositoriesForList returns the indexed repositories for listID.
-func (i MembershipIndex) RepositoriesForList(listID string) []Repository {
+func (i MembershipIndex) RepositoriesForList(listID string) []domain.Repository {
 	return i.reposByList[listID]
 }

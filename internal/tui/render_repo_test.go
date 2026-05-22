@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestSelectRendersPrefixWhenSelectionNonEmpty(t *testing.T) {
@@ -109,7 +109,7 @@ func TestRepoFieldStyling(t *testing.T) {
 
 func TestRepoColumnAlignment(t *testing.T) {
 	t.Parallel()
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{ID: "R_1", NameWithOwner: "a/short", StargazerCount: 1, Language: "Go"},
 		{ID: "R_2", NameWithOwner: "b/medium", StargazerCount: 100, Language: "Rust"},
 		{ID: "R_3", NameWithOwner: "c/another", StargazerCount: 10000, Language: "TypeScript"},
@@ -117,7 +117,7 @@ func TestRepoColumnAlignment(t *testing.T) {
 		{ID: "R_5", NameWithOwner: "e/more", StargazerCount: 999, Language: "Python"},
 	}
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "test", RepoCount: 5}},
+		lists: []domain.StarList{{ID: "UL_1", Name: "test", RepoCount: 5}},
 		repos: repos,
 	}
 	m := newTestModel(svc)
@@ -191,15 +191,15 @@ func TestRepoColumnAlignment(t *testing.T) {
 
 func TestRepoPanePreviewModeHidesMetadata(t *testing.T) {
 	t.Parallel()
-	repo := githubapi.Repository{
+	repo := domain.Repository{
 		ID:             "R_1",
 		NameWithOwner:  "ItsEthra/typst-live",
 		StargazerCount: 132,
 		Language:       "Rust",
 	}
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "typst", RepoCount: 1}},
-		repos: []githubapi.Repository{repo},
+		lists: []domain.StarList{{ID: "UL_1", Name: "typst", RepoCount: 1}},
+		repos: []domain.Repository{repo},
 	}
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
@@ -270,8 +270,8 @@ func TestRepoTruncation(t *testing.T) {
 	t.Parallel()
 	longName := "some-very-long-owner-name/this-is-an-extremely-long-repository-name-with-extra"
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "trunctest", RepoCount: 1}},
-		repos: []githubapi.Repository{
+		lists: []domain.StarList{{ID: "UL_1", Name: "trunctest", RepoCount: 1}},
+		repos: []domain.Repository{
 			{ID: "R_1", NameWithOwner: longName, StargazerCount: 5, Language: "Go"},
 		},
 	}

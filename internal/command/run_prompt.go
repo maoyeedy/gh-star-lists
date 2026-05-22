@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -60,7 +61,7 @@ func ensureCreateInputs(parsed *Parsed) error {
 	return nil
 }
 
-func ensureEditInputs(parsed *Parsed, current githubapi.StarList) error {
+func ensureEditInputs(parsed *Parsed, current domain.StarList) error {
 	if parsed.Name != "" || parsed.DescriptionSet || parsed.PrivateSet {
 		return nil
 	}
@@ -114,7 +115,7 @@ func ensureListSelectors(
 	ctx context.Context,
 	service githubapi.Service,
 	parsed *Parsed,
-) ([]githubapi.StarList, error) {
+) ([]domain.StarList, error) {
 	needFrom := actionNeedsFrom(parsed.Action) && parsed.FromListID == ""
 	needTo := actionNeedsTo(parsed.Action) && parsed.ToListID == ""
 	if !needFrom && !needTo {

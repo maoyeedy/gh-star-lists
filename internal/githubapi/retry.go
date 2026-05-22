@@ -11,62 +11,14 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
-type retryDoer struct {
-	inner       graphQLDoer
-	maxAttempts int
-	baseDelay   time.Duration
-	sleep       func(ctx context.Context, d time.Duration) error
-}
-
-func newRetryDoer(inner graphQLDoer, maxAttempts int, baseDelay time.Duration) *retryDoer {
-	return &retryDoer{
-		inner:       inner,
-		maxAttempts: maxAttempts,
-		baseDelay:   baseDelay,
-		sleep:       sleepWithContext,
-	}
-}
-
-func (r *retryDoer) DoWithContext(
-	ctx context.Context,
-	query string,
-	variables map[string]any,
-	response any,
-) error {
-	var lastErr error
-	for attempt := 0; attempt < r.maxAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		err := r.inner.DoWithContext(ctx, query, variables, response)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if !isTransientGraphQLError(err) {
-			return err
-		}
-		if attempt == r.maxAttempts-1 {
-			break
-		}
-		delay := retryAfterDelay(err)
-		if delay == 0 {
-			delay = backoffWithJitter(r.baseDelay, attempt)
-		}
-		if err := r.sleep(ctx, delay); err != nil {
-			return err
-		}
-	}
-	return lastErr
-}
-
 func isTransientGraphQLError(err error) bool {
 	if err == nil {
 		return false
 	}
 	var httpErr *api.HTTPError
 	if errors.As(err, &httpErr) {
-		return httpErr.StatusCode == 429 || httpErr.StatusCode >= 500
+		return httpErr.StatusCode == 429 || httpErr.StatusCode >= 500 ||
+			(httpErr.StatusCode == 403 && retryAfterDelay(err) > 0)
 	}
 	var gqlErr *api.GraphQLError
 	if errors.As(err, &gqlErr) {

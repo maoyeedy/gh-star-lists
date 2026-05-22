@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestCreateListModalOpenClose(t *testing.T) {
@@ -36,7 +36,7 @@ func TestCreateListModalSubmit(t *testing.T) {
 	t.Parallel()
 	svc := &recordingFakeService{
 		fakeService: fakeService{
-			lists: []githubapi.StarList{{ID: "UL_1", Name: "existing"}},
+			lists: []domain.StarList{{ID: "UL_1", Name: "existing"}},
 		},
 	}
 	m := newTestModel(svc)
@@ -79,7 +79,7 @@ func TestDeleteListModalWrongNameBlocked(t *testing.T) {
 	t.Parallel()
 	svc := &recordingFakeService{
 		fakeService: fakeService{
-			lists: []githubapi.StarList{{ID: "UL_1", Name: "mylist"}},
+			lists: []domain.StarList{{ID: "UL_1", Name: "mylist"}},
 		},
 	}
 	m := newTestModel(svc)
@@ -110,7 +110,7 @@ func TestDeleteListModalCorrectName(t *testing.T) {
 	t.Parallel()
 	svc := &recordingFakeService{
 		fakeService: fakeService{
-			lists: []githubapi.StarList{{ID: "UL_1", Name: "mylist"}},
+			lists: []domain.StarList{{ID: "UL_1", Name: "mylist"}},
 		},
 	}
 	m := newTestModel(svc)

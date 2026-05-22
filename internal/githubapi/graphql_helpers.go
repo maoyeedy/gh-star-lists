@@ -3,6 +3,8 @@ package githubapi
 import (
 	"fmt"
 	"strings"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func parseRepoName(nameWithOwner string) (owner, name string, err error) {
@@ -14,36 +16,18 @@ func parseRepoName(nameWithOwner string) (owner, name string, err error) {
 	return owner, name, nil
 }
 
-func limitFromOptions(options []ListOptions) int {
+func limitFromOptions(options []domain.ListOptions) int {
 	if len(options) == 0 {
 		return 0
 	}
 	return options[0].Limit
 }
 
-func withTopicsFromOptions(options []ListOptions) bool {
+func withTopicsFromOptions(options []domain.ListOptions) bool {
 	if len(options) == 0 {
 		return false
 	}
 	return options[0].WithTopics
-}
-
-func pageFirst(pageSize, limit, current int) int {
-	if limit <= 0 {
-		return pageSize
-	}
-	remaining := limit - current
-	if remaining <= 0 {
-		return 1
-	}
-	if remaining < pageSize {
-		return remaining
-	}
-	return pageSize
-}
-
-func limitReached(limit, count int) bool {
-	return limit > 0 && count >= limit
 }
 
 func nullableString(value string) any {

@@ -3,7 +3,7 @@ package search
 import (
 	"strings"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type preparedField struct {
@@ -76,7 +76,7 @@ func scorePrepared(
 }
 
 func scoreRepository(
-	repo githubapi.Repository,
+	repo domain.Repository,
 	terms []string,
 	phrase string,
 	editPrev, editCurr *[]int,
@@ -117,7 +117,7 @@ func scoreRepository(
 }
 
 func scoreStarList(
-	list githubapi.StarList,
+	list domain.StarList,
 	terms []string,
 	phrase string,
 	editPrev, editCurr *[]int,

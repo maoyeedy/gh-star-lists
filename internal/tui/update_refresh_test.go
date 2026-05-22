@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestRefreshCallsInvalidate(t *testing.T) {
 	t.Parallel()
 	svc := &fakeInvalidatableService{
 		fakeService: fakeService{
-			lists: []githubapi.StarList{{ID: "UL_1", Name: "Go Tools"}},
+			lists: []domain.StarList{{ID: "UL_1", Name: "Go Tools"}},
 		},
 	}
 	m := newModel(context.Background(), svc, Options{})

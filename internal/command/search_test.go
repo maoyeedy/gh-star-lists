@@ -4,11 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
-func makeRepo(nameWithOwner, description, language string, stars int) githubapi.Repository {
-	return githubapi.Repository{
+func makeRepo(nameWithOwner, description, language string, stars int) domain.Repository {
+	return domain.Repository{
 		ID:             nameWithOwner,
 		NameWithOwner:  nameWithOwner,
 		Description:    description,
@@ -18,7 +18,7 @@ func makeRepo(nameWithOwner, description, language string, stars int) githubapi.
 	}
 }
 
-func repoNames(repos []githubapi.Repository) []string {
+func repoNames(repos []domain.Repository) []string {
 	out := make([]string, len(repos))
 	for i, r := range repos {
 		out[i] = r.NameWithOwner
@@ -38,12 +38,12 @@ func TestSearchRepositories(t *testing.T) {
 		220000,
 	)
 	rails := makeRepo("rails/rails", "Ruby on Rails web framework", "Ruby", 55000)
-	all := []githubapi.Repository{gin, echo, react, rails}
+	all := []domain.Repository{gin, echo, react, rails}
 
 	tests := []struct {
 		name  string
 		query string
-		repos []githubapi.Repository
+		repos []domain.Repository
 		want  []string
 	}{
 		{
@@ -79,7 +79,7 @@ func TestSearchRepositories(t *testing.T) {
 		{
 			name:  "plural folding matches library/libraries",
 			query: "library",
-			repos: []githubapi.Repository{
+			repos: []domain.Repository{
 				makeRepo("a/lib", "Reusable libraries for parsing", "Go", 100),
 			},
 			want: []string{"a/lib"},
@@ -106,7 +106,7 @@ func TestSearchRepositoriesOrdering(t *testing.T) {
 	prefix := makeRepo("foo/gopher", "tools", "Go", 200)
 	descOnly := makeRepo("foo/zzz", "written in go", "Rust", 50)
 
-	got := searchRepositories([]githubapi.Repository{descOnly, prefix, exact}, "go")
+	got := searchRepositories([]domain.Repository{descOnly, prefix, exact}, "go")
 	if len(got) != 3 {
 		t.Fatalf("expected 3 matches, got %d", len(got))
 	}
@@ -124,7 +124,7 @@ func TestSearchRepositoriesStarsTiebreaker(t *testing.T) {
 	low := makeRepo("foo/echo", "x", "Go", 100)
 	high := makeRepo("bar/echo", "x", "Go", 5000)
 
-	got := searchRepositories([]githubapi.Repository{low, high}, "echo")
+	got := searchRepositories([]domain.Repository{low, high}, "echo")
 	if got[0].NameWithOwner != "bar/echo" {
 		t.Errorf("higher stars should rank first, got %s", got[0].NameWithOwner)
 	}

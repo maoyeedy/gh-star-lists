@@ -4,13 +4,13 @@ import (
 	"context"
 	"sync"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type recordingFakeService struct {
 	fakeService
-	createCalls []githubapi.StarListInput
-	updateCalls []githubapi.UpdateStarListInput
+	createCalls []domain.StarListInput
+	updateCalls []domain.UpdateStarListInput
 	deleteCalls []string
 	createErr   error
 	updateErr   error
@@ -18,17 +18,17 @@ type recordingFakeService struct {
 }
 
 func (f *recordingFakeService) CreateStarList(
-	_ context.Context, input githubapi.StarListInput,
-) (githubapi.StarList, error) {
+	_ context.Context, input domain.StarListInput,
+) (domain.StarList, error) {
 	f.createCalls = append(f.createCalls, input)
-	return githubapi.StarList{Name: input.Name}, f.createErr
+	return domain.StarList{Name: input.Name}, f.createErr
 }
 
 func (f *recordingFakeService) UpdateStarList(
-	_ context.Context, input githubapi.UpdateStarListInput,
-) (githubapi.StarList, error) {
+	_ context.Context, input domain.UpdateStarListInput,
+) (domain.StarList, error) {
 	f.updateCalls = append(f.updateCalls, input)
-	return githubapi.StarList{}, f.updateErr
+	return domain.StarList{}, f.updateErr
 }
 
 func (f *recordingFakeService) DeleteStarList(_ context.Context, id string) error {
@@ -81,7 +81,7 @@ func (f *repoMutationFakeService) RemoveStar(_ context.Context, repoID string) e
 
 type copyMergeFakeService struct {
 	fakeService
-	reposResult        []githubapi.Repository
+	reposResult        []domain.Repository
 	membershipsRepoID  string
 	membershipsListIDs []string
 	updateListsCalls   [][]string // just listIDs per call
@@ -90,8 +90,8 @@ type copyMergeFakeService struct {
 }
 
 func (f *copyMergeFakeService) ListRepositories(
-	_ context.Context, _ string, _ ...githubapi.ListOptions,
-) ([]githubapi.Repository, error) {
+	_ context.Context, _ string, _ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	return f.reposResult, nil
 }
 

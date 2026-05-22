@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestCursorMoveUsesCacheNoNewCmd(t *testing.T) {
@@ -14,9 +14,9 @@ func TestCursorMoveUsesCacheNoNewCmd(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 
 	// Pre-populate cache for all three lists so no loads are needed.
-	reposA := []githubapi.Repository{{ID: "A_1", NameWithOwner: "owner/a-list-repo"}}
-	reposB := []githubapi.Repository{{ID: "B_1", NameWithOwner: "owner/b-list-repo"}}
-	reposC := []githubapi.Repository{{ID: "C_1", NameWithOwner: "owner/c-list-repo"}}
+	reposA := []domain.Repository{{ID: "A_1", NameWithOwner: "owner/a-list-repo"}}
+	reposB := []domain.Repository{{ID: "B_1", NameWithOwner: "owner/b-list-repo"}}
+	reposC := []domain.Repository{{ID: "C_1", NameWithOwner: "owner/c-list-repo"}}
 	m = update(m, reposLoadedMsg{repos: reposA, listID: m.lists[0].ID, gen: m.preloader.generation})
 	m = update(m, reposLoadedMsg{repos: reposB, listID: m.lists[1].ID, gen: m.preloader.generation})
 	m = update(m, reposLoadedMsg{repos: reposC, listID: m.lists[2].ID, gen: m.preloader.generation})
@@ -95,7 +95,7 @@ func TestCursorMovePreviewWithBasicCacheSchedulesTopicsLoad(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.preloader.setCacheEntry(repoCacheKey{svc.lists[1].ID, false}, &repoCacheEntry{
 		state: repoCacheLoaded,
-		repos: []githubapi.Repository{{ID: "R_2", NameWithOwner: "owner/basic"}},
+		repos: []domain.Repository{{ID: "R_2", NameWithOwner: "owner/basic"}},
 		gen:   m.preloader.generation,
 	})
 	m.active = paneList

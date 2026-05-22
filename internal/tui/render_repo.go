@@ -5,6 +5,8 @@ import (
 	"unicode/utf8"
 
 	lipgloss "charm.land/lipgloss/v2"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 const (
@@ -110,10 +112,15 @@ func (m model) renderRepoPane(w, h int) string {
 	showLang := !m.showPreview && w >= 34 && baseW+langWidth+2+minNameW <= w
 	showBadges := w >= 55
 
-	for i := start; i < end; i++ {
-		r := m.displayedRepos[i]
-		isCursor := i == m.repoCursor
-		_, checked := m.selected[r.NameWithOwner]
+	// Convert visible repos to RepoRow for rendering with pre-computed fields.
+	repoRows := make([]domain.RepoRow, end-start)
+	for j := 0; j < end-start; j++ {
+		repoRows[j] = repoToRow(m.displayedRepos[start+j])
+	}
+
+	for i, row := range repoRows {
+		isCursor := start+i == m.repoCursor
+		_, checked := m.selected[row.NameWithOwner]
 
 		// -- Cursor prefix (2 chars) --
 		var cursorStr string
@@ -140,7 +147,7 @@ func (m model) renderRepoPane(w, h int) string {
 		// -- Stars field --
 		var starsStr string
 		if showStars {
-			countRaw := formatStars(r.StargazerCount)
+			countRaw := formatStars(row.StargazerCount)
 			// Right-align count within (starWidth - 2) then append " " + glyph.
 			countFieldW := starWidth - 2 // space + glyph
 			if countFieldW < 1 {
@@ -153,7 +160,7 @@ func (m model) renderRepoPane(w, h int) string {
 		// -- Language field (right-aligned at end) --
 		var langStr string
 		if showLang {
-			lang := r.Language
+			lang := row.Language
 			if lang == "" {
 				langStr = "  " + stylePaneSubtitle.Render(padLeft("-", langWidth))
 			} else {
@@ -189,16 +196,16 @@ func (m model) renderRepoPane(w, h int) string {
 		// -- Badges --
 		var badgesRaw string
 		if showBadges {
-			if r.IsFork {
+			if row.IsFork {
 				badgesRaw += " fork"
 			}
-			if r.IsArchived {
+			if row.IsArchived {
 				badgesRaw += " archived"
 			}
 		}
 
 		// -- Name: truncate raw, then style --
-		nameRaw := r.NameWithOwner
+		nameRaw := row.NameWithOwner
 		// Reserve space for badges if they exist.
 		badgesW := lipgloss.Width(badgesRaw)
 		nameMaxW := nameAvail
@@ -261,6 +268,23 @@ func (m model) renderRepoPane(w, h int) string {
 		out = append(out, "")
 	}
 	return strings.Join(out, "\n")
+}
+
+// repoToRow converts a domain.Repository to a domain.RepoRow for rendering.
+func repoToRow(repo domain.Repository) domain.RepoRow {
+	owner, name, _ := strings.Cut(repo.NameWithOwner, "/")
+	return domain.RepoRow{
+		Owner:          owner,
+		Name:           name,
+		NameWithOwner:  repo.NameWithOwner,
+		StargazerCount: repo.StargazerCount,
+		Language:       repo.Language,
+		IsFork:         repo.IsFork,
+		IsArchived:     repo.IsArchived,
+		URL:            repo.URL,
+		Description:    repo.Description,
+		PushedAt:       repo.PushedAt,
+	}
 }
 
 // truncateToWidth truncates a raw (unstyled) string so its visual width is at

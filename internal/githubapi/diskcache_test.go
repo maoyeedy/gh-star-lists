@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestDiskCacheWarmStart(t *testing.T) {
@@ -16,7 +18,7 @@ func TestDiskCacheWarmStart(t *testing.T) {
 	ctx := context.Background()
 
 	inner1 := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "owner/cached-repo"}},
 		},
 	}
@@ -36,7 +38,7 @@ func TestDiskCacheWarmStart(t *testing.T) {
 
 	// New service with different inner should return cached data on warm start.
 	inner2 := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "owner/new-repo"}},
 		},
 	}
@@ -61,7 +63,7 @@ func TestDiskCacheWarmStartPreservesRepositoryDetails(t *testing.T) {
 	ctx := context.Background()
 
 	inner1 := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{
 				ID:                "R_1",
 				NameWithOwner:     "owner/cached-repo",
@@ -78,7 +80,7 @@ func TestDiskCacheWarmStartPreservesRepositoryDetails(t *testing.T) {
 	ds1 := svc1.(*diskCacheService)
 	ds1.cacheDir = t.TempDir()
 
-	repos1, err := ds1.ListRepositories(ctx, "UL_1", ListOptions{WithTopics: true})
+	repos1, err := ds1.ListRepositories(ctx, "UL_1", domain.ListOptions{WithTopics: true})
 	if err != nil {
 		t.Fatalf("first ListRepositories: %v", err)
 	}
@@ -88,7 +90,7 @@ func TestDiskCacheWarmStartPreservesRepositoryDetails(t *testing.T) {
 	waitForDiskCacheEntry(t, ds1, ds1.canonicalKey("repos", "UL_1", "topics:true"))
 
 	inner2 := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "owner/new-repo"}},
 		},
 	}
@@ -96,7 +98,7 @@ func TestDiskCacheWarmStartPreservesRepositoryDetails(t *testing.T) {
 	ds2 := svc2.(*diskCacheService)
 	ds2.cacheDir = ds1.cacheDir
 
-	repos2, err := ds2.ListRepositories(ctx, "UL_1", ListOptions{WithTopics: true})
+	repos2, err := ds2.ListRepositories(ctx, "UL_1", domain.ListOptions{WithTopics: true})
 	if err != nil {
 		t.Fatalf("warm start ListRepositories: %v", err)
 	}
@@ -126,7 +128,7 @@ func TestDiskCacheInvalidation(t *testing.T) {
 	ctx := context.Background()
 
 	inner := &fakeCacheInner{
-		lists: []StarList{
+		lists: []domain.StarList{
 			{Name: "original", ID: "UL_1"},
 		},
 	}
@@ -145,7 +147,7 @@ func TestDiskCacheInvalidation(t *testing.T) {
 	waitForDiskCacheEntry(t, ds, ds.canonicalKey("lists"))
 
 	// Mutation invalidates disk cache entry for lists.
-	_, err = ds.CreateStarList(ctx, StarListInput{Name: "new"})
+	_, err = ds.CreateStarList(ctx, domain.StarListInput{Name: "new"})
 	if err != nil {
 		t.Fatalf("CreateStarList: %v", err)
 	}
@@ -168,7 +170,7 @@ func TestDiskCacheRemoveStarInvalidatesListRepositories(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	inner := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{ID: "R_1", NameWithOwner: "owner/stale"}},
 		},
 	}
@@ -180,7 +182,7 @@ func TestDiskCacheRemoveStarInvalidatesListRepositories(t *testing.T) {
 		t.Fatalf("first ListRepositories: %v", err)
 	}
 	waitForDiskCacheEntry(t, ds, ds.canonicalKey("repos", "UL_1", "topics:false"))
-	inner.repos["UL_1"] = []Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
+	inner.repos["UL_1"] = []domain.Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
 
 	if err := ds.RemoveStar(ctx, "R_1"); err != nil {
 		t.Fatalf("RemoveStar: %v", err)
@@ -202,7 +204,7 @@ func TestDiskCacheTTLExpiry(t *testing.T) {
 	ctx := context.Background()
 
 	inner := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "owner/cached-repo"}},
 		},
 	}
@@ -245,7 +247,7 @@ func TestDiskCacheEviction(t *testing.T) {
 	for i := range keys {
 		keys[i] = ds.canonicalKey("repos", fmt.Sprintf("UL_%d", i), "topics:false")
 		ds.writeToDiskSync(keys[i], &diskCacheEntry{
-			Repos: []Repository{{NameWithOwner: fmt.Sprintf("owner/repo-%d", i)}},
+			Repos: []domain.Repository{{NameWithOwner: fmt.Sprintf("owner/repo-%d", i)}},
 		}, 0)
 		path := ds.cachePath(keys[i])
 		if err := os.Chtimes(
@@ -280,7 +282,7 @@ func TestConcurrentDiskCacheFillDeduplication(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	inner := &blockingRepoInner{
-		repos:   []Repository{{NameWithOwner: "owner/repo"}},
+		repos:   []domain.Repository{{NameWithOwner: "owner/repo"}},
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
@@ -332,7 +334,7 @@ func TestConcurrentDiskCacheFillDeduplication(t *testing.T) {
 func TestDiskCacheWaitForFillRespectsContextCancellation(t *testing.T) {
 	t.Parallel()
 	inner := &blockingRepoInner{
-		repos:   []Repository{{NameWithOwner: "owner/repo"}},
+		repos:   []domain.Repository{{NameWithOwner: "owner/repo"}},
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
@@ -368,7 +370,7 @@ func TestConcurrentDiskCacheFillSharesResultBeforeDiskWriteCompletes(t *testing.
 	t.Parallel()
 	ctx := context.Background()
 	inner := &blockingRepoInner{
-		repos:   []Repository{{NameWithOwner: "owner/repo"}},
+		repos:   []domain.Repository{{NameWithOwner: "owner/repo"}},
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
@@ -491,22 +493,25 @@ func waitForDiskCacheFill(t *testing.T, ds *diskCacheService, key string) {
 }
 
 type blockingRepoInner struct {
-	repos      []Repository
+	repos      []domain.Repository
 	reposCalls int32
 	entered    chan struct{}
 	release    chan struct{}
 	once       sync.Once
 }
 
-func (b *blockingRepoInner) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
+func (b *blockingRepoInner) ListStarLists(
+	context.Context,
+	...domain.ListOptions,
+) ([]domain.StarList, error) {
 	return nil, nil
 }
 
 func (b *blockingRepoInner) ListRepositories(
 	context.Context,
 	string,
-	...ListOptions,
-) ([]Repository, error) {
+	...domain.ListOptions,
+) ([]domain.Repository, error) {
 	atomic.AddInt32(&b.reposCalls, 1)
 	b.once.Do(func() { close(b.entered) })
 	<-b.release
@@ -515,13 +520,13 @@ func (b *blockingRepoInner) ListRepositories(
 
 func (b *blockingRepoInner) ListStarredRepositories(
 	context.Context,
-	...ListOptions,
-) ([]Repository, error) {
+	...domain.ListOptions,
+) ([]domain.Repository, error) {
 	return nil, nil
 }
 
-func (b *blockingRepoInner) GetRepository(context.Context, string) (Repository, error) {
-	return Repository{}, nil
+func (b *blockingRepoInner) GetRepository(context.Context, string) (domain.Repository, error) {
+	return domain.Repository{}, nil
 }
 
 func (b *blockingRepoInner) GetRepositoryMemberships(
@@ -531,12 +536,18 @@ func (b *blockingRepoInner) GetRepositoryMemberships(
 	return "", nil, nil
 }
 
-func (b *blockingRepoInner) CreateStarList(context.Context, StarListInput) (StarList, error) {
-	return StarList{}, nil
+func (b *blockingRepoInner) CreateStarList(
+	context.Context,
+	domain.StarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{}, nil
 }
 
-func (b *blockingRepoInner) UpdateStarList(context.Context, UpdateStarListInput) (StarList, error) {
-	return StarList{}, nil
+func (b *blockingRepoInner) UpdateStarList(
+	context.Context,
+	domain.UpdateStarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{}, nil
 }
 
 func (b *blockingRepoInner) DeleteStarList(context.Context, string) error {

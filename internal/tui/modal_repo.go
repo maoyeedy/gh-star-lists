@@ -5,11 +5,12 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func newAddRepoModal(ctx context.Context, svc githubapi.Service,
-	repo githubapi.Repository, allLists []githubapi.StarList,
+	repo domain.Repository, allLists []domain.StarList,
 ) *modal {
 	mo := &modal{
 		kind:    modalPickList,
@@ -29,10 +30,10 @@ func newAddRepoModal(ctx context.Context, svc githubapi.Service,
 }
 
 func newMoveRepoModal(ctx context.Context, svc githubapi.Service,
-	repo githubapi.Repository, allLists []githubapi.StarList, fromListID string,
+	repo domain.Repository, allLists []domain.StarList, fromListID string,
 ) *modal {
 	// Filter out the current list from the picker.
-	filtered := make([]githubapi.StarList, 0, len(allLists))
+	filtered := make([]domain.StarList, 0, len(allLists))
 	for _, l := range allLists {
 		if l.ID != fromListID {
 			filtered = append(filtered, l)
@@ -56,7 +57,7 @@ func newMoveRepoModal(ctx context.Context, svc githubapi.Service,
 }
 
 func newRemoveRepoModal(ctx context.Context, svc githubapi.Service,
-	repo githubapi.Repository, fromListID string,
+	repo domain.Repository, fromListID string,
 ) *modal {
 	mo := &modal{
 		kind:  modalConfirmYesNo,
@@ -71,7 +72,7 @@ func newRemoveRepoModal(ctx context.Context, svc githubapi.Service,
 }
 
 func newUnstarRepoModal(ctx context.Context, svc githubapi.Service,
-	repo githubapi.Repository,
+	repo domain.Repository,
 ) (*modal, tea.Cmd) {
 	ci := textinput.New()
 	ci.Placeholder = repo.NameWithOwner

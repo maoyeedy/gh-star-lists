@@ -3,15 +3,13 @@ package format
 import (
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/cli/go-gh/v2/pkg/tableprinter"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
-	"github.com/maoyeedy/gh-star-lists/internal/humanize"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 // WriteRepositories writes repositories to w in the requested output mode.
-func WriteRepositories(w io.Writer, mode OutputMode, repos []githubapi.Repository) error {
+func WriteRepositories(w io.Writer, mode OutputMode, repos []domain.Repository) error {
 	return WriteRepositoriesWithOptions(w, Options{Mode: mode}, repos)
 }
 
@@ -19,28 +17,32 @@ func WriteRepositories(w io.Writer, mode OutputMode, repos []githubapi.Repositor
 func WriteRepositoriesWithOptions(
 	w io.Writer,
 	options Options,
-	repos []githubapi.Repository,
+	repos []domain.Repository,
 ) error {
 	options = normalizeOptions(options)
+	rows := make([]domain.RepoRow, len(repos))
+	for i, r := range repos {
+		rows[i] = RepoRowFromDomain(r, options.Now)
+	}
 	switch options.Mode {
 	case OutputJSON:
-		return writeJSONSliceWithOptions(w, options, repos)
+		return writeJSONSliceWithOptions(w, options, rows)
 	case OutputTSV:
-		return writeRepositoriesTSV(w, repos)
+		return writeRepositoriesTSV(w, rows)
 	case OutputFZF:
-		return writeRepositoriesFZF(w, repos)
+		return writeRepositoriesFZF(w, rows)
 	case OutputPlain:
-		return writeRepositoriesPlain(w, repos)
+		return writeRepositoriesPlain(w, rows)
 	case OutputTemplate:
-		return writeTemplate(w, options, repos)
+		return writeTemplate(w, options, rows)
 	case OutputHuman:
-		return writeRepositoriesHuman(w, options, repos)
+		return writeRepositoriesHuman(w, options, rows)
 	default:
 		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
 }
 
-func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
+func writeRepositoriesTSV(w io.Writer, repos []domain.RepoRow) error {
 	for _, repo := range repos {
 		if _, err := fmt.Fprintf(
 			w,
@@ -59,7 +61,7 @@ func writeRepositoriesTSV(w io.Writer, repos []githubapi.Repository) error {
 	return nil
 }
 
-func writeRepositoriesFZF(w io.Writer, repos []githubapi.Repository) error {
+func writeRepositoriesFZF(w io.Writer, repos []domain.RepoRow) error {
 	for _, repo := range repos {
 		if _, err := fmt.Fprintf(
 			w,
@@ -78,7 +80,7 @@ func writeRepositoriesFZF(w io.Writer, repos []githubapi.Repository) error {
 	return nil
 }
 
-func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repository) error {
+func writeRepositoriesHuman(w io.Writer, options Options, repos []domain.RepoRow) error {
 	if len(repos) == 0 {
 		_, _ = fmt.Fprintln(w, "No repositories found.")
 		_, err := fmt.Fprintln(w, "Try a different filter, --search, or --all.")
@@ -92,21 +94,18 @@ func writeRepositoriesHuman(w io.Writer, options Options, repos []githubapi.Repo
 		tableprinter.WithColor(boldFn),
 	)
 	for _, repo := range repos {
-		table.AddField(FormatNameWithOwner(repo.NameWithOwner, options.Color))
-		table.AddField(strconv.Itoa(repo.StargazerCount), tableprinter.WithTruncate(nil))
+		table.AddField(formatName(repo.Owner, repo.Name, options.Color))
+		table.AddField(repo.Stars, tableprinter.WithTruncate(nil))
 		table.AddField(repo.Language, tableprinter.WithTruncate(nil))
-		table.AddField(yesNo(repo.IsFork), tableprinter.WithTruncate(nil))
-		table.AddField(
-			humanize.ShortAge(repo.PushedAt, options.Now),
-			tableprinter.WithTruncate(nil),
-		)
+		table.AddField(repo.Fork, tableprinter.WithTruncate(nil))
+		table.AddField(repo.PushedAge, tableprinter.WithTruncate(nil))
 		table.AddField(repo.URL, tableprinter.WithColor(faintFn))
 		table.EndRow()
 	}
 	return table.Render()
 }
 
-func writeRepositoriesPlain(w io.Writer, repos []githubapi.Repository) error {
+func writeRepositoriesPlain(w io.Writer, repos []domain.RepoRow) error {
 	if len(repos) == 0 {
 		_, err := fmt.Fprintln(w, "No repositories found.")
 		return err
@@ -120,10 +119,10 @@ func writeRepositoriesPlain(w io.Writer, repos []githubapi.Repository) error {
 				return err
 			}
 		}
-		if _, err := fmt.Fprintf(w, "  Fork: %s\n", yesNo(repo.IsFork)); err != nil {
+		if _, err := fmt.Fprintf(w, "  Fork: %s\n", repo.Fork); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "  Stars: %d\n", repo.StargazerCount); err != nil {
+		if _, err := fmt.Fprintf(w, "  Stars: %s\n", repo.Stars); err != nil {
 			return err
 		}
 		if repo.PushedAt != "" {
@@ -148,4 +147,17 @@ func yesNo(value bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+func formatName(owner, name string, color bool) string {
+	if name == "" {
+		if !color {
+			return owner
+		}
+		return Bold(true)(owner)
+	}
+	if !color {
+		return owner + "/" + name
+	}
+	return Faint(true)(owner) + Faint(true)("/") + Bold(true)(name)
 }

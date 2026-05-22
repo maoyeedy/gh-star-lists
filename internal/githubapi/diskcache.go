@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type diskCacheService struct {
@@ -24,8 +26,8 @@ type diskCacheService struct {
 
 func (s *diskCacheService) ListStarLists(
 	ctx context.Context,
-	options ...ListOptions,
-) ([]StarList, error) {
+	options ...domain.ListOptions,
+) ([]domain.StarList, error) {
 	key := s.canonicalKey("lists")
 	limit := limitFromOptions(options)
 	for {
@@ -57,8 +59,8 @@ func (s *diskCacheService) ListStarLists(
 func (s *diskCacheService) ListRepositories(
 	ctx context.Context,
 	listID string,
-	options ...ListOptions,
-) ([]Repository, error) {
+	options ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	withTopics := withTopicsFromOptions(options)
 	key := s.canonicalKey("repos", listID, fmt.Sprintf("topics:%t", withTopics))
 	limit := limitFromOptions(options)
@@ -90,8 +92,8 @@ func (s *diskCacheService) ListRepositories(
 
 func (s *diskCacheService) ListStarredRepositories(
 	ctx context.Context,
-	options ...ListOptions,
-) ([]Repository, error) {
+	options ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	withTopics := withTopicsFromOptions(options)
 	key := s.canonicalKey("starred", fmt.Sprintf("topics:%t", withTopics))
 	limit := limitFromOptions(options)
@@ -124,7 +126,7 @@ func (s *diskCacheService) ListStarredRepositories(
 func (s *diskCacheService) GetRepository(
 	ctx context.Context,
 	nameWithOwner string,
-) (Repository, error) {
+) (domain.Repository, error) {
 	key := s.canonicalKey("repo", nameWithOwner)
 	for {
 		if entry := s.readFromDisk(key); entry != nil && entry.Repo != nil {
@@ -135,7 +137,7 @@ func (s *diskCacheService) GetRepository(
 			repo, err := s.inner.GetRepository(ctx, nameWithOwner)
 			if err != nil {
 				s.finishFill(key, fill, nil, err)
-				return Repository{}, err
+				return domain.Repository{}, err
 			}
 			entry := &diskCacheEntry{Repo: &repo}
 			s.finishFill(key, fill, entry, nil)
@@ -144,7 +146,7 @@ func (s *diskCacheService) GetRepository(
 		}
 		entry, err := s.waitForFill(ctx, fill)
 		if err != nil {
-			return Repository{}, err
+			return domain.Repository{}, err
 		}
 		if entry != nil && entry.Repo != nil {
 			return *entry.Repo, nil
@@ -165,11 +167,11 @@ func (s *diskCacheService) GetRepositoryMemberships(
 
 func (s *diskCacheService) CreateStarList(
 	ctx context.Context,
-	input StarListInput,
-) (StarList, error) {
+	input domain.StarListInput,
+) (domain.StarList, error) {
 	list, err := s.inner.CreateStarList(ctx, input)
 	if err != nil {
-		return StarList{}, err
+		return domain.StarList{}, err
 	}
 	s.invalidateLists()
 	return list, nil
@@ -177,11 +179,11 @@ func (s *diskCacheService) CreateStarList(
 
 func (s *diskCacheService) UpdateStarList(
 	ctx context.Context,
-	input UpdateStarListInput,
-) (StarList, error) {
+	input domain.UpdateStarListInput,
+) (domain.StarList, error) {
 	list, err := s.inner.UpdateStarList(ctx, input)
 	if err != nil {
-		return StarList{}, err
+		return domain.StarList{}, err
 	}
 	s.invalidateLists()
 	return list, nil

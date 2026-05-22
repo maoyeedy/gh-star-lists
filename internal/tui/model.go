@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -24,8 +25,8 @@ type model struct {
 	ctx         context.Context
 
 	active      pane
-	lists       []githubapi.StarList
-	focusedList *githubapi.StarList
+	lists       []domain.StarList
+	focusedList *domain.StarList
 
 	preloader *preloader
 
@@ -57,8 +58,8 @@ type model struct {
 	listSearchQuery  string
 	repoSearchActive bool
 	repoSearchQuery  string
-	displayedLists   []githubapi.StarList
-	displayedRepos   []githubapi.Repository
+	displayedLists   []domain.StarList
+	displayedRepos   []domain.Repository
 
 	selected map[string]struct{} // NameWithOwner of checked repos
 

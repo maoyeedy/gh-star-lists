@@ -9,21 +9,22 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 	"golang.org/x/sync/errgroup"
 )
 
 type (
-	listsLoadedMsg struct{ lists []githubapi.StarList }
+	listsLoadedMsg struct{ lists []domain.StarList }
 	reposLoadedMsg struct {
-		repos      []githubapi.Repository
+		repos      []domain.Repository
 		err        error
 		listID     string
 		withTopics bool
 		gen        uint64
 	}
 	starredAtEnrichedMsg struct {
-		repos  []githubapi.Repository
+		repos  []domain.Repository
 		err    error
 		listID string
 		gen    uint64
@@ -52,9 +53,9 @@ func loadReposCmd(
 		if ctx.Err() != nil {
 			return nil
 		}
-		opts := []githubapi.ListOptions{}
+		opts := []domain.ListOptions{}
 		if withTopics {
-			opts = append(opts, githubapi.ListOptions{WithTopics: true})
+			opts = append(opts, domain.ListOptions{WithTopics: true})
 		}
 		repos, err := svc.ListRepositories(ctx, listID, opts...)
 		if ctx.Err() != nil {
@@ -75,7 +76,7 @@ func enrichStarredAtCmd(
 	svc githubapi.Service,
 	p *preloader,
 	listID string,
-	repos []githubapi.Repository,
+	repos []domain.Repository,
 	gen uint64,
 ) tea.Cmd {
 	return func() tea.Msg {
@@ -118,7 +119,7 @@ func statusClearCmd(expiry time.Time) tea.Cmd {
 func createListCmd(
 	ctx context.Context,
 	svc githubapi.Service,
-	input githubapi.StarListInput,
+	input domain.StarListInput,
 ) tea.Cmd {
 	return func() tea.Msg {
 		_, err := svc.CreateStarList(ctx, input)
@@ -129,7 +130,7 @@ func createListCmd(
 func updateListCmd(
 	ctx context.Context,
 	svc githubapi.Service,
-	input githubapi.UpdateStarListInput,
+	input domain.UpdateStarListInput,
 ) tea.Cmd {
 	return func() tea.Msg {
 		_, err := svc.UpdateStarList(ctx, input)
@@ -232,7 +233,7 @@ func copyListCmd(
 	}
 }
 
-func unstarRepoCmd(ctx context.Context, svc githubapi.Service, repo githubapi.Repository) tea.Cmd {
+func unstarRepoCmd(ctx context.Context, svc githubapi.Service, repo domain.Repository) tea.Cmd {
 	return func() tea.Msg {
 		repoID := repo.ID
 		if repoID == "" {
@@ -252,7 +253,7 @@ func bulkMutateReposCmd(
 	svc githubapi.Service,
 	nwos []string,
 	verb string,
-	allLists []githubapi.StarList,
+	allLists []domain.StarList,
 	addIDs, removeIDs []string,
 ) tea.Cmd {
 	return func() tea.Msg {

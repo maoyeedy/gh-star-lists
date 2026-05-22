@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/app"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
-func makeBenchStarLists(n int) []githubapi.StarList {
-	lists := make([]githubapi.StarList, n)
+func makeBenchStarLists(n int) []domain.StarList {
+	lists := make([]domain.StarList, n)
 	for i := 0; i < n; i++ {
-		lists[i] = githubapi.StarList{
+		lists[i] = domain.StarList{
 			Name:        "list-" + string(rune('A'+i%26)),
 			Description: "bench",
 			LastAddedAt: "2025-01-01T00:00:00Z",
@@ -21,10 +22,10 @@ func makeBenchStarLists(n int) []githubapi.StarList {
 	return lists
 }
 
-func makeBenchRepos(n int) []githubapi.Repository {
-	repos := make([]githubapi.Repository, n)
+func makeBenchRepos(n int) []domain.Repository {
+	repos := make([]domain.Repository, n)
 	for i := 0; i < n; i++ {
-		repos[i] = githubapi.Repository{
+		repos[i] = domain.Repository{
 			NameWithOwner:  "owner/repo-" + string(rune('A'+i%26)),
 			Description:    "bench",
 			IsFork:         i%2 == 0,
@@ -42,9 +43,9 @@ func BenchmarkSortStarLists(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cp := make([]githubapi.StarList, len(lists))
+		cp := make([]domain.StarList, len(lists))
 		copy(cp, lists)
-		sortStarLists(cp, sortKeys, nil, false)
+		app.SortStarLists(cp, sortKeys, nil, false)
 	}
 }
 
@@ -54,13 +55,13 @@ func BenchmarkSortRepositories(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cp := make([]githubapi.Repository, len(repos))
+		cp := make([]domain.Repository, len(repos))
 		copy(cp, repos)
-		sortRepositories(cp, sortKeys, nil, true)
+		app.SortRepositories(cp, sortKeys, nil, true)
 	}
 }
 
-func makeBenchReposForSearch(n int) []githubapi.Repository {
+func makeBenchReposForSearch(n int) []domain.Repository {
 	langs := []string{"Go", "Rust", "Python", "TypeScript", "C++"}
 	descs := []string{
 		"web framework with routing",
@@ -69,9 +70,9 @@ func makeBenchReposForSearch(n int) []githubapi.Repository {
 		"static site generator",
 		"machine learning toolkit",
 	}
-	repos := make([]githubapi.Repository, n)
+	repos := make([]domain.Repository, n)
 	for i := range repos {
-		repos[i] = githubapi.Repository{
+		repos[i] = domain.Repository{
 			ID:            fmt.Sprintf("R_%d", i),
 			NameWithOwner: fmt.Sprintf("owner%d/repo-%d", i%500, i),
 			Description:   descs[i%len(descs)],
@@ -97,8 +98,8 @@ func BenchmarkSortStarListsMultiKey(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cp := make([]githubapi.StarList, len(lists))
+		cp := make([]domain.StarList, len(lists))
 		copy(cp, lists)
-		sortStarLists(cp, sortKeys, nil, false)
+		app.SortStarLists(cp, sortKeys, nil, false)
 	}
 }

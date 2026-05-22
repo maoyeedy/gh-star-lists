@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func (m model) renderListPane(w, h int) string {
@@ -91,13 +92,18 @@ func (m model) renderListPane(w, h int) string {
 	const cursorWidth = 2 // "> " or "  "
 	start := m.listOffset
 	end := min(start+h, len(m.displayedLists))
-	for i := start; i < end; i++ {
-		l := m.displayedLists[i]
-		cursor := "  "
-		isCursor := i == m.listCursor
 
-		// Format count right-side.
-		countRaw := fmt.Sprintf("%d", l.RepoCount)
+	// Convert to ListRow for rendering with pre-computed fields.
+	listRows := make([]domain.ListRow, end-start)
+	for j := 0; j < end-start; j++ {
+		listRows[j] = listToRow(m.displayedLists[start+j])
+	}
+
+	for i, row := range listRows {
+		cursor := "  "
+		isCursor := start+i == m.listCursor
+
+		countRaw := row.RepoCountStr
 		countStyled := stylePaneSubtitle.Render(countRaw)
 		countW := lipgloss.Width(countRaw)
 
@@ -107,7 +113,7 @@ func (m model) renderListPane(w, h int) string {
 			maxNameW = 1
 		}
 
-		name := l.Name
+		name := row.Name
 		nameW := lipgloss.Width(name)
 		if nameW > maxNameW {
 			// Truncate with ellipsis.
@@ -129,18 +135,29 @@ func (m model) renderListPane(w, h int) string {
 			}
 		}
 
-		row := cursor + name
-		rowW := lipgloss.Width(row)
+		rendered := cursor + name
+		rowW := lipgloss.Width(rendered)
 		space := w - rowW - countW
 		if space < 1 {
 			space = 1
 		}
-		out = append(out, row+strings.Repeat(" ", space)+countStyled)
+		out = append(out, rendered+strings.Repeat(" ", space)+countStyled)
 	}
 	for len(out) < totalH {
 		out = append(out, "")
 	}
 	return strings.Join(out, "\n")
+}
+
+// listToRow converts a domain.StarList to a domain.ListRow for rendering.
+func listToRow(list domain.StarList) domain.ListRow {
+	return domain.ListRow{
+		RepoCountStr: fmt.Sprintf("%d", list.RepoCount),
+		Name:         list.Name,
+		ID:           list.ID,
+		RepoCount:    list.RepoCount,
+		URL:          list.URL,
+	}
 }
 
 // starGlyph is the Unicode star character (U+2605) used in star count display.

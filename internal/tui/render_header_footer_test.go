@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestFooterCoreHintsOnly(t *testing.T) {
@@ -45,8 +45,8 @@ func TestHeaderPriorityTruncation(t *testing.T) {
 	m.height = 24
 	// Give it a very long focused list name.
 	longName := "this-is-a-very-long-list-name-that-exceeds-the-terminal-width"
-	fl := githubapi.StarList{ID: "UL_1", Name: longName, RepoCount: 5}
-	m.lists = []githubapi.StarList{fl}
+	fl := domain.StarList{ID: "UL_1", Name: longName, RepoCount: 5}
+	m.lists = []domain.StarList{fl}
 	m.focusedList = &m.lists[0]
 	// Set a non-default sort so sortLabel would appear if there is room.
 	m.sortLists = sortListsName // produces "name" label

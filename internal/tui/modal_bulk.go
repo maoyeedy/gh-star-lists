@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -20,7 +21,7 @@ func newBulkAddModal(
 	ctx context.Context,
 	svc githubapi.Service,
 	nwos []string,
-	allLists []githubapi.StarList,
+	allLists []domain.StarList,
 ) *modal {
 	mo := &modal{
 		kind:    modalPickList,
@@ -48,7 +49,7 @@ func newBulkRemoveModal(
 	ctx context.Context,
 	svc githubapi.Service,
 	nwos []string,
-	allLists []githubapi.StarList,
+	allLists []domain.StarList,
 	fromListID string,
 ) *modal {
 	mo := &modal{
@@ -72,10 +73,10 @@ func newBulkMoveModal(
 	ctx context.Context,
 	svc githubapi.Service,
 	nwos []string,
-	allLists []githubapi.StarList,
+	allLists []domain.StarList,
 	fromListID string,
 ) *modal {
-	filtered := make([]githubapi.StarList, 0, len(allLists))
+	filtered := make([]domain.StarList, 0, len(allLists))
 	for _, l := range allLists {
 		if l.ID != fromListID {
 			filtered = append(filtered, l)

@@ -4,15 +4,20 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type lazyFakeService struct {
 	listCalls int
 }
 
-func (f *lazyFakeService) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
+func (f *lazyFakeService) ListStarLists(
+	context.Context,
+	...domain.ListOptions,
+) ([]domain.StarList, error) {
 	f.listCalls++
-	return []StarList{
+	return []domain.StarList{
 		{Name: "Tools", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/tools"},
 	}, nil
 }
@@ -20,20 +25,20 @@ func (f *lazyFakeService) ListStarLists(context.Context, ...ListOptions) ([]Star
 func (f *lazyFakeService) ListRepositories(
 	context.Context,
 	string,
-	...ListOptions,
-) ([]Repository, error) {
+	...domain.ListOptions,
+) ([]domain.Repository, error) {
 	return nil, nil
 }
 
 func (f *lazyFakeService) ListStarredRepositories(
 	context.Context,
-	...ListOptions,
-) ([]Repository, error) {
+	...domain.ListOptions,
+) ([]domain.Repository, error) {
 	return nil, nil
 }
 
-func (f *lazyFakeService) GetRepository(context.Context, string) (Repository, error) {
-	return Repository{}, nil
+func (f *lazyFakeService) GetRepository(context.Context, string) (domain.Repository, error) {
+	return domain.Repository{}, nil
 }
 
 func (f *lazyFakeService) GetRepositoryMemberships(
@@ -43,12 +48,18 @@ func (f *lazyFakeService) GetRepositoryMemberships(
 	return "", nil, nil
 }
 
-func (f *lazyFakeService) CreateStarList(context.Context, StarListInput) (StarList, error) {
-	return StarList{}, nil
+func (f *lazyFakeService) CreateStarList(
+	context.Context,
+	domain.StarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{}, nil
 }
 
-func (f *lazyFakeService) UpdateStarList(context.Context, UpdateStarListInput) (StarList, error) {
-	return StarList{}, nil
+func (f *lazyFakeService) UpdateStarList(
+	context.Context,
+	domain.UpdateStarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{}, nil
 }
 
 func (f *lazyFakeService) DeleteStarList(context.Context, string) error {

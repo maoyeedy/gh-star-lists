@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -25,204 +28,206 @@ func newGraphQLService(client graphQLDoer, pageSize int, host ...string) *graphQ
 
 func (s *graphQLService) ListStarLists(
 	ctx context.Context,
-	options ...ListOptions,
-) ([]StarList, error) {
+	options ...domain.ListOptions,
+) ([]domain.StarList, error) {
 	limit := limitFromOptions(options)
-	lists := make([]StarList, 0, s.pageSize)
-	var endCursor any
 
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		var result listStarListsResponse
-		variables := map[string]any{
-			"endCursor": endCursor,
-			"first":     pageFirst(s.pageSize, limit, len(lists)),
-		}
-		if err := s.client.DoWithContext(ctx, listStarListsQuery, variables, &result); err != nil {
-			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
-		}
-
-		for _, node := range result.Viewer.Lists.Nodes {
-			repoCount := 0
-			if node.Items != nil {
-				repoCount = node.Items.TotalCount
+	nodes, err := Pager(ctx, s.pageSize, limit,
+		func(endCursor any, first int) ([]starListNode, pageInfo, error) {
+			var result listStarListsResponse
+			variables := map[string]any{
+				"endCursor": endCursor,
+				"first":     first,
 			}
-			lists = append(lists, StarList{
-				Name:            node.Name,
-				Description:     stringValue(node.Description),
-				LastAddedAt:     stringValue(node.LastAddedAt),
-				IsPrivate:       node.IsPrivate,
-				ID:              node.ID,
-				RepoCount:       repoCount,
-				URL:             listURL(s.host, node.User.Login, node.Slug),
-				NormName:        strings.ToLower(strings.TrimSpace(node.Name)),
-				NormDescription: strings.ToLower(strings.TrimSpace(stringValue(node.Description))),
-			})
-			if limitReached(limit, len(lists)) {
-				return lists, nil
+			if err := s.client.DoWithContext(
+				ctx,
+				listStarListsQuery,
+				variables,
+				&result,
+			); err != nil {
+				return nil, pageInfo{}, fmt.Errorf(
+					"GitHub GraphQL request failed: %w",
+					normalizeError(err),
+				)
 			}
-		}
-		if !result.Viewer.Lists.PageInfo.HasNextPage {
-			return lists, nil
-		}
-		endCursor = stringValue(result.Viewer.Lists.PageInfo.EndCursor)
+			pi := result.Viewer.Lists.PageInfo
+			return result.Viewer.Lists.Nodes, pi, nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
+
+	lists := make([]domain.StarList, 0, len(nodes))
+	for _, node := range nodes {
+		lists = append(lists, s.starListFromNode(node))
+	}
+	return lists, nil
 }
 
 func (s *graphQLService) ListRepositories(
 	ctx context.Context,
 	listID string,
-	options ...ListOptions,
-) ([]Repository, error) {
+	options ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	limit := limitFromOptions(options)
 	withTopics := withTopicsFromOptions(options)
-	repositories := make([]Repository, 0, s.pageSize)
-	var endCursor any
 
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		var result listRepositoriesResponse
-		variables := map[string]any{
-			"id":         listID,
-			"endCursor":  endCursor,
-			"first":      pageFirst(s.pageSize, limit, len(repositories)),
-			"withTopics": withTopics,
-		}
-		if err := s.client.DoWithContext(
-			ctx,
-			listRepositoriesQuery,
-			variables,
-			&result,
-		); err != nil {
-			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
-		}
-		if result.Node == nil || result.Node.Typename != "UserList" || result.Node.Items == nil {
-			return nil, ErrInaccessibleList
-		}
-
-		for _, node := range result.Node.Items.Nodes {
-			if node == nil || node.Typename != "Repository" || node.NameWithOwner == "" {
-				continue
+	nodes, err := Pager(ctx, s.pageSize, limit,
+		func(endCursor any, first int) ([]*repositoryItemNode, pageInfo, error) {
+			var result listRepositoriesResponse
+			variables := map[string]any{
+				"id":         listID,
+				"endCursor":  endCursor,
+				"first":      first,
+				"withTopics": withTopics,
 			}
-			repositories = append(repositories, Repository{
-				ID:                node.ID,
-				NameWithOwner:     node.NameWithOwner,
-				Description:       stringValue(node.Description),
-				IsFork:            node.IsFork,
-				IsArchived:        node.IsArchived,
-				StargazerCount:    node.StargazerCount,
-				PushedAt:          stringValue(node.PushedAt),
-				URL:               node.URL,
-				Language:          node.PrimaryLanguage.OrEmpty(),
-				License:           node.LicenseInfo.OrEmpty(),
-				Topics:            node.RepositoryTopics.Names(),
-				NormNameWithOwner: strings.ToLower(strings.TrimSpace(node.NameWithOwner)),
-				NormDescription: strings.ToLower(
-					strings.TrimSpace(stringValue(node.Description)),
-				),
-				NormLanguage: strings.ToLower(
-					strings.TrimSpace(node.PrimaryLanguage.OrEmpty()),
-				),
-			})
-			if limitReached(limit, len(repositories)) {
-				return repositories, nil
+			if err := s.client.DoWithContext(
+				ctx,
+				listRepositoriesQuery,
+				variables,
+				&result,
+			); err != nil {
+				return nil, pageInfo{}, fmt.Errorf(
+					"GitHub GraphQL request failed: %w",
+					normalizeError(err),
+				)
 			}
-		}
-		if !result.Node.Items.PageInfo.HasNextPage {
-			return repositories, nil
-		}
-		endCursor = stringValue(result.Node.Items.PageInfo.EndCursor)
+			if result.Node == nil || result.Node.Typename != "UserList" ||
+				result.Node.Items == nil {
+				if endCursor == nil {
+					return nil, pageInfo{}, ErrInaccessibleList
+				}
+				// Later page with nil Node/Items: treat as end of pagination.
+				return nil, pageInfo{HasNextPage: false}, nil
+			}
+
+			valid := make([]*repositoryItemNode, 0, len(result.Node.Items.Nodes))
+			for _, node := range result.Node.Items.Nodes {
+				if node != nil && node.Typename == "Repository" && node.NameWithOwner != "" {
+					valid = append(valid, node)
+				}
+			}
+
+			pi := result.Node.Items.PageInfo
+			return valid, pi, nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
+
+	repositories := make([]domain.Repository, 0, len(nodes))
+	for _, node := range nodes {
+		repositories = append(repositories, domain.Repository{
+			ID:                node.ID,
+			NameWithOwner:     node.NameWithOwner,
+			Description:       stringValue(node.Description),
+			IsFork:            node.IsFork,
+			IsArchived:        node.IsArchived,
+			StargazerCount:    node.StargazerCount,
+			PushedAt:          stringValue(node.PushedAt),
+			URL:               node.URL,
+			Language:          node.PrimaryLanguage.OrEmpty(),
+			License:           node.LicenseInfo.OrEmpty(),
+			Topics:            node.RepositoryTopics.Names(),
+			NormNameWithOwner: strings.ToLower(strings.TrimSpace(node.NameWithOwner)),
+			NormDescription: strings.ToLower(
+				strings.TrimSpace(stringValue(node.Description)),
+			),
+			NormLanguage: strings.ToLower(
+				strings.TrimSpace(node.PrimaryLanguage.OrEmpty()),
+			),
+		})
+	}
+	return repositories, nil
 }
 
 func (s *graphQLService) ListStarredRepositories(
 	ctx context.Context,
-	options ...ListOptions,
-) ([]Repository, error) {
+	options ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	limit := limitFromOptions(options)
 	withTopics := withTopicsFromOptions(options)
-	repositories := make([]Repository, 0, s.pageSize)
-	var endCursor any
 
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		var result listStarredRepositoriesResponse
-		variables := map[string]any{
-			"endCursor":  endCursor,
-			"first":      pageFirst(s.pageSize, limit, len(repositories)),
-			"withTopics": withTopics,
-		}
-		if err := s.client.DoWithContext(
-			ctx,
-			listStarredRepositoriesQuery,
-			variables,
-			&result,
-		); err != nil {
-			return nil, fmt.Errorf("GitHub GraphQL request failed: %w", err)
-		}
-
-		for _, edge := range result.Viewer.StarredRepositories.Edges {
-			repositories = append(repositories, Repository{
-				ID:                edge.Node.ID,
-				NameWithOwner:     edge.Node.NameWithOwner,
-				Description:       stringValue(edge.Node.Description),
-				IsFork:            edge.Node.IsFork,
-				IsArchived:        edge.Node.IsArchived,
-				StargazerCount:    edge.Node.StargazerCount,
-				PushedAt:          stringValue(edge.Node.PushedAt),
-				URL:               edge.Node.URL,
-				Language:          edge.Node.PrimaryLanguage.OrEmpty(),
-				StarredAt:         edge.StarredAt,
-				License:           edge.Node.LicenseInfo.OrEmpty(),
-				Topics:            edge.Node.RepositoryTopics.Names(),
-				NormNameWithOwner: strings.ToLower(strings.TrimSpace(edge.Node.NameWithOwner)),
-				NormDescription: strings.ToLower(
-					strings.TrimSpace(stringValue(edge.Node.Description)),
-				),
-				NormLanguage: strings.ToLower(
-					strings.TrimSpace(edge.Node.PrimaryLanguage.OrEmpty()),
-				),
-			})
-			if limitReached(limit, len(repositories)) {
-				return repositories, nil
+	edges, err := Pager(ctx, s.pageSize, limit,
+		func(endCursor any, first int) ([]starredRepositoryEdge, pageInfo, error) {
+			var result listStarredRepositoriesResponse
+			variables := map[string]any{
+				"endCursor":  endCursor,
+				"first":      first,
+				"withTopics": withTopics,
 			}
-		}
-		if !result.Viewer.StarredRepositories.PageInfo.HasNextPage {
-			return repositories, nil
-		}
-		endCursor = stringValue(result.Viewer.StarredRepositories.PageInfo.EndCursor)
+			if err := s.client.DoWithContext(
+				ctx,
+				listStarredRepositoriesQuery,
+				variables,
+				&result,
+			); err != nil {
+				return nil, pageInfo{}, fmt.Errorf(
+					"GitHub GraphQL request failed: %w",
+					normalizeError(err),
+				)
+			}
+
+			pi := result.Viewer.StarredRepositories.PageInfo
+			return result.Viewer.StarredRepositories.Edges, pi, nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
+
+	repositories := make([]domain.Repository, 0, len(edges))
+	for _, edge := range edges {
+		repositories = append(repositories, domain.Repository{
+			ID:                edge.Node.ID,
+			NameWithOwner:     edge.Node.NameWithOwner,
+			Description:       stringValue(edge.Node.Description),
+			IsFork:            edge.Node.IsFork,
+			IsArchived:        edge.Node.IsArchived,
+			StargazerCount:    edge.Node.StargazerCount,
+			PushedAt:          stringValue(edge.Node.PushedAt),
+			URL:               edge.Node.URL,
+			Language:          edge.Node.PrimaryLanguage.OrEmpty(),
+			StarredAt:         edge.StarredAt,
+			License:           edge.Node.LicenseInfo.OrEmpty(),
+			Topics:            edge.Node.RepositoryTopics.Names(),
+			NormNameWithOwner: strings.ToLower(strings.TrimSpace(edge.Node.NameWithOwner)),
+			NormDescription: strings.ToLower(
+				strings.TrimSpace(stringValue(edge.Node.Description)),
+			),
+			NormLanguage: strings.ToLower(
+				strings.TrimSpace(edge.Node.PrimaryLanguage.OrEmpty()),
+			),
+		})
+	}
+	return repositories, nil
 }
 
 func (s *graphQLService) GetRepository(
 	ctx context.Context,
 	nameWithOwner string,
-) (Repository, error) {
+) (domain.Repository, error) {
 	if err := ctx.Err(); err != nil {
-		return Repository{}, err
+		return domain.Repository{}, err
 	}
 	owner, name, err := parseRepoName(nameWithOwner)
 	if err != nil {
-		return Repository{}, err
+		return domain.Repository{}, err
 	}
 	var result getRepositoryResponse
 	variables := map[string]any{"owner": owner, "name": name, "withTopics": true}
 	if err := s.client.DoWithContext(ctx, getRepositoryQuery, variables, &result); err != nil {
-		return Repository{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+		return domain.Repository{}, fmt.Errorf(
+			"GitHub GraphQL request failed: %w",
+			normalizeError(err),
+		)
 	}
 	if result.Repository == nil || result.Repository.ID == "" {
-		return Repository{}, fmt.Errorf("repository %q not found", nameWithOwner)
+		return domain.Repository{}, fmt.Errorf("repository %q not found", nameWithOwner)
 	}
-	return Repository{
+	return domain.Repository{
 		ID:                result.Repository.ID,
 		NameWithOwner:     result.Repository.NameWithOwner,
 		Description:       stringValue(result.Repository.Description),
@@ -258,7 +263,7 @@ func (s *graphQLService) GetRepositoryID(
 	var result getRepositoryIDResponse
 	variables := map[string]any{"owner": owner, "name": name}
 	if err := s.client.DoWithContext(ctx, getRepositoryIDQuery, variables, &result); err != nil {
-		return "", fmt.Errorf("GitHub GraphQL request failed: %w", err)
+		return "", fmt.Errorf("GitHub GraphQL request failed: %w", normalizeError(err))
 	}
 	if result.Repository == nil || result.Repository.ID == "" {
 		return "", fmt.Errorf("repository %q not found", nameWithOwner)
@@ -286,7 +291,23 @@ func (s *graphQLService) GetRepositoryMemberships(
 	for _, list := range lists {
 		list := list
 		group.Go(func() error {
-			repos, err := s.ListRepositories(groupCtx, list.ID)
+			var repos []domain.Repository
+			var err error
+			for attempt := 0; attempt < 3; attempt++ {
+				repos, err = s.ListRepositories(groupCtx, list.ID)
+				if err == nil || !isTransientGraphQLError(err) {
+					break
+				}
+				if attempt < 2 {
+					delay := retryAfterDelay(err)
+					if delay == 0 {
+						delay = backoffWithJitter(time.Second, attempt)
+					}
+					if sleepErr := sleepWithContext(groupCtx, delay); sleepErr != nil {
+						return sleepErr
+					}
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -318,10 +339,10 @@ func (s *graphQLService) GetRepositoryMemberships(
 
 func (s *graphQLService) CreateStarList(
 	ctx context.Context,
-	input StarListInput,
-) (StarList, error) {
+	input domain.StarListInput,
+) (domain.StarList, error) {
 	if err := ctx.Err(); err != nil {
-		return StarList{}, err
+		return domain.StarList{}, err
 	}
 	var result createStarListResponse
 	variables := map[string]any{
@@ -330,17 +351,20 @@ func (s *graphQLService) CreateStarList(
 		"private":     input.Private,
 	}
 	if err := s.client.DoWithContext(ctx, createStarListMutation, variables, &result); err != nil {
-		return StarList{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+		return domain.StarList{}, fmt.Errorf(
+			"GitHub GraphQL request failed: %w",
+			normalizeError(err),
+		)
 	}
 	return s.starListFromNode(result.CreateUserList.List), nil
 }
 
 func (s *graphQLService) UpdateStarList(
 	ctx context.Context,
-	input UpdateStarListInput,
-) (StarList, error) {
+	input domain.UpdateStarListInput,
+) (domain.StarList, error) {
 	if err := ctx.Err(); err != nil {
-		return StarList{}, err
+		return domain.StarList{}, err
 	}
 	var result updateStarListResponse
 	variables := map[string]any{
@@ -350,7 +374,10 @@ func (s *graphQLService) UpdateStarList(
 		"private":     input.Private,
 	}
 	if err := s.client.DoWithContext(ctx, updateStarListMutation, variables, &result); err != nil {
-		return StarList{}, fmt.Errorf("GitHub GraphQL request failed: %w", err)
+		return domain.StarList{}, fmt.Errorf(
+			"GitHub GraphQL request failed: %w",
+			normalizeError(err),
+		)
 	}
 	return s.starListFromNode(result.UpdateUserList.List), nil
 }
@@ -392,17 +419,17 @@ func (s *graphQLService) execMutation(
 	}
 	var result map[string]any
 	if err := s.client.DoWithContext(ctx, query, variables, &result); err != nil {
-		return fmt.Errorf("GitHub GraphQL request failed: %w", err)
+		return fmt.Errorf("GitHub GraphQL request failed: %w", normalizeError(err))
 	}
 	return nil
 }
 
-func (s *graphQLService) starListFromNode(node starListNode) StarList {
+func (s *graphQLService) starListFromNode(node starListNode) domain.StarList {
 	repoCount := 0
 	if node.Items != nil {
 		repoCount = node.Items.TotalCount
 	}
-	return StarList{
+	return domain.StarList{
 		Name:            node.Name,
 		Description:     stringValue(node.Description),
 		LastAddedAt:     stringValue(node.LastAddedAt),

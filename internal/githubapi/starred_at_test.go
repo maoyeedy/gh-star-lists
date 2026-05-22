@@ -3,17 +3,19 @@ package githubapi
 import (
 	"context"
 	"testing"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestMergeStarredAtMatchesByIDThenName(t *testing.T) {
 	t.Parallel()
 
-	repos := []Repository{
+	repos := []domain.Repository{
 		{ID: "R_1", NameWithOwner: "Owner/Repo"},
 		{ID: "R_2", NameWithOwner: "owner/second"},
 		{ID: "R_3", NameWithOwner: "owner/preserved", StarredAt: "2026-01-01T00:00:00Z"},
 	}
-	starred := []Repository{
+	starred := []domain.Repository{
 		{ID: "R_1", NameWithOwner: "other/name", StarredAt: "2026-03-01T00:00:00Z"},
 		{NameWithOwner: "OWNER/SECOND", StarredAt: "2026-02-01T00:00:00Z"},
 		{ID: "R_3", NameWithOwner: "owner/preserved", StarredAt: "2026-04-01T00:00:00Z"},
@@ -39,7 +41,7 @@ func TestWithStarredAtSkipsFetchWhenAlreadyPresent(t *testing.T) {
 	t.Parallel()
 
 	svc := &fakeCacheInner{}
-	repos := []Repository{{NameWithOwner: "owner/repo", StarredAt: "2026-03-01T00:00:00Z"}}
+	repos := []domain.Repository{{NameWithOwner: "owner/repo", StarredAt: "2026-03-01T00:00:00Z"}}
 
 	got, err := WithStarredAt(context.Background(), svc, repos)
 	if err != nil {

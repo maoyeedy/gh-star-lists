@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type fakeCacheInner struct {
@@ -12,15 +14,18 @@ type fakeCacheInner struct {
 	reposCalls   map[string]int
 	starredCalls int
 	getRepoCalls int
-	lists        []StarList
-	repos        map[string][]Repository
-	starred      []Repository
-	gotRepo      Repository
+	lists        []domain.StarList
+	repos        map[string][]domain.Repository
+	starred      []domain.Repository
+	gotRepo      domain.Repository
 	listErr      error
 	reposErr     error
 }
 
-func (f *fakeCacheInner) ListStarLists(context.Context, ...ListOptions) ([]StarList, error) {
+func (f *fakeCacheInner) ListStarLists(
+	context.Context,
+	...domain.ListOptions,
+) ([]domain.StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
@@ -28,8 +33,8 @@ func (f *fakeCacheInner) ListStarLists(context.Context, ...ListOptions) ([]StarL
 func (f *fakeCacheInner) ListRepositories(
 	_ context.Context,
 	listID string,
-	_ ...ListOptions,
-) ([]Repository, error) {
+	_ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	if f.reposCalls == nil {
 		f.reposCalls = make(map[string]int)
 	}
@@ -42,8 +47,8 @@ func (f *fakeCacheInner) ListRepositories(
 
 func (f *fakeCacheInner) ListStarredRepositories(
 	_ context.Context,
-	_ ...ListOptions,
-) ([]Repository, error) {
+	_ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	f.starredCalls++
 	return f.starred, nil
 }
@@ -51,12 +56,12 @@ func (f *fakeCacheInner) ListStarredRepositories(
 func (f *fakeCacheInner) GetRepository(
 	_ context.Context,
 	nameWithOwner string,
-) (Repository, error) {
+) (domain.Repository, error) {
 	f.getRepoCalls++
 	if f.gotRepo.NameWithOwner != "" {
 		return f.gotRepo, nil
 	}
-	return Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
+	return domain.Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
 }
 
 func (f *fakeCacheInner) GetRepositoryMemberships(
@@ -66,15 +71,18 @@ func (f *fakeCacheInner) GetRepositoryMemberships(
 	return "R_1", nil, nil
 }
 
-func (f *fakeCacheInner) CreateStarList(_ context.Context, input StarListInput) (StarList, error) {
-	return StarList{Name: input.Name, ID: "UL_new"}, nil
+func (f *fakeCacheInner) CreateStarList(
+	_ context.Context,
+	input domain.StarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{Name: input.Name, ID: "UL_new"}, nil
 }
 
 func (f *fakeCacheInner) UpdateStarList(
 	_ context.Context,
-	input UpdateStarListInput,
-) (StarList, error) {
-	return StarList{Name: input.Name, ID: input.ID}, nil
+	input domain.UpdateStarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{Name: input.Name, ID: input.ID}, nil
 }
 
 func (f *fakeCacheInner) DeleteStarList(context.Context, string) error {
@@ -95,10 +103,10 @@ func (f *fakeCacheInner) RemoveStar(context.Context, string) error {
 
 func TestCacheServiceHits(t *testing.T) {
 	inner := &fakeCacheInner{
-		lists: []StarList{
+		lists: []domain.StarList{
 			{Name: "test", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/test"},
 		},
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "owner/repo"}},
 		},
 	}
@@ -164,10 +172,10 @@ func TestCacheServiceRemoveStarInvalidatesListRepositories(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	inner := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{ID: "R_1", NameWithOwner: "owner/stale"}},
 		},
-		starred: []Repository{{ID: "R_1", NameWithOwner: "owner/stale"}},
+		starred: []domain.Repository{{ID: "R_1", NameWithOwner: "owner/stale"}},
 	}
 	svc := newCacheService(inner)
 	svc.ttl = 10 * time.Minute
@@ -178,8 +186,8 @@ func TestCacheServiceRemoveStarInvalidatesListRepositories(t *testing.T) {
 	if _, err := svc.ListStarredRepositories(ctx); err != nil {
 		t.Fatalf("first ListStarredRepositories: %v", err)
 	}
-	inner.repos["UL_1"] = []Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
-	inner.starred = []Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
+	inner.repos["UL_1"] = []domain.Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
+	inner.starred = []domain.Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
 
 	if err := svc.RemoveStar(ctx, "R_1"); err != nil {
 		t.Fatalf("RemoveStar: %v", err)
@@ -204,7 +212,7 @@ func TestCacheServiceRemoveStarInvalidatesListRepositories(t *testing.T) {
 
 func TestCacheServiceMisses(t *testing.T) {
 	inner := &fakeCacheInner{
-		lists: []StarList{
+		lists: []domain.StarList{
 			{Name: "test", ID: "UL_1", URL: "https://github.com/stars/testuser/lists/test"},
 		},
 	}
@@ -234,7 +242,7 @@ func TestCacheServiceMisses(t *testing.T) {
 
 func TestCacheServicePerListID(t *testing.T) {
 	inner := &fakeCacheInner{
-		repos: map[string][]Repository{
+		repos: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "owner/one"}},
 			"UL_2": {{NameWithOwner: "owner/two"}},
 		},
@@ -278,7 +286,7 @@ func TestCacheServicePerListID(t *testing.T) {
 
 func TestCacheServiceListStarredRepositoriesCaches(t *testing.T) {
 	inner := &fakeCacheInner{
-		starred: []Repository{{NameWithOwner: "owner/starred"}},
+		starred: []domain.Repository{{NameWithOwner: "owner/starred"}},
 	}
 	svc := newCacheService(inner)
 	svc.ttl = 10 * time.Minute
@@ -338,7 +346,7 @@ func TestCacheServiceErrorPropagation(t *testing.T) {
 
 func TestCacheServiceGetRepositoryCaches(t *testing.T) {
 	inner := &fakeCacheInner{
-		gotRepo: Repository{ID: "R_1", NameWithOwner: "owner/repo", Language: "Go"},
+		gotRepo: domain.Repository{ID: "R_1", NameWithOwner: "owner/repo", Language: "Go"},
 	}
 	svc := newCacheService(inner)
 	svc.ttl = 10 * time.Minute
@@ -381,7 +389,7 @@ func TestCacheServiceGetRepositoryCaches(t *testing.T) {
 
 func TestCacheServiceGetRepositoryExpiry(t *testing.T) {
 	inner := &fakeCacheInner{
-		gotRepo: Repository{ID: "R_1", NameWithOwner: "owner/repo"},
+		gotRepo: domain.Repository{ID: "R_1", NameWithOwner: "owner/repo"},
 	}
 	svc := newCacheService(inner)
 	svc.ttl = 1 * time.Millisecond
@@ -405,7 +413,7 @@ func TestCacheServiceGetRepositoryExpiry(t *testing.T) {
 
 func TestCacheServiceGetRepositoryInvalidatedByUpdateRepositoryLists(t *testing.T) {
 	inner := &fakeCacheInner{
-		gotRepo: Repository{ID: "R_1", NameWithOwner: "owner/repo"},
+		gotRepo: domain.Repository{ID: "R_1", NameWithOwner: "owner/repo"},
 	}
 	svc := newCacheService(inner)
 	svc.ttl = 10 * time.Minute

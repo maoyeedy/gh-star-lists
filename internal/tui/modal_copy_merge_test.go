@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestCopyListModalOpens(t *testing.T) {
@@ -68,7 +68,7 @@ func TestCopyMergeNoOpInRepoPane(t *testing.T) {
 func TestCopyListCmd(t *testing.T) {
 	t.Parallel()
 	svc := &copyMergeFakeService{
-		reposResult: []githubapi.Repository{
+		reposResult: []domain.Repository{
 			{NameWithOwner: "owner/repo1"},
 		},
 		membershipsRepoID:  "R_1",
@@ -107,7 +107,7 @@ func TestCopyListCmd(t *testing.T) {
 func TestMergeListCmdDeletesSource(t *testing.T) {
 	t.Parallel()
 	svc := &copyMergeFakeService{
-		reposResult: []githubapi.Repository{
+		reposResult: []domain.Repository{
 			{NameWithOwner: "owner/repo1"},
 		},
 		membershipsRepoID:  "R_1",

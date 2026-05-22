@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestViewportPgDnMovesReposCursorByPageHeight(t *testing.T) {
@@ -135,9 +135,9 @@ func TestViewportCursorVisibleInRender(t *testing.T) {
 func TestViewportListPanePgDn(t *testing.T) {
 	t.Parallel()
 	n := 20
-	lists := make([]githubapi.StarList, n)
+	lists := make([]domain.StarList, n)
 	for i := 0; i < n; i++ {
-		lists[i] = githubapi.StarList{
+		lists[i] = domain.StarList{
 			ID:   fmt.Sprintf("UL_%d", i),
 			Name: fmt.Sprintf("list-%02d", i),
 		}

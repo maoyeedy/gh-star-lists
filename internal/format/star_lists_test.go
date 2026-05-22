@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 type errWriter struct{}
@@ -20,7 +20,7 @@ func (errWriter) Write([]byte) (int, error) {
 func TestWriteStarListsTSVIncludesRepoCount(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{
 			Name:        "Go Tools",
 			Description: "CLI helpers",
@@ -53,7 +53,7 @@ func TestWriteStarListsTSVIncludesRepoCount(t *testing.T) {
 func TestWriteStarListsJSONUsesLowerCamelCaseArray(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{
 			Name:        "Go Tools",
 			Description: "CLI helpers",
@@ -112,7 +112,7 @@ func TestWriteStarListsEmptyOutputs(t *testing.T) {
 func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{
 			Name:        "Go Tools",
 			Description: "CLI helpers",
@@ -145,7 +145,7 @@ func TestWriteStarListsHumanIsDeterministic(t *testing.T) {
 func TestWriteStarListsPlainPreservesDetailedOutput(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{
 			Name:        "Go Tools",
 			Description: "CLI helpers",
@@ -177,7 +177,7 @@ func TestWriteStarListsPlainPreservesDetailedOutput(t *testing.T) {
 func TestWriteStarListsHumanColorIsOptIn(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{Name: "Go Tools", LastAddedAt: "2024-05-01T12:00:00Z", ID: "UL_1", RepoCount: 5},
 	}
 	options := format.Options{
@@ -208,7 +208,7 @@ func TestWriteStarListsHumanColorIsOptIn(t *testing.T) {
 func TestWriteStarListsHumanDateFallbacks(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{Name: "Bad Date", LastAddedAt: "not-a-date", ID: "UL_bad", RepoCount: 1},
 		{Name: "Future", LastAddedAt: "2026-06-01T00:00:00Z", ID: "UL_future", RepoCount: 2},
 		{Name: "Missing", ID: "UL_missing", RepoCount: 0},
@@ -235,7 +235,7 @@ func TestWriteStarListsHumanDateFallbacks(t *testing.T) {
 func TestWriteStarListsReturnsWriterErrors(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{{Name: "Go Tools", ID: "UL_1", RepoCount: 5}}
+	lists := []domain.StarList{{Name: "Go Tools", ID: "UL_1", RepoCount: 5}}
 	if err := format.WriteStarLists(errWriter{}, format.OutputHuman, lists); err == nil {
 		t.Fatal("WriteStarLists human returned nil error for failing writer")
 	}
@@ -256,7 +256,7 @@ func TestWriteStarListsReturnsWriterErrors(t *testing.T) {
 func TestWriteStarListsFZFColumnOrder(t *testing.T) {
 	t.Parallel()
 
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{
 			Name:        "Go Tools",
 			Description: "CLI helpers",

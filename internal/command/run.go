@@ -13,14 +13,19 @@ import (
 	"github.com/cli/go-gh/v2/pkg/browser"
 	"github.com/cli/go-gh/v2/pkg/prompter"
 	ghterm "github.com/cli/go-gh/v2/pkg/term"
+	"github.com/maoyeedy/gh-star-lists/internal/app"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 const (
-	ExitSuccess = 0
-	ExitFailure = 1
-	ExitUsage   = 2
+	ExitSuccess     = 0
+	ExitFailure     = 1
+	ExitUsage       = 2
+	ExitAuth        = 3
+	ExitNotFound    = 4
+	ExitRateLimited = 5
 )
 
 var openBrowser = func(url string) error {
@@ -95,6 +100,22 @@ func ConfirmActionForTest(fn func(string) (bool, error)) func(string) (bool, err
 	prev := confirmAction
 	confirmAction = fn
 	return prev
+}
+
+func toAppFilters(filters []Filter) []app.Filter {
+	out := make([]app.Filter, len(filters))
+	for i, f := range filters {
+		out[i] = app.Filter{Key: f.Key, Value: f.Value}
+	}
+	return out
+}
+
+func toAppSortTerms(terms []SortTerm) []app.SortTerm {
+	out := make([]app.SortTerm, len(terms))
+	for i, t := range terms {
+		out[i] = app.SortTerm{Key: t.Key, Desc: t.Desc}
+	}
+	return out
 }
 
 func Run(
@@ -230,14 +251,16 @@ func RunWithOptions(
 	}
 	switch parsed.Action {
 	case ActionList:
-		lists, err := service.ListStarLists(ctx, directListOptions(parsed, false))
+		appSvc := app.NewStarListService(service)
+		lists, err := appSvc.ListLists(ctx, app.ListListsOptions{
+			Filters:   toAppFilters(parsed.Filters),
+			SortKeys:  parsed.SortKeys,
+			SortTerms: toAppSortTerms(parsed.SortTerms),
+			SortDesc:  parsed.SortDesc,
+			Limit:     parsed.Limit,
+		})
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)
-		}
-		lists = filterStarLists(lists, parsed.Filters)
-		sortStarLists(lists, parsed.SortKeys, parsed.SortTerms, parsed.SortDesc)
-		if parsed.Limit > 0 && len(lists) > parsed.Limit {
-			lists = lists[:parsed.Limit]
 		}
 		if err := format.WriteStarListsWithOptions(stdout, outputOptions, lists); err != nil {
 			return writeFailure(stderr, fmt.Errorf("failed to write output: %w", err))
@@ -267,11 +290,21 @@ func RunWithOptions(
 			}
 			return ExitSuccess
 		}
-		repos, err := fetchReposForAction(ctx, service, parsed)
+		appSvc := app.NewStarListService(service)
+		repos, err := appSvc.ListRepos(ctx, parsed.ListID, app.ListReposOptions{
+			All:       parsed.All,
+			Unlisted:  parsed.Unlisted,
+			Filters:   toAppFilters(parsed.Filters),
+			SortKeys:  parsed.SortKeys,
+			SortTerms: toAppSortTerms(parsed.SortTerms),
+			SortDesc:  parsed.SortDesc,
+			Limit:     parsed.Limit,
+			Search:    parsed.Search,
+			Topics:    topicsNeeded(parsed),
+		})
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionRepos, parsed.ListID, err, diagnosticOptions)
 		}
-		repos = finalizeRepositories(repos, parsed)
 		if err := format.WriteRepositoriesWithOptions(stdout, outputOptions, repos); err != nil {
 			return writeFailure(
 				stderr,
@@ -291,7 +324,8 @@ func RunWithOptions(
 			_, _ = fmt.Fprintf(stdout, "Would create Star List %q.\n", parsed.Name)
 			return ExitSuccess
 		}
-		list, err := service.CreateStarList(ctx, githubapi.StarListInput{
+		appSvc := app.NewStarListService(service)
+		list, err := appSvc.CreateList(ctx, domain.StarListInput{
 			Name:        parsed.Name,
 			Description: parsed.Description,
 			Private:     parsed.Private,
@@ -309,7 +343,8 @@ func RunWithOptions(
 		)
 	case ActionEdit:
 		// Fetch current list first so ensureEditInputs can seed prompt defaults.
-		lists, err := service.ListStarLists(ctx)
+		appSvc := app.NewStarListService(service)
+		lists, err := appSvc.Service().ListStarLists(ctx)
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
 		}
@@ -339,7 +374,7 @@ func RunWithOptions(
 		if parsed.PrivateSet {
 			private = &parsed.Private
 		}
-		list, err := service.UpdateStarList(ctx, githubapi.UpdateStarListInput{
+		list, err := appSvc.UpdateList(ctx, domain.UpdateStarListInput{
 			ID:          resolvedID,
 			Name:        parsed.Name,
 			Description: parsed.Description,
@@ -373,7 +408,8 @@ func RunWithOptions(
 			_, _ = fmt.Fprintf(stdout, "Would delete Star List %q.\n", listName)
 			return ExitSuccess
 		}
-		if err := service.DeleteStarList(ctx, rl.ID); err != nil {
+		appSvc := app.NewStarListService(service)
+		if err := appSvc.DeleteList(ctx, rl.ID); err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.ListID, err, diagnosticOptions)
 		}
 		_, _ = fmt.Fprintln(
@@ -428,11 +464,12 @@ func RunWithOptions(
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
 		}
+		appSvc := app.NewStarListService(service)
 		return runRepoListMutation(
 			ctx,
 			stdout,
 			stderr,
-			service,
+			appSvc,
 			parsed,
 			fetchedLists,
 			outputOptions,
@@ -476,10 +513,12 @@ func RunWithOptions(
 				return writeUsageFailure(stderr, err, diagnosticOptions)
 			}
 		}
-		return runListCopy(ctx, stdout, stderr, service, parsed, fetchedLists, outputOptions)
+		appSvc := app.NewStarListService(service)
+		return runListCopy(ctx, stdout, stderr, appSvc, parsed, fetchedLists, outputOptions)
 	case ActionUnstar:
 		// Resolve first so the confirmation prompt can name the target.
-		repo, err := service.GetRepository(ctx, parsed.RepoName)
+		appSvc := app.NewStarListService(service)
+		repo, err := appSvc.GetRepository(ctx, parsed.RepoName)
 		if err != nil {
 			return writeRuntimeFailure(
 				stderr,
@@ -496,7 +535,7 @@ func RunWithOptions(
 			_, _ = fmt.Fprintf(stdout, "Would unstar %s.\n", repo.NameWithOwner)
 			return ExitSuccess
 		}
-		if err := service.RemoveStar(ctx, repo.ID); err != nil {
+		if err := appSvc.RemoveStar(ctx, repo.ID); err != nil {
 			return writeRuntimeFailure(
 				stderr,
 				parsed.Action,
@@ -546,20 +585,20 @@ func sameStringSet(before []string, after []string) bool {
 	return true
 }
 
-func displayListName(list githubapi.StarList, fallback string) string {
+func displayListName(list domain.StarList, fallback string) string {
 	if list.Name != "" {
 		return list.Name
 	}
 	return fallback
 }
 
-func listByRaw(lists []githubapi.StarList, raw string) (githubapi.StarList, bool) {
+func listByRaw(lists []domain.StarList, raw string) (domain.StarList, bool) {
 	for _, l := range lists {
 		if strings.EqualFold(l.Name, raw) || l.ID == raw {
 			return l, true
 		}
 	}
-	return githubapi.StarList{}, false
+	return domain.StarList{}, false
 }
 
 func actionNeedsFrom(a Action) bool {
@@ -587,8 +626,8 @@ func missingSelectorError(a Action, needFrom, needTo bool) error {
 	}
 }
 
-func pickList(lists []githubapi.StarList, label, excludeID string) (string, error) {
-	var filtered []githubapi.StarList
+func pickList(lists []domain.StarList, label, excludeID string) (string, error) {
+	var filtered []domain.StarList
 	var choices []string
 	nameCount := make(map[string]int)
 	for _, l := range lists {
@@ -639,24 +678,6 @@ func resolveList(ctx context.Context, service githubapi.Service, raw string) (re
 		return resolvedList{ID: l.ID, URL: l.URL, Name: l.Name}, nil
 	}
 	return resolvedList{ID: raw}, nil
-}
-
-func resolveListID(ctx context.Context, service githubapi.Service, raw string) (string, error) {
-	r, err := resolveList(ctx, service, raw)
-	if err != nil {
-		return "", err
-	}
-	return r.ID, nil
-}
-
-func directListOptions(parsed Parsed, withTopics bool) githubapi.ListOptions {
-	opts := githubapi.ListOptions{WithTopics: withTopics}
-	if parsed.Limit == 0 || len(parsed.Filters) > 0 || parsed.Search != "" ||
-		len(parsed.SortKeys) > 0 {
-		return opts
-	}
-	opts.Limit = parsed.Limit
-	return opts
 }
 
 func argsContainNoColor(args []string) bool {

@@ -9,20 +9,22 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type diskCacheEntry struct {
-	Version int          `json:"version"`
-	Expiry  time.Time    `json:"expiry"`
-	Lists   []StarList   `json:"lists,omitempty"`
-	Repos   []Repository `json:"repos,omitempty"`
-	Repo    *Repository  `json:"repo,omitempty"`
+	Version int                 `json:"version"`
+	Expiry  time.Time           `json:"expiry"`
+	Lists   []domain.StarList   `json:"lists,omitempty"`
+	Repos   []domain.Repository `json:"repos,omitempty"`
+	Repo    *domain.Repository  `json:"repo,omitempty"`
 }
 
 type diskCacheEntryJSON struct {
 	Version int                   `json:"version"`
 	Expiry  time.Time             `json:"expiry"`
-	Lists   []StarList            `json:"lists,omitempty"`
+	Lists   []domain.StarList     `json:"lists,omitempty"`
 	Repos   []diskCacheRepository `json:"repos,omitempty"`
 	Repo    *diskCacheRepository  `json:"repo,omitempty"`
 }
@@ -69,7 +71,7 @@ func (e *diskCacheEntry) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func repositoriesToDiskCache(repos []Repository) []diskCacheRepository {
+func repositoriesToDiskCache(repos []domain.Repository) []diskCacheRepository {
 	if repos == nil {
 		return nil
 	}
@@ -80,7 +82,7 @@ func repositoriesToDiskCache(repos []Repository) []diskCacheRepository {
 	return out
 }
 
-func repositoryToDiskCachePtr(repo *Repository) *diskCacheRepository {
+func repositoryToDiskCachePtr(repo *domain.Repository) *diskCacheRepository {
 	if repo == nil {
 		return nil
 	}
@@ -88,22 +90,22 @@ func repositoryToDiskCachePtr(repo *Repository) *diskCacheRepository {
 	return &out
 }
 
-func repositoryToDiskCache(repo Repository) diskCacheRepository {
+func repositoryToDiskCache(repo domain.Repository) diskCacheRepository {
 	return diskCacheRepository(repo)
 }
 
-func repositoriesFromDiskCache(repos []diskCacheRepository) []Repository {
+func repositoriesFromDiskCache(repos []diskCacheRepository) []domain.Repository {
 	if repos == nil {
 		return nil
 	}
-	out := make([]Repository, len(repos))
+	out := make([]domain.Repository, len(repos))
 	for i, repo := range repos {
 		out[i] = repositoryFromDiskCache(repo)
 	}
 	return out
 }
 
-func repositoryFromDiskCachePtr(repo *diskCacheRepository) *Repository {
+func repositoryFromDiskCachePtr(repo *diskCacheRepository) *domain.Repository {
 	if repo == nil {
 		return nil
 	}
@@ -111,8 +113,8 @@ func repositoryFromDiskCachePtr(repo *diskCacheRepository) *Repository {
 	return &out
 }
 
-func repositoryFromDiskCache(repo diskCacheRepository) Repository {
-	return Repository(repo)
+func repositoryFromDiskCache(repo diskCacheRepository) domain.Repository {
+	return domain.Repository(repo)
 }
 
 // NewDiskCacheService wraps inner with an opt-in disk read cache.

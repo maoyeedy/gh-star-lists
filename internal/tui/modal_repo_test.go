@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestAddRepoModalOpensInRepoPane(t *testing.T) {
@@ -181,7 +181,7 @@ func TestUnstarRepoCmd(t *testing.T) {
 	t.Parallel()
 	svc := &repoMutationFakeService{}
 
-	cmd := unstarRepoCmd(context.Background(), svc, githubapi.Repository{
+	cmd := unstarRepoCmd(context.Background(), svc, domain.Repository{
 		ID:            "R_star_1",
 		NameWithOwner: "owner/repo",
 	})

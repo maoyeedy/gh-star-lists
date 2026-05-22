@@ -18,19 +18,19 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/search"
 )
 
-func makeBenchRepos(n int) []githubapi.Repository {
+func makeBenchRepos(n int) []domain.Repository {
 	langs := []string{"Go", "Python", "TypeScript", "Rust", "Ruby"}
 	normLangs := []string{"go", "python", "typescript", "rust", "ruby"}
-	repos := make([]githubapi.Repository, n)
+	repos := make([]domain.Repository, n)
 	for i := range repos {
 		nwo := fmt.Sprintf("owner/repo-%d", i)
 		desc := fmt.Sprintf("Description for repo %d with some extra text", i)
 		lang := langs[i%len(langs)]
-		repos[i] = githubapi.Repository{
+		repos[i] = domain.Repository{
 			NameWithOwner:     nwo,
 			Description:       desc,
 			Language:          lang,
@@ -43,12 +43,12 @@ func makeBenchRepos(n int) []githubapi.Repository {
 	return repos
 }
 
-func makeBenchLists(n int) []githubapi.StarList {
-	lists := make([]githubapi.StarList, n)
+func makeBenchLists(n int) []domain.StarList {
+	lists := make([]domain.StarList, n)
 	for i := range lists {
 		name := fmt.Sprintf("list-%d", i)
 		desc := fmt.Sprintf("A list about topic %d with data and things", i)
-		lists[i] = githubapi.StarList{
+		lists[i] = domain.StarList{
 			Name:            name,
 			Description:     desc,
 			NormName:        name, // already lowercase

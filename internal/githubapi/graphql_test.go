@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type graphQLCall struct {
@@ -84,7 +86,7 @@ func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
-	want := StarList{
+	want := domain.StarList{
 		Name:        "Tools",
 		Description: "",
 		LastAddedAt: "",
@@ -93,7 +95,7 @@ func TestGraphQLServiceListStarListsNormalizesNullNullableFields(t *testing.T) {
 		NormName:    "tools",
 	}
 	if len(lists) != 1 || lists[0] != want {
-		t.Fatalf("ListStarLists() = %#v, want %#v", lists, []StarList{want})
+		t.Fatalf("ListStarLists() = %#v, want %#v", lists, []domain.StarList{want})
 	}
 }
 
@@ -183,7 +185,7 @@ func TestGraphQLServiceListStarListsFetchesMultiplePages(t *testing.T) {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
 
-	want := []StarList{
+	want := []domain.StarList{
 		{
 			Name:            "Tools",
 			Description:     "Useful CLIs",
@@ -237,7 +239,7 @@ func TestGraphQLServiceListStarListsMapsSinglePage(t *testing.T) {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
 
-	want := []StarList{
+	want := []domain.StarList{
 		{
 			Name:            "Tools",
 			Description:     "Useful CLIs",
@@ -283,7 +285,7 @@ func TestGraphQLServiceListStarListsMapsIsPrivate(t *testing.T) {
 		t.Fatalf("ListStarLists returned error: %v", err)
 	}
 
-	want := []StarList{
+	want := []domain.StarList{
 		{
 			Name:            "Private List",
 			Description:     "Secret",
@@ -337,7 +339,7 @@ func TestGraphQLServiceListRepositoriesMapsMultiplePages(t *testing.T) {
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
 
-	want := []Repository{
+	want := []domain.Repository{
 		{
 			NameWithOwner:     "cli/cli",
 			Description:       "GitHub CLI",
@@ -402,7 +404,7 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 	if err != nil {
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
-	want := Repository{
+	want := domain.Repository{
 		NameWithOwner:     "owner/repo",
 		Description:       "",
 		URL:               "https://github.com/owner/repo",
@@ -413,7 +415,7 @@ func TestGraphQLServiceListRepositoriesNormalizesNullNullableFields(t *testing.T
 		NormNameWithOwner: "owner/repo",
 	}
 	if len(repositories) != 1 || !reflect.DeepEqual(repositories[0], want) {
-		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
+		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []domain.Repository{want})
 	}
 }
 
@@ -512,7 +514,7 @@ func TestGraphQLServiceListRepositoriesSkipsNonRepositoryAndMissingNameItems(t *
 	if err != nil {
 		t.Fatalf("ListRepositories returned error: %v", err)
 	}
-	want := Repository{
+	want := domain.Repository{
 		NameWithOwner:     "owner/repo",
 		Description:       "kept",
 		URL:               "https://github.com/owner/repo",
@@ -523,7 +525,7 @@ func TestGraphQLServiceListRepositoriesSkipsNonRepositoryAndMissingNameItems(t *
 		NormDescription:   "kept",
 	}
 	if len(repositories) != 1 || !reflect.DeepEqual(repositories[0], want) {
-		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []Repository{want})
+		t.Fatalf("ListRepositories() = %#v, want %#v", repositories, []domain.Repository{want})
 	}
 }
 
@@ -667,7 +669,7 @@ func TestGraphQLServiceReposSmallPageSize(t *testing.T) {
 func TestGraphQLServicePaginationWithSkippedItems(t *testing.T) {
 	t.Parallel()
 
-	// pageSize=4, 3 repos + 1 non-Repository + 1 null = 5 items on 1 page
+	// pageSize=4, 3 repos + 1 non-domain.Repository + 1 null = 5 items on 1 page
 	executor := &fakeGraphQLExecutor{responses: []string{`{
 		"node": {
 			"__typename": "UserList",
@@ -742,7 +744,7 @@ func TestGraphQLServiceListStarredRepositoriesMapsFields(t *testing.T) {
 	if len(repos) != 2 {
 		t.Fatalf("ListStarredRepositories returned %d repos, want 2", len(repos))
 	}
-	want0 := Repository{
+	want0 := domain.Repository{
 		NameWithOwner:     "owner/go-tool",
 		Description:       "A Go tool",
 		URL:               "https://github.com/owner/go-tool",
@@ -755,7 +757,7 @@ func TestGraphQLServiceListStarredRepositoriesMapsFields(t *testing.T) {
 		NormDescription:   "a go tool",
 		NormLanguage:      "go",
 	}
-	want1 := Repository{
+	want1 := domain.Repository{
 		NameWithOwner:     "owner/rust-lib",
 		Description:       "",
 		URL:               "https://github.com/owner/rust-lib",

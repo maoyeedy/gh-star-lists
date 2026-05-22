@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -25,7 +26,7 @@ const maxTopicsInFlight = 2
 
 type repoCacheEntry struct {
 	state repoCacheState
-	repos []githubapi.Repository
+	repos []domain.Repository
 	err   error
 	gen   uint64
 }
@@ -42,7 +43,7 @@ type preloader struct {
 	topicsCancels  map[string]context.CancelFunc
 	// starredRepos caches the full starred-repo list so getStarredAt
 	// fetches at most once per generation.
-	starredRepos []githubapi.Repository
+	starredRepos []domain.Repository
 }
 
 func newPreloader() *preloader {
@@ -143,8 +144,8 @@ func (p *preloader) cancelTopicsPreloads() {
 // getStarredAt enriches repos with StarredAt timestamps, using a generation-keyed
 // cache so that the full starred-repo list is fetched at most once per refresh.
 func (p *preloader) getStarredAt(
-	ctx context.Context, svc githubapi.Service, repos []githubapi.Repository,
-) ([]githubapi.Repository, error) {
+	ctx context.Context, svc githubapi.Service, repos []domain.Repository,
+) ([]domain.Repository, error) {
 	if p.starredRepos == nil {
 		starred, err := svc.ListStarredRepositories(ctx)
 		if err != nil {
@@ -158,7 +159,7 @@ func (p *preloader) getStarredAt(
 // scheduleTopicsPreload starts withTopics=true loads for lists whose basic repos
 // are already cached. The focused list is prioritized. Max 2 concurrent topics loads.
 func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Service,
-	focusedList *githubapi.StarList, displayedLists []githubapi.StarList,
+	focusedList *domain.StarList, displayedLists []domain.StarList,
 ) tea.Cmd {
 	if p.topicsInFlight >= maxTopicsInFlight {
 		return nil
@@ -279,8 +280,8 @@ func (m *model) focusList(idx int) tea.Cmd {
 	}
 }
 
-func (m *model) populateDisplayedRepos(repos []githubapi.Repository) {
-	sorted := make([]githubapi.Repository, len(repos))
+func (m *model) populateDisplayedRepos(repos []domain.Repository) {
+	sorted := make([]domain.Repository, len(repos))
 	copy(sorted, repos)
 	sortRepos(sorted, m.sortRepos)
 	m.displayedRepos = sorted
@@ -344,7 +345,7 @@ func (m *model) setRepoCursor(idx int) {
 
 // currentRepos returns the repos currently backing the repo pane.
 // Returns nil when loading, idle, or no list is focused.
-func (m model) currentRepos() []githubapi.Repository {
+func (m model) currentRepos() []domain.Repository {
 	e := m.repoPaneCacheEntry()
 	if e == nil || e.state != repoCacheLoaded {
 		return nil

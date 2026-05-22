@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestSortCycleListsPane(t *testing.T) {
@@ -44,7 +44,7 @@ func TestListsLoadedRebindsFocusedListRename(t *testing.T) {
 	m.focusedList = &m.lists[1]
 	m.listCursor = 1
 
-	renamed := append([]githubapi.StarList(nil), svc.lists...)
+	renamed := append([]domain.StarList(nil), svc.lists...)
 	renamed[1].Name = "Renamed"
 	m2 := update(m, listsLoadedMsg{lists: renamed})
 
@@ -65,7 +65,7 @@ func TestListsLoadedRefocusesAfterFocusedListDeleted(t *testing.T) {
 	m.focusedList = &m.lists[1]
 	m.listCursor = 1
 
-	remaining := []githubapi.StarList{svc.lists[0], svc.lists[2]}
+	remaining := []domain.StarList{svc.lists[0], svc.lists[2]}
 	m2 := update(m, listsLoadedMsg{lists: remaining})
 
 	if m2.focusedList == nil {
@@ -106,7 +106,7 @@ func TestSortCycleReposPane(t *testing.T) {
 
 func TestSortStarListsByName(t *testing.T) {
 	t.Parallel()
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{ID: "3", Name: "zeta"},
 		{ID: "1", Name: "Alpha"},
 		{ID: "2", Name: "beta"},
@@ -124,7 +124,7 @@ func TestSortStarListsByName(t *testing.T) {
 // TestSortStarListsByRepoCount verifies descending repo count sort.
 func TestSortStarListsByRepoCount(t *testing.T) {
 	t.Parallel()
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{ID: "1", Name: "a", RepoCount: 3},
 		{ID: "2", Name: "b", RepoCount: 1},
 		{ID: "3", Name: "c", RepoCount: 5},
@@ -143,7 +143,7 @@ func TestSortStarListsByRepoCount(t *testing.T) {
 // TestSortReposByStars verifies descending star sort.
 func TestSortReposByStars(t *testing.T) {
 	t.Parallel()
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{NameWithOwner: "a/a", StargazerCount: 10},
 		{NameWithOwner: "b/b", StargazerCount: 50},
 		{NameWithOwner: "c/c", StargazerCount: 1},
@@ -163,7 +163,7 @@ func TestSortReposByStars(t *testing.T) {
 // TestSortReposByPushed verifies descending pushed-at sort.
 func TestSortReposByPushed(t *testing.T) {
 	t.Parallel()
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{NameWithOwner: "a/a", PushedAt: "2024-01-01T00:00:00Z"},
 		{NameWithOwner: "b/b", PushedAt: "2024-03-01T00:00:00Z"},
 		{NameWithOwner: "c/c", PushedAt: "2024-02-01T00:00:00Z"},
@@ -176,7 +176,7 @@ func TestSortReposByPushed(t *testing.T) {
 
 func TestSortReposByLanguage(t *testing.T) {
 	t.Parallel()
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{NameWithOwner: "a/a", Language: "Rust"},
 		{NameWithOwner: "b/b", Language: ""},
 		{NameWithOwner: "c/c", Language: "Go"},
@@ -202,7 +202,7 @@ func TestSortReposByLanguage(t *testing.T) {
 // TestSortReposByStarredAt verifies descending StarredAt sort (empty sorts last).
 func TestSortReposByStarredAt(t *testing.T) {
 	t.Parallel()
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{NameWithOwner: "a/a", StarredAt: "2024-01-01T00:00:00Z"},
 		{NameWithOwner: "b/b", StarredAt: ""},
 		{NameWithOwner: "c/c", StarredAt: "2024-03-01T00:00:00Z"},

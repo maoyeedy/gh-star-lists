@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -29,7 +30,7 @@ func newCreateListModal(ctx context.Context, svc githubapi.Service) (*modal, tea
 		svc:    svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
-		input := githubapi.StarListInput{
+		input := domain.StarListInput{
 			Name:        m.inputs[0].Value(),
 			Description: m.inputs[1].Value(),
 			Private:     m.privateState == 2,
@@ -42,7 +43,7 @@ func newCreateListModal(ctx context.Context, svc githubapi.Service) (*modal, tea
 func newEditListModal(
 	ctx context.Context,
 	svc githubapi.Service,
-	list githubapi.StarList,
+	list domain.StarList,
 ) (*modal, tea.Cmd) {
 	name := textinput.New()
 	name.Placeholder = "List name"
@@ -67,7 +68,7 @@ func newEditListModal(
 		svc:          svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
-		input := githubapi.UpdateStarListInput{
+		input := domain.UpdateStarListInput{
 			ID:          list.ID,
 			Name:        m.inputs[0].Value(),
 			Description: m.inputs[1].Value(),
@@ -88,7 +89,7 @@ func newEditListModal(
 func newDeleteListModal(
 	ctx context.Context,
 	svc githubapi.Service,
-	list githubapi.StarList,
+	list domain.StarList,
 ) (*modal, tea.Cmd) {
 	ci := textinput.New()
 	ci.Placeholder = list.Name
@@ -113,10 +114,10 @@ func newDeleteListModal(
 func newCopyListModal(
 	ctx context.Context,
 	svc githubapi.Service,
-	fromList githubapi.StarList,
-	allLists []githubapi.StarList,
+	fromList domain.StarList,
+	allLists []domain.StarList,
 ) *modal {
-	filtered := make([]githubapi.StarList, 0, len(allLists))
+	filtered := make([]domain.StarList, 0, len(allLists))
 	for _, l := range allLists {
 		if l.ID != fromList.ID {
 			filtered = append(filtered, l)
@@ -142,10 +143,10 @@ func newCopyListModal(
 func newMergeListModal(
 	ctx context.Context,
 	svc githubapi.Service,
-	fromList githubapi.StarList,
-	allLists []githubapi.StarList,
+	fromList domain.StarList,
+	allLists []domain.StarList,
 ) *modal {
-	filtered := make([]githubapi.StarList, 0, len(allLists))
+	filtered := make([]domain.StarList, 0, len(allLists))
 	for _, l := range allLists {
 		if l.ID != fromList.ID {
 			filtered = append(filtered, l)

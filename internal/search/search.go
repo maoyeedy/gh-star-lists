@@ -4,12 +4,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 // FilterRepositories returns repos matching query ranked by relevance
 // (score desc, stars desc, name asc). Returns repos unchanged if query is empty.
-func FilterRepositories(repos []githubapi.Repository, query string) []githubapi.Repository {
+func FilterRepositories(repos []domain.Repository, query string) []domain.Repository {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return repos
@@ -23,7 +23,7 @@ func FilterRepositories(repos []githubapi.Repository, query string) []githubapi.
 	var editPrev, editCurr []int
 
 	type repoMatch struct {
-		repo    githubapi.Repository
+		repo    domain.Repository
 		score   int
 		sortKey string
 	}
@@ -47,7 +47,7 @@ func FilterRepositories(repos []githubapi.Repository, query string) []githubapi.
 		}
 		return strings.Compare(a.sortKey, b.sortKey)
 	})
-	out := make([]githubapi.Repository, len(matches))
+	out := make([]domain.Repository, len(matches))
 	for i, m := range matches {
 		out[i] = m.repo
 	}
@@ -56,7 +56,7 @@ func FilterRepositories(repos []githubapi.Repository, query string) []githubapi.
 
 // FilterStarLists returns star lists matching query ranked by relevance
 // (score desc, name asc). Returns lists unchanged if query is empty.
-func FilterStarLists(lists []githubapi.StarList, query string) []githubapi.StarList {
+func FilterStarLists(lists []domain.StarList, query string) []domain.StarList {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return lists
@@ -70,7 +70,7 @@ func FilterStarLists(lists []githubapi.StarList, query string) []githubapi.StarL
 	var editPrev, editCurr []int
 
 	type listMatch struct {
-		list    githubapi.StarList
+		list    domain.StarList
 		score   int
 		sortKey string
 	}
@@ -91,7 +91,7 @@ func FilterStarLists(lists []githubapi.StarList, query string) []githubapi.StarL
 		}
 		return strings.Compare(a.sortKey, b.sortKey)
 	})
-	out := make([]githubapi.StarList, len(matches))
+	out := make([]domain.StarList, len(matches))
 	for i, m := range matches {
 		out[i] = m.list
 	}

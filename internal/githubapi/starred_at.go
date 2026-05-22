@@ -3,6 +3,8 @@ package githubapi
 import (
 	"context"
 	"strings"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 // WithStarredAt returns repositories with StarredAt copied from the viewer's
@@ -10,8 +12,8 @@ import (
 func WithStarredAt(
 	ctx context.Context,
 	service Service,
-	repos []Repository,
-) ([]Repository, error) {
+	repos []domain.Repository,
+) ([]domain.Repository, error) {
 	if len(repos) == 0 || allHaveStarredAt(repos) {
 		return repos, nil
 	}
@@ -22,7 +24,7 @@ func WithStarredAt(
 	return MergeStarredAt(repos, starred), nil
 }
 
-func MergeStarredAt(repos, starred []Repository) []Repository {
+func MergeStarredAt(repos, starred []domain.Repository) []domain.Repository {
 	if len(repos) == 0 || len(starred) == 0 {
 		return repos
 	}
@@ -42,7 +44,7 @@ func MergeStarredAt(repos, starred []Repository) []Repository {
 	if len(byID) == 0 && len(byName) == 0 {
 		return repos
 	}
-	out := make([]Repository, len(repos))
+	out := make([]domain.Repository, len(repos))
 	copy(out, repos)
 	for i := range out {
 		if out[i].StarredAt != "" {
@@ -61,7 +63,7 @@ func MergeStarredAt(repos, starred []Repository) []Repository {
 	return out
 }
 
-func allHaveStarredAt(repos []Repository) bool {
+func allHaveStarredAt(repos []domain.Repository) bool {
 	for _, repo := range repos {
 		if repo.StarredAt == "" {
 			return false

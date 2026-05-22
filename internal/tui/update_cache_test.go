@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestLoadingCountO1(t *testing.T) {
@@ -133,7 +133,7 @@ func TestStaleLoadDropped(t *testing.T) {
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 
-	initialRepos := []githubapi.Repository{{ID: "R_init", NameWithOwner: "owner/init"}}
+	initialRepos := []domain.Repository{{ID: "R_init", NameWithOwner: "owner/init"}}
 	m.displayedRepos = initialRepos
 
 	// Test 1: stale generation.

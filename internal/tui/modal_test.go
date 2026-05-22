@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestModalOpenAndClose(t *testing.T) {
@@ -43,7 +43,7 @@ func TestMutationModalStaysOpenWhileSubmitting(t *testing.T) {
 	t.Parallel()
 	svc := &recordingFakeService{
 		fakeService: fakeService{
-			lists: []githubapi.StarList{{ID: "UL_1", Name: "existing"}},
+			lists: []domain.StarList{{ID: "UL_1", Name: "existing"}},
 		},
 	}
 	m := newTestModel(svc)

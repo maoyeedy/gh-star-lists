@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestPreviewToggle(t *testing.T) {
@@ -36,8 +36,8 @@ type topicTrackingService struct {
 func (f *topicTrackingService) ListRepositories(
 	_ context.Context,
 	_ string,
-	opts ...githubapi.ListOptions,
-) ([]githubapi.Repository, error) {
+	opts ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	for _, opt := range opts {
 		if opt.WithTopics {
 			f.withTopicsReceived = true
@@ -105,10 +105,10 @@ func TestPreviewToggleKeepsBasicReposVisibleWhileTopicsLoad(t *testing.T) {
 func TestPreviewLoadEnrichesStarredAt(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{ID: "R_1", NameWithOwner: "owner/repo"},
 		},
-		starred: []githubapi.Repository{
+		starred: []domain.Repository{
 			{ID: "R_1", NameWithOwner: "owner/repo", StarredAt: "2026-05-21T17:23:22Z"},
 		},
 	}
@@ -229,7 +229,7 @@ func TestPreviewSeparatorsStayAlignedAtNarrowThreeColumnWidth(t *testing.T) {
 
 func TestPreviewDetailBlock(t *testing.T) {
 	t.Parallel()
-	repo := githubapi.Repository{
+	repo := domain.Repository{
 		ID:             "R_full",
 		NameWithOwner:  "owner/full-repo",
 		Description:    "A fully populated repository",
@@ -244,8 +244,8 @@ func TestPreviewDetailBlock(t *testing.T) {
 		Topics:         []string{"cli", "github"},
 	}
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "list1", RepoCount: 1}},
-		repos: []githubapi.Repository{repo},
+		lists: []domain.StarList{{ID: "UL_1", Name: "list1", RepoCount: 1}},
+		repos: []domain.Repository{repo},
 	}
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
@@ -279,15 +279,15 @@ func TestPreviewDetailBlock(t *testing.T) {
 // fallback text in the styled preview pane.
 func TestPreviewFallbacks(t *testing.T) {
 	t.Parallel()
-	repo := githubapi.Repository{
+	repo := domain.Repository{
 		ID:            "R_empty",
 		NameWithOwner: "owner/sparse-repo",
 		URL:           "https://github.com/owner/sparse-repo",
 		// Description, Language, License, Topics all zero/nil.
 	}
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "list1", RepoCount: 1}},
-		repos: []githubapi.Repository{repo},
+		lists: []domain.StarList{{ID: "UL_1", Name: "list1", RepoCount: 1}},
+		repos: []domain.Repository{repo},
 	}
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
@@ -313,7 +313,7 @@ func TestPreviewFallbacks(t *testing.T) {
 
 func TestPreviewDescriptionWraps(t *testing.T) {
 	t.Parallel()
-	repo := githubapi.Repository{
+	repo := domain.Repository{
 		ID:             "R_wrap",
 		NameWithOwner:  "owner/repo",
 		Description:    "alpha beta gamma delta",
@@ -321,8 +321,8 @@ func TestPreviewDescriptionWraps(t *testing.T) {
 		StargazerCount: 1,
 	}
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "list", RepoCount: 1}},
-		repos: []githubapi.Repository{repo},
+		lists: []domain.StarList{{ID: "UL_1", Name: "list", RepoCount: 1}},
+		repos: []domain.Repository{repo},
 	}
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
@@ -351,7 +351,7 @@ func TestPreviewDescriptionWraps(t *testing.T) {
 func TestPreviewWheelScrollsOffset(t *testing.T) {
 	t.Parallel()
 	// Use a repo with enough data that the preview pane has more than viewH lines.
-	repo := githubapi.Repository{
+	repo := domain.Repository{
 		ID:             "R_1",
 		NameWithOwner:  "owner/repo",
 		Description:    "A test repo with topics to make preview content long",
@@ -364,8 +364,8 @@ func TestPreviewWheelScrollsOffset(t *testing.T) {
 		Topics:         []string{"topic1", "topic2", "topic3"},
 	}
 	svc := &fakeService{
-		lists: []githubapi.StarList{{ID: "UL_1", Name: "list", RepoCount: 1}},
-		repos: []githubapi.Repository{repo},
+		lists: []domain.StarList{{ID: "UL_1", Name: "list", RepoCount: 1}},
+		repos: []domain.Repository{repo},
 	}
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
@@ -454,14 +454,14 @@ func TestPreviewUsesTopicsRepoByIDAfterSort(t *testing.T) {
 	m.focusedList = &m.lists[0]
 	m.active = paneRepo
 	m.showPreview = true
-	m.displayedRepos = []githubapi.Repository{
+	m.displayedRepos = []domain.Repository{
 		{ID: "R_1", NameWithOwner: "owner/z", StargazerCount: 1},
 		{ID: "R_2", NameWithOwner: "owner/a", StargazerCount: 100},
 	}
 	m.repoCursor = 1
 	m.preloader.setCacheEntry(repoCacheKey{m.focusedList.ID, true}, &repoCacheEntry{
 		state: repoCacheLoaded,
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{ID: "R_1", NameWithOwner: "owner/z", Topics: []string{"wrong"}},
 			{ID: "R_2", NameWithOwner: "owner/a", Topics: []string{"right"}},
 		},
@@ -485,11 +485,11 @@ func TestPreviewUsesTopicsRepoByNameAfterSearch(t *testing.T) {
 	m.focusedList = &m.lists[0]
 	m.active = paneRepo
 	m.showPreview = true
-	m.displayedRepos = []githubapi.Repository{{NameWithOwner: "owner/match"}}
+	m.displayedRepos = []domain.Repository{{NameWithOwner: "owner/match"}}
 	m.repoCursor = 0
 	m.preloader.setCacheEntry(repoCacheKey{m.focusedList.ID, true}, &repoCacheEntry{
 		state: repoCacheLoaded,
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{NameWithOwner: "owner/other", Topics: []string{"wrong"}},
 			{NameWithOwner: "owner/match", Topics: []string{"right"}},
 		},

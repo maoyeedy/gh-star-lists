@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 type sortListsKey int
@@ -30,7 +30,7 @@ const (
 	sortReposEnd
 )
 
-func sortStarLists(lists []githubapi.StarList, key sortListsKey) {
+func sortStarLists(lists []domain.StarList, key sortListsKey) {
 	sort.Slice(lists, func(i, j int) bool {
 		switch key {
 		case sortListsName:
@@ -54,7 +54,7 @@ func sortStarLists(lists []githubapi.StarList, key sortListsKey) {
 	})
 }
 
-func sortRepos(repos []githubapi.Repository, key sortReposKey) {
+func sortRepos(repos []domain.Repository, key sortReposKey) {
 	sort.Slice(repos, func(i, j int) bool {
 		switch key {
 		case sortReposName:

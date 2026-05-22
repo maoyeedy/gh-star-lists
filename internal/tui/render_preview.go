@@ -6,7 +6,7 @@ import (
 	"time"
 
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/humanize"
 )
 
@@ -110,7 +110,7 @@ func appendWrapped(lines []string, text string, maxW int, style lipgloss.Style) 
 // formatPreviewContent builds styled preview lines for a single repository.
 // The returned slice is not clipped to any height; the caller applies the
 // scroll offset and pads to the desired height.
-func formatPreviewContent(repo githubapi.Repository, w int) []string {
+func formatPreviewContent(repo domain.Repository, w int) []string {
 	maxW := w - 2
 	if maxW < 1 {
 		maxW = 1
@@ -217,9 +217,9 @@ func (m model) previewContentLines(w int) []string {
 }
 
 func previewRepoByIdentity(
-	selected githubapi.Repository,
-	repos []githubapi.Repository,
-) (githubapi.Repository, bool) {
+	selected domain.Repository,
+	repos []domain.Repository,
+) (domain.Repository, bool) {
 	if selected.ID != "" {
 		for _, repo := range repos {
 			if repo.ID == selected.ID {
@@ -232,7 +232,7 @@ func previewRepoByIdentity(
 			return repo, true
 		}
 	}
-	return githubapi.Repository{}, false
+	return domain.Repository{}, false
 }
 
 func (m model) renderPreviewPane(w, h int) string {

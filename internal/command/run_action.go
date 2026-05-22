@@ -7,70 +7,11 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"sync/atomic"
 
+	"github.com/maoyeedy/gh-star-lists/internal/app"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
-	"golang.org/x/sync/errgroup"
 )
-
-func fetchReposForAction(
-	ctx context.Context,
-	service githubapi.Service,
-	parsed Parsed,
-) ([]githubapi.Repository, error) {
-	withTopics := topicsNeeded(parsed)
-	switch {
-	case parsed.Unlisted:
-		lists, err := service.ListStarLists(ctx)
-		if err != nil {
-			return nil, err
-		}
-		index, err := githubapi.LoadMembershipIndex(ctx, service, lists)
-		if err != nil {
-			return nil, err
-		}
-		starred, err := service.ListStarredRepositories(ctx)
-		if err != nil {
-			return nil, err
-		}
-		unlisted := make([]githubapi.Repository, 0, len(starred))
-		for _, r := range starred {
-			if !index.ContainsRepository(r.NameWithOwner) {
-				unlisted = append(unlisted, r)
-			}
-		}
-		return unlisted, nil
-	case parsed.All:
-		return service.ListStarredRepositories(ctx, directListOptions(parsed, withTopics))
-	default:
-		resolvedID, err := resolveListID(ctx, service, parsed.ListID)
-		if err != nil {
-			return nil, err
-		}
-		repos, err := service.ListRepositories(
-			ctx,
-			resolvedID,
-			directListOptions(parsed, withTopics),
-		)
-		if err != nil {
-			return nil, err
-		}
-		if sortNeedsStarredAt(parsed) {
-			return githubapi.WithStarredAt(ctx, service, repos)
-		}
-		return repos, nil
-	}
-}
-
-func sortNeedsStarredAt(parsed Parsed) bool {
-	for _, key := range parsed.SortKeys {
-		if key == SortKeyStarred {
-			return true
-		}
-	}
-	return false
-}
 
 func topicsNeeded(parsed Parsed) bool {
 	for _, f := range parsed.Filters {
@@ -81,33 +22,23 @@ func topicsNeeded(parsed Parsed) bool {
 	return parsed.Template != "" && strings.Contains(parsed.Template, "Topics")
 }
 
-func finalizeRepositories(repos []githubapi.Repository, parsed Parsed) []githubapi.Repository {
-	repos = filterRepositories(repos, parsed.Filters)
-	repos = searchRepositories(repos, parsed.Search)
-	sortRepositories(repos, parsed.SortKeys, parsed.SortTerms, parsed.SortDesc)
-	if parsed.Limit > 0 && len(repos) > parsed.Limit {
-		repos = repos[:parsed.Limit]
-	}
-	return repos
-}
-
 func runRepoListMutation(
 	ctx context.Context,
 	stdout, stderr io.Writer,
-	service githubapi.Service,
+	appSvc *app.StarListService,
 	parsed Parsed,
-	prefetchedLists []githubapi.StarList,
+	prefetchedLists []domain.StarList,
 	outputOptions format.Options,
 ) int {
 	lists := prefetchedLists
 	if lists == nil {
 		var err error
-		lists, err = service.ListStarLists(ctx)
+		lists, err = appSvc.Service().ListStarLists(ctx)
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err)
 		}
 	}
-	var from, to githubapi.StarList
+	var from, to domain.StarList
 	if parsed.FromListID != "" {
 		var ok bool
 		from, ok = listByRaw(lists, parsed.FromListID)
@@ -125,7 +56,7 @@ func runRepoListMutation(
 	if parsed.Action == ActionMove && from.ID == to.ID {
 		return writeFailure(stderr, fmt.Errorf("--from and --to resolve to the same list"))
 	}
-	repoID, currentLists, err := service.GetRepositoryMemberships(ctx, parsed.RepoName)
+	repoID, currentLists, err := appSvc.GetRepositoryMemberships(ctx, parsed.RepoName)
 	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err)
 	}
@@ -151,7 +82,7 @@ func runRepoListMutation(
 		_, _ = fmt.Fprintln(stdout, noChangeMessage(parsed, from, to))
 		return ExitSuccess
 	}
-	if err := service.UpdateRepositoryLists(ctx, repoID, listIDs); err != nil {
+	if err := appSvc.UpdateRepositoryLists(ctx, repoID, listIDs); err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.RepoName, err)
 	}
 	_, _ = fmt.Fprintln(
@@ -164,15 +95,15 @@ func runRepoListMutation(
 func runListCopy(
 	ctx context.Context,
 	stdout, stderr io.Writer,
-	service githubapi.Service,
+	appSvc *app.StarListService,
 	parsed Parsed,
-	prefetchedLists []githubapi.StarList,
+	prefetchedLists []domain.StarList,
 	outputOptions format.Options,
 ) int {
 	lists := prefetchedLists
 	if lists == nil {
 		var err error
-		lists, err = service.ListStarLists(ctx)
+		lists, err = appSvc.Service().ListStarLists(ctx)
 		if err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 		}
@@ -190,23 +121,17 @@ func runListCopy(
 	if from == to {
 		return writeFailure(stderr, fmt.Errorf("--from and --to resolve to the same list"))
 	}
-	index, err := githubapi.LoadMembershipIndex(ctx, service, lists)
+	srcRepos, err := appSvc.Service().ListRepositories(ctx, from)
 	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 	}
-	repos := index.RepositoriesForList(from)
-	if !fromFound {
-		repos, err = service.ListRepositories(ctx, from)
-		if err != nil {
-			return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
-		}
-	}
+	total := len(srcRepos)
 	if parsed.DryRun {
 		_, _ = fmt.Fprintf(
 			stdout,
 			"Would %s %d repositories from %q to %q.\n",
 			copyVerb(parsed),
-			len(repos),
+			total,
 			displayListName(fromList, parsed.FromListID),
 			displayListName(toList, parsed.ToListID),
 		)
@@ -219,49 +144,21 @@ func runListCopy(
 		}
 		return ExitSuccess
 	}
-	var changed atomic.Int64
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(5)
-	for _, repo := range repos {
-		repo := repo
-		group.Go(func() error {
-			repoID, memberships, err := index.RepositoryMemberships(
-				groupCtx,
-				service,
-				repo.NameWithOwner,
-			)
-			if err != nil {
-				return fmt.Errorf("%s: %w", repo.NameWithOwner, err)
-			}
-			if _, ok := memberships[to]; ok {
-				return nil
-			}
-			memberships[to] = struct{}{}
-			if err := service.UpdateRepositoryLists(
-				groupCtx,
-				repoID,
-				slices.Sorted(maps.Keys(memberships)),
-			); err != nil {
-				return fmt.Errorf("%s: %w", repo.NameWithOwner, err)
-			}
-			changed.Add(1)
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
+	changed, total, err := appSvc.CopyList(ctx, from, to)
+	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 	}
 	if parsed.DeleteSource || parsed.Action == ActionMerge {
-		if err := service.DeleteStarList(ctx, from); err != nil {
+		if err := appSvc.DeleteList(ctx, from); err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 		}
 	}
-	summary := copySummary(parsed, changed.Load(), len(repos), fromList, toList)
+	summary := copySummary(parsed, int64(changed), total, fromList, toList)
 	_, _ = fmt.Fprintln(stdout, styleText(format.Green, outputOptions.Color, summary))
 	return ExitSuccess
 }
 
-func mutationSummary(parsed Parsed, from, to githubapi.StarList) string {
+func mutationSummary(parsed Parsed, from, to domain.StarList) string {
 	switch parsed.Action {
 	case ActionAdd:
 		return fmt.Sprintf("Added %s to %q", parsed.RepoName, displayListName(to, parsed.ToListID))
@@ -283,7 +180,7 @@ func mutationSummary(parsed Parsed, from, to githubapi.StarList) string {
 	}
 }
 
-func mutationPlanSummary(parsed Parsed, from, to githubapi.StarList) string {
+func mutationPlanSummary(parsed Parsed, from, to domain.StarList) string {
 	switch parsed.Action {
 	case ActionAdd:
 		return fmt.Sprintf("add %s to %q", parsed.RepoName, displayListName(to, parsed.ToListID))
@@ -305,7 +202,7 @@ func mutationPlanSummary(parsed Parsed, from, to githubapi.StarList) string {
 	}
 }
 
-func noChangeMessage(parsed Parsed, from, to githubapi.StarList) string {
+func noChangeMessage(parsed Parsed, from, to domain.StarList) string {
 	switch parsed.Action {
 	case ActionAdd:
 		return fmt.Sprintf(
@@ -338,7 +235,7 @@ func copySummary(
 	parsed Parsed,
 	changed int64,
 	total int,
-	fromList, toList githubapi.StarList,
+	fromList, toList domain.StarList,
 ) string {
 	from := displayListName(fromList, parsed.FromListID)
 	to := displayListName(toList, parsed.ToListID)

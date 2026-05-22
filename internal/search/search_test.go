@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
-func makeRepo(nameWithOwner, description, language string, stars int) githubapi.Repository {
-	return githubapi.Repository{
+func makeRepo(nameWithOwner, description, language string, stars int) domain.Repository {
+	return domain.Repository{
 		ID:             nameWithOwner,
 		NameWithOwner:  nameWithOwner,
 		Description:    description,
@@ -19,8 +19,8 @@ func makeRepo(nameWithOwner, description, language string, stars int) githubapi.
 	}
 }
 
-func makeList(name, description string) githubapi.StarList {
-	return githubapi.StarList{
+func makeList(name, description string) domain.StarList {
+	return domain.StarList{
 		ID:          name,
 		Name:        name,
 		Description: description,
@@ -28,7 +28,7 @@ func makeList(name, description string) githubapi.StarList {
 	}
 }
 
-func repoNames(repos []githubapi.Repository) []string {
+func repoNames(repos []domain.Repository) []string {
 	out := make([]string, len(repos))
 	for i, r := range repos {
 		out[i] = r.NameWithOwner
@@ -36,7 +36,7 @@ func repoNames(repos []githubapi.Repository) []string {
 	return out
 }
 
-func listNames(lists []githubapi.StarList) []string {
+func listNames(lists []domain.StarList) []string {
 	out := make([]string, len(lists))
 	for i, l := range lists {
 		out[i] = l.Name
@@ -56,12 +56,12 @@ func TestFilterRepositories(t *testing.T) {
 		220000,
 	)
 	rails := makeRepo("rails/rails", "Ruby on Rails web framework", "Ruby", 55000)
-	all := []githubapi.Repository{gin, echo, react, rails}
+	all := []domain.Repository{gin, echo, react, rails}
 
 	tests := []struct {
 		name  string
 		query string
-		repos []githubapi.Repository
+		repos []domain.Repository
 		want  []string
 	}{
 		{
@@ -97,7 +97,7 @@ func TestFilterRepositories(t *testing.T) {
 		{
 			name:  "plural folding matches library/libraries",
 			query: "library",
-			repos: []githubapi.Repository{
+			repos: []domain.Repository{
 				makeRepo("a/lib", "Reusable libraries for parsing", "Go", 100),
 			},
 			want: []string{"a/lib"},
@@ -123,12 +123,12 @@ func TestFilterStarLists(t *testing.T) {
 	tools := makeList("tools", "CLI tools and utilities")
 	infra := makeList("infra", "Infrastructure and DevOps")
 	webdev := makeList("webdev", "Web development frameworks and libraries")
-	all := []githubapi.StarList{tools, infra, webdev}
+	all := []domain.StarList{tools, infra, webdev}
 
 	tests := []struct {
 		name  string
 		query string
-		lists []githubapi.StarList
+		lists []domain.StarList
 		want  []string
 	}{
 		{
@@ -183,7 +183,7 @@ func TestFilterRepositoriesOrdering(t *testing.T) {
 	prefix := makeRepo("foo/gopher", "tools", "Go", 200)
 	descOnly := makeRepo("foo/zzz", "written in go", "Rust", 50)
 
-	got := FilterRepositories([]githubapi.Repository{descOnly, prefix, exact}, "go")
+	got := FilterRepositories([]domain.Repository{descOnly, prefix, exact}, "go")
 	if len(got) != 3 {
 		t.Fatalf("expected 3 matches, got %d", len(got))
 	}
@@ -201,7 +201,7 @@ func TestFilterRepositoriesStarsTiebreaker(t *testing.T) {
 	low := makeRepo("foo/echo", "x", "Go", 100)
 	high := makeRepo("bar/echo", "x", "Go", 5000)
 
-	got := FilterRepositories([]githubapi.Repository{low, high}, "echo")
+	got := FilterRepositories([]domain.Repository{low, high}, "echo")
 	if got[0].NameWithOwner != "bar/echo" {
 		t.Errorf("higher stars should rank first, got %s", got[0].NameWithOwner)
 	}
@@ -214,7 +214,7 @@ func TestRepositorySearchScore(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		repo     githubapi.Repository
+		repo     domain.Repository
 		terms    []string
 		phrase   string
 		wantZero bool

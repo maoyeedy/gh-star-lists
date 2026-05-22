@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestListRowsSimplified(t *testing.T) {
@@ -46,7 +46,7 @@ func TestListRowsSimplified(t *testing.T) {
 func TestSearchCountIndicator(t *testing.T) {
 	t.Parallel()
 	// Build a service with 5 lists, 2 of which match "alp".
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{ID: "1", Name: "Alpha", RepoCount: 1},
 		{ID: "2", Name: "Alpine", RepoCount: 2},
 		{ID: "3", Name: "beta", RepoCount: 3},

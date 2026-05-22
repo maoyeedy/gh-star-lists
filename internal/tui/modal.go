@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -38,7 +39,7 @@ type modal struct {
 	confirmExpected string
 
 	// list-picker modals (add, move)
-	choices      []githubapi.StarList
+	choices      []domain.StarList
 	choiceCursor int
 
 	// mutation to run on confirm (set by constructor)

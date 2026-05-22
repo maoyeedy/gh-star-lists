@@ -4,8 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+	"time"
 
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
@@ -30,20 +31,31 @@ func writeRuntimeFailure(
 		commandContext(action, listID),
 		err,
 	)
-	if errors.Is(err, githubapi.ErrInaccessibleList) {
+	var rateLimitErr *domain.RateLimitError
+	switch {
+	case errors.Is(err, githubapi.ErrInaccessibleList):
 		_ = writeHintDiagnostic(
 			stderr,
 			diagnosticOptions,
 			"The Star List ID may be deleted, private, inaccessible to this account, or from another GitHub account. Re-run `gh star-lists` with the intended account.\n",
 		)
-	} else if looksLikeAuthError(err) {
+	case errors.Is(err, domain.ErrAuth):
 		_ = writeHintDiagnostic(
 			stderr,
 			diagnosticOptions,
 			"Run `gh auth status` to check GitHub CLI authentication, then `gh auth login` if needed.\n",
 		)
+	case errors.As(err, &rateLimitErr):
+		hint := "GitHub rate limit exceeded. Wait and try again."
+		if rateLimitErr.RetryAfter > 0 {
+			hint = fmt.Sprintf(
+				"GitHub rate limit exceeded. Retry after %s.",
+				rateLimitErr.RetryAfter.Round(time.Second),
+			)
+		}
+		_ = writeHintDiagnostic(stderr, diagnosticOptions, "%s\n", hint)
 	}
-	return ExitFailure
+	return mapErrorToExitCode(err)
 }
 
 func commandContext(action Action, listID string) string {
@@ -75,24 +87,17 @@ func commandContext(action Action, listID string) string {
 	}
 }
 
-var authMarkers = []string{
-	"authentication",
-	"bad credentials",
-	"gh auth",
-	"oauth",
-	"token",
-	"unauthorized",
-	"401",
-}
-
-func looksLikeAuthError(err error) bool {
-	message := strings.ToLower(err.Error())
-	for _, marker := range authMarkers {
-		if strings.Contains(message, marker) {
-			return true
-		}
+func mapErrorToExitCode(err error) int {
+	if errors.Is(err, domain.ErrAuth) {
+		return ExitAuth
 	}
-	return false
+	if errors.Is(err, domain.ErrNotFound) {
+		return ExitNotFound
+	}
+	if errors.Is(err, domain.ErrRateLimited) {
+		return ExitRateLimited
+	}
+	return ExitFailure
 }
 
 func writeDiagnostic(stderr io.Writer, format string, args ...any) error {

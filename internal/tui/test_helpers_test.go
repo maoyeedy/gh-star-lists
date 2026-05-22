@@ -5,14 +5,15 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 // fakeService implements githubapi.Service with canned responses.
 type fakeService struct {
-	lists        []githubapi.StarList
-	repos        []githubapi.Repository
-	starred      []githubapi.Repository
+	lists        []domain.StarList
+	repos        []domain.Repository
+	starred      []domain.Repository
 	listErr      error
 	reposErr     error
 	starredErr   error
@@ -21,29 +22,29 @@ type fakeService struct {
 
 func (f *fakeService) ListStarLists(
 	_ context.Context,
-	_ ...githubapi.ListOptions,
-) ([]githubapi.StarList, error) {
+	_ ...domain.ListOptions,
+) ([]domain.StarList, error) {
 	return f.lists, f.listErr
 }
 
 func (f *fakeService) ListRepositories(
 	_ context.Context,
 	_ string,
-	_ ...githubapi.ListOptions,
-) ([]githubapi.Repository, error) {
+	_ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	return f.repos, f.reposErr
 }
 
 func (f *fakeService) ListStarredRepositories(
 	_ context.Context,
-	_ ...githubapi.ListOptions,
-) ([]githubapi.Repository, error) {
+	_ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	f.starredCalls++
 	return f.starred, f.starredErr
 }
 
-func (f *fakeService) GetRepository(_ context.Context, _ string) (githubapi.Repository, error) {
-	return githubapi.Repository{}, nil
+func (f *fakeService) GetRepository(_ context.Context, _ string) (domain.Repository, error) {
+	return domain.Repository{}, nil
 }
 
 func (f *fakeService) GetRepositoryMemberships(
@@ -55,16 +56,16 @@ func (f *fakeService) GetRepositoryMemberships(
 
 func (f *fakeService) CreateStarList(
 	_ context.Context,
-	_ githubapi.StarListInput,
-) (githubapi.StarList, error) {
-	return githubapi.StarList{}, nil
+	_ domain.StarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{}, nil
 }
 
 func (f *fakeService) UpdateStarList(
 	_ context.Context,
-	_ githubapi.UpdateStarListInput,
-) (githubapi.StarList, error) {
-	return githubapi.StarList{}, nil
+	_ domain.UpdateStarListInput,
+) (domain.StarList, error) {
+	return domain.StarList{}, nil
 }
 func (f *fakeService) DeleteStarList(_ context.Context, _ string) error { return nil }
 func (f *fakeService) UpdateRepositoryLists(_ context.Context, _ string, _ []string) error {
@@ -82,7 +83,7 @@ func (f *fakeInvalidatableService) Invalidate() { f.invalidateCalls++ }
 
 func threeListsSvc() *fakeService {
 	return &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{
 				ID:          "UL_1",
 				Name:        "zeta",
@@ -105,7 +106,7 @@ func threeListsSvc() *fakeService {
 				URL:         "https://example.com/3",
 			},
 		},
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{
 				ID:             "R_1",
 				NameWithOwner:  "owner/b-repo",
@@ -183,16 +184,16 @@ func indexStr(s, sub string) int {
 // TestSortStarListsByName verifies that sortStarLists with sortListsName
 
 func largeSvc(n int) *fakeService {
-	repos := make([]githubapi.Repository, n)
+	repos := make([]domain.Repository, n)
 	for i := 0; i < n; i++ {
-		repos[i] = githubapi.Repository{
+		repos[i] = domain.Repository{
 			ID:            fmt.Sprintf("R_%d", i),
 			NameWithOwner: fmt.Sprintf("owner/repo-%02d", i),
 			URL:           fmt.Sprintf("https://github.com/owner/repo-%02d", i),
 		}
 	}
 	return &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{ID: "UL_1", Name: "big", RepoCount: n},
 		},
 		repos: repos,
@@ -233,14 +234,14 @@ func previewPane(m model, w, h int) string { return m.renderPreviewPane(w, h) }
 // TestPreviewDetailBlock verifies that the styled preview pane renders all
 
 func fiveListsSvc() *fakeService {
-	lists := []githubapi.StarList{
+	lists := []domain.StarList{
 		{ID: "UL_1", Name: "list-one", RepoCount: 2},
 		{ID: "UL_2", Name: "list-two", RepoCount: 2},
 		{ID: "UL_3", Name: "list-three", RepoCount: 2},
 		{ID: "UL_4", Name: "list-four", RepoCount: 2},
 		{ID: "UL_5", Name: "list-five", RepoCount: 2},
 	}
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{ID: "R_1", NameWithOwner: "owner/repo-a", StargazerCount: 1},
 		{ID: "R_2", NameWithOwner: "owner/repo-b", StargazerCount: 2},
 	}

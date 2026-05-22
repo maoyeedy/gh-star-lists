@@ -18,6 +18,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reposLoadedMsg:
 		return m.handleReposLoaded(msg)
 
+	case starredAtEnrichedMsg:
+		return m.handleStarredAtEnriched(msg)
+
 	case errMsg:
 		m.err = msg.err
 		m.listsLoading = false

@@ -62,6 +62,7 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 - Name: `resolveList()` → `resolvedList{ID, URL, Name}`. `--web` uses URL. Not-found returns raw input.
 - Destructive ops: `requireYes(parsed, action)`. Non-TTY needs `--yes` or `--dry-run`.
 - Cache invalidation: write ops call `invalidateLists()`/`invalidateStarred()`/`invalidateAll()` in `githubapi` only.
+- Starred timestamps: Star List `items` repos do not include viewer star time. Use `githubapi.WithStarredAt` / `MergeStarredAt` to enrich from `ListStarredRepositories` when rendering `Starred:` or sorting by `SortKeyStarred`.
 - Topics: `Repository.Topics` is `[]string` (`json:"-"`). `topicsNeeded()` guards fetch. TUI fetches only for preview/topic-dependent paths.
 - Search buffer: hoist `tokenCache` map + `editPrev`/`editCurr` `[]int` outside repo loop; reuse via `growIntSlice`.
 - TUI: `Model.View()` returns `tea.View` (set `v.AltScreen = true`). `tea.WithColorProfile(colorprofile.NoTTY)` disables color. Use `key.NewBinding` + `key.Matches`. `lipgloss.Width(s)` not `len(s)`.
@@ -71,6 +72,7 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 - [ ] New action? `Action*` constant → `Parse` handler → `run.go` case → help text
 - [ ] New filter key? `FilterKey*` constant → add to `reposOnlyFilterKeys` → `validateFilters` → `filterRepositories`
 - [ ] New sort key? `SortKey*` constant → `validateSort` → comparator
+- [ ] Uses `Repository.StarredAt` for list repos? Enrich via `githubapi.WithStarredAt`; don't expect `ListRepositories` / Star List items to populate it.
 - [ ] New flag? `Parse` handler → `Parsed` field → thread into action → help
 - [ ] New output mode? `WriteStarListsWithOptions` + `WriteRepositoriesWithOptions` + `SelectOutputMode`
 - [ ] New GraphQL query? paginate with `$endCursor`/`$first` + `HasNextPage` + `ctx.Err()` guard

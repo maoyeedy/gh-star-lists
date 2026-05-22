@@ -22,6 +22,12 @@ type (
 		withTopics bool
 		gen        uint64
 	}
+	starredAtEnrichedMsg struct {
+		repos  []githubapi.Repository
+		err    error
+		listID string
+		gen    uint64
+	}
 )
 type errMsg struct{ err error }
 
@@ -60,6 +66,31 @@ func loadReposCmd(
 			listID:     listID,
 			withTopics: withTopics,
 			gen:        gen,
+		}
+	}
+}
+
+func enrichStarredAtCmd(
+	ctx context.Context,
+	svc githubapi.Service,
+	p *preloader,
+	listID string,
+	repos []githubapi.Repository,
+	gen uint64,
+) tea.Cmd {
+	return func() tea.Msg {
+		if ctx.Err() != nil {
+			return nil
+		}
+		enriched, err := p.getStarredAt(ctx, svc, repos)
+		if ctx.Err() != nil {
+			return nil
+		}
+		return starredAtEnrichedMsg{
+			repos:  enriched,
+			err:    err,
+			listID: listID,
+			gen:    gen,
 		}
 	}
 }

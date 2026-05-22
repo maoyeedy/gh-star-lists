@@ -18,6 +18,17 @@ func (m model) handlePreview() (tea.Model, tea.Cmd) {
 		topicsKey := repoCacheKey{m.focusedList.ID, true}
 		e := m.preloader.cache[topicsKey]
 		if e == nil || e.state == repoCacheIdle {
+			// Cancel non-focused topics loads to free a slot.
+			if m.preloader.topicsInFlight >= maxTopicsInFlight {
+				for id, cancel := range m.preloader.topicsCancels {
+					if id != m.focusedList.ID {
+						cancel()
+						delete(m.preloader.topicsCancels, id)
+						m.preloader.deleteCacheEntry(repoCacheKey{id, true})
+						m.preloader.topicsInFlight--
+					}
+				}
+			}
 			if m.preloader.topicsInFlight >= maxTopicsInFlight {
 				return m, nil
 			}

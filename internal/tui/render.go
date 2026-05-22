@@ -116,7 +116,11 @@ func (m model) renderLayout() string {
 
 func padRight(s string, width int) string {
 	vis := lipgloss.Width(s)
-	if vis >= width {
+	if vis > width {
+		s = lipgloss.NewStyle().Inline(true).MaxWidth(width).Render(s)
+		vis = lipgloss.Width(s)
+	}
+	if vis == width {
 		return s
 	}
 	return s + strings.Repeat(" ", width-vis)

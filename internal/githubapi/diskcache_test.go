@@ -56,6 +56,71 @@ func TestDiskCacheWarmStart(t *testing.T) {
 	}
 }
 
+func TestDiskCacheWarmStartPreservesRepositoryDetails(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	inner1 := &fakeCacheInner{
+		repos: map[string][]Repository{
+			"UL_1": {{
+				ID:                "R_1",
+				NameWithOwner:     "owner/cached-repo",
+				IsArchived:        true,
+				License:           "MIT",
+				Topics:            []string{"cli", "github"},
+				NormNameWithOwner: "owner/cached-repo",
+				NormDescription:   "cached description",
+				NormLanguage:      "go",
+			}},
+		},
+	}
+	svc1 := NewDiskCacheService(inner1, DiskCacheOptions{TTL: 1 * time.Hour})
+	ds1 := svc1.(*diskCacheService)
+	ds1.cacheDir = t.TempDir()
+
+	repos1, err := ds1.ListRepositories(ctx, "UL_1", ListOptions{WithTopics: true})
+	if err != nil {
+		t.Fatalf("first ListRepositories: %v", err)
+	}
+	if len(repos1) != 1 || repos1[0].License != "MIT" || len(repos1[0].Topics) != 2 {
+		t.Fatalf("first call got %+v, want detailed repo", repos1)
+	}
+	waitForDiskCacheEntry(t, ds1, ds1.canonicalKey("repos", "UL_1", "topics:true"))
+
+	inner2 := &fakeCacheInner{
+		repos: map[string][]Repository{
+			"UL_1": {{NameWithOwner: "owner/new-repo"}},
+		},
+	}
+	svc2 := NewDiskCacheService(inner2, DiskCacheOptions{TTL: 1 * time.Hour})
+	ds2 := svc2.(*diskCacheService)
+	ds2.cacheDir = ds1.cacheDir
+
+	repos2, err := ds2.ListRepositories(ctx, "UL_1", ListOptions{WithTopics: true})
+	if err != nil {
+		t.Fatalf("warm start ListRepositories: %v", err)
+	}
+	if inner2.reposCalls["UL_1"] != 0 {
+		t.Error("inner should not be called on disk cache hit")
+	}
+	if len(repos2) != 1 {
+		t.Fatalf("warm start returned %d repos, want 1", len(repos2))
+	}
+	repo := repos2[0]
+	if repo.ID != "R_1" ||
+		repo.NameWithOwner != "owner/cached-repo" ||
+		!repo.IsArchived ||
+		repo.License != "MIT" ||
+		repo.NormNameWithOwner != "owner/cached-repo" ||
+		repo.NormDescription != "cached description" ||
+		repo.NormLanguage != "go" {
+		t.Fatalf("warm start repo = %+v, want cached details preserved", repo)
+	}
+	if got, want := repo.Topics, []string{"cli", "github"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("warm start topics = %v, want %v", got, want)
+	}
+}
+
 func TestDiskCacheInvalidation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

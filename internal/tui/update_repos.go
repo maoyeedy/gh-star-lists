@@ -2,7 +2,6 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
@@ -27,18 +26,22 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 	} else {
 		entry := &repoCacheEntry{state: repoCacheLoaded, repos: msg.repos, gen: msg.gen}
 		m.preloader.setCacheEntry(key, entry)
-		// Update displayed slice only if this is the focused list and matches current withTopics.
+		// Update displayed slice when this load is the active detail level, or
+		// when preview is waiting on topics and basic repos are the best data.
 		if m.focusedList != nil && msg.listID == m.focusedList.ID &&
 			msg.withTopics == m.showPreview {
-			sorted := make([]githubapi.Repository, len(entry.repos))
-			copy(sorted, entry.repos)
-			sortRepos(sorted, m.sortRepos)
-			m.displayedRepos = sorted
-			if m.repoSearchActive && m.repoSearchQuery != "" {
-				m = m.rebuildDisplayed()
+			m.populateDisplayedRepos(entry.repos)
+		} else if m.focusedList != nil && msg.listID == m.focusedList.ID &&
+			m.showPreview &&
+			!msg.withTopics {
+			displayEntry := m.repoPaneCacheEntry()
+			if displayEntry == entry {
+				m.populateDisplayedRepos(entry.repos)
 			}
+		}
+		if m.focusedList != nil && msg.listID == m.focusedList.ID {
 			if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
-				(&m).setRepoCursor(len(m.displayedRepos) - 1)
+				m.setRepoCursor(len(m.displayedRepos) - 1)
 			}
 		}
 		// Refresh focusedList pointer only if this load is for the focused list.
@@ -80,5 +83,37 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 			m.ctx, m.svc, m.focusedList, m.displayedLists,
 		))
 	}
+	// After a successful withTopics load, asynchronously enrich with starredAt
+	// so that topics appear immediately while starredAt fills in later.
+	if msg.err == nil && msg.withTopics {
+		cmds = append(cmds, enrichStarredAtCmd(
+			m.ctx, m.svc, m.preloader, msg.listID, msg.repos, msg.gen,
+		))
+	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m model) handleStarredAtEnriched(msg starredAtEnrichedMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.preloader.generation {
+		return m, nil
+	}
+	if msg.err != nil {
+		return m, nil
+	}
+	key := repoCacheKey{msg.listID, true}
+	e, ok := m.preloader.cache[key]
+	if !ok || e.state != repoCacheLoaded {
+		return m, nil
+	}
+	// Update the cached entry with starredAt-enriched repos.
+	m.preloader.cache[key] = &repoCacheEntry{
+		state: repoCacheLoaded,
+		repos: msg.repos,
+		gen:   msg.gen,
+	}
+	// Refresh displayed repos if this is the focused list and preview is showing.
+	if m.focusedList != nil && msg.listID == m.focusedList.ID && m.showPreview {
+		m.populateDisplayedRepos(msg.repos)
+	}
+	return m, nil
 }

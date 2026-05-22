@@ -189,6 +189,39 @@ func TestRepoColumnAlignment(t *testing.T) {
 	}
 }
 
+func TestRepoPanePreviewModeHidesMetadata(t *testing.T) {
+	t.Parallel()
+	repo := githubapi.Repository{
+		ID:             "R_1",
+		NameWithOwner:  "ItsEthra/typst-live",
+		StargazerCount: 132,
+		Language:       "Rust",
+	}
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "typst", RepoCount: 1}},
+		repos: []githubapi.Repository{repo},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+
+	rendered := m.renderRepoPane(36, 8)
+	plain := stripANSI(rendered)
+
+	if !strings.Contains(plain, repo.NameWithOwner) {
+		t.Fatalf("preview repo pane should show full repo name; got:\n%s", rendered)
+	}
+	if strings.Contains(plain, starGlyph) || strings.Contains(plain, "132") {
+		t.Fatalf("preview repo pane should hide stars; got:\n%s", rendered)
+	}
+	if strings.Contains(plain, repo.Language) {
+		t.Fatalf("preview repo pane should hide language; got:\n%s", rendered)
+	}
+}
+
 // TestRepoNameSplitStyling verifies that the owner and "/" are rendered with
 // faint ANSI styling and the repo name is not.
 func TestRepoNameSplitStyling(t *testing.T) {

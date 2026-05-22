@@ -10,10 +10,13 @@ import (
 
 // fakeService implements githubapi.Service with canned responses.
 type fakeService struct {
-	lists    []githubapi.StarList
-	repos    []githubapi.Repository
-	listErr  error
-	reposErr error
+	lists        []githubapi.StarList
+	repos        []githubapi.Repository
+	starred      []githubapi.Repository
+	listErr      error
+	reposErr     error
+	starredErr   error
+	starredCalls int
 }
 
 func (f *fakeService) ListStarLists(
@@ -35,7 +38,8 @@ func (f *fakeService) ListStarredRepositories(
 	_ context.Context,
 	_ ...githubapi.ListOptions,
 ) ([]githubapi.Repository, error) {
-	return nil, nil
+	f.starredCalls++
+	return f.starred, f.starredErr
 }
 
 func (f *fakeService) GetRepository(_ context.Context, _ string) (githubapi.Repository, error) {

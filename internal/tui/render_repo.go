@@ -47,7 +47,7 @@ func (m model) renderRepoPane(w, h int) string {
 
 	// Loading/error state: check focused list's cache entry.
 	if m.focusedList != nil {
-		entry := m.preloader.cache[repoCacheKey{m.focusedList.ID, m.showPreview}]
+		entry := m.repoPaneCacheEntry()
 		if entry != nil && entry.state == repoCacheError {
 			errStr := entry.err.Error()
 			const maxErrW = 60
@@ -86,11 +86,6 @@ func (m model) renderRepoPane(w, h int) string {
 		return strings.Join(out, "\n")
 	}
 
-	// ---- Width-based feature flags ----
-	showBadges := w >= 55
-	showLang := w >= 34
-	showStars := w >= 30
-
 	hasSel := len(m.selected) > 0
 
 	const starWidth = 6 // " " + up to 4 star digits + " " + glyph
@@ -99,9 +94,21 @@ func (m model) renderRepoPane(w, h int) string {
 	end := min(start+h, len(m.displayedRepos))
 
 	const (
-		cursorW = 2 // "> " or "  "
-		markerW = 4 // "[x] " or "[ ] " - only when hasSel
+		cursorW  = 2 // "> " or "  "
+		markerW  = 4 // "[x] " or "[ ] " - only when hasSel
+		minNameW = 4
 	)
+
+	baseW := cursorW
+	if hasSel {
+		baseW += markerW
+	}
+	showStars := !m.showPreview && w >= 30 && baseW+starWidth+2+minNameW <= w
+	if showStars {
+		baseW += starWidth + 2
+	}
+	showLang := !m.showPreview && w >= 34 && baseW+langWidth+2+minNameW <= w
+	showBadges := w >= 55
 
 	for i := start; i < end; i++ {
 		r := m.displayedRepos[i]
@@ -175,8 +182,8 @@ func (m model) renderRepoPane(w, h int) string {
 		if showLang {
 			nameAvail -= langWidth + 2 // "  " + right-aligned field
 		}
-		if nameAvail < 12 {
-			nameAvail = 12
+		if nameAvail < 1 {
+			nameAvail = 1
 		}
 
 		// -- Badges --
@@ -202,14 +209,7 @@ func (m model) renderRepoPane(w, h int) string {
 			badgesRaw = ""
 		}
 
-		if lipgloss.Width(nameRaw) > nameMaxW {
-			const ellipsis = "..."
-			runes := []rune(nameRaw)
-			for len(runes) > 0 && lipgloss.Width(string(runes))+lipgloss.Width(ellipsis) > nameMaxW {
-				runes = runes[:len(runes)-1]
-			}
-			nameRaw = string(runes) + ellipsis
-		}
+		nameRaw = truncateToWidth(nameRaw, nameMaxW)
 
 		owner, repo, hasSep := strings.Cut(nameRaw, "/")
 		var nameStr string

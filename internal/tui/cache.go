@@ -40,6 +40,9 @@ type preloader struct {
 	preloadCancels map[string]context.CancelFunc
 	topicsInFlight int
 	topicsCancels  map[string]context.CancelFunc
+	// starredRepos caches the full starred-repo list so getStarredAt
+	// fetches at most once per generation.
+	starredRepos []githubapi.Repository
 }
 
 func newPreloader() *preloader {
@@ -90,6 +93,7 @@ func (p *preloader) enqueueFront(listID string) {
 // in-flight preload and topics requests.
 func (p *preloader) clear() {
 	p.generation++
+	p.starredRepos = nil
 	p.cancelTopicsPreloads()
 	p.cache = make(map[repoCacheKey]*repoCacheEntry)
 	p.loadingCount = 0
@@ -136,6 +140,21 @@ func (p *preloader) cancelTopicsPreloads() {
 	p.topicsInFlight = 0
 }
 
+// getStarredAt enriches repos with StarredAt timestamps, using a generation-keyed
+// cache so that the full starred-repo list is fetched at most once per refresh.
+func (p *preloader) getStarredAt(
+	ctx context.Context, svc githubapi.Service, repos []githubapi.Repository,
+) ([]githubapi.Repository, error) {
+	if p.starredRepos == nil {
+		starred, err := svc.ListStarredRepositories(ctx)
+		if err != nil {
+			return nil, err
+		}
+		p.starredRepos = starred
+	}
+	return githubapi.MergeStarredAt(repos, p.starredRepos), nil
+}
+
 // scheduleTopicsPreload starts withTopics=true loads for lists whose basic repos
 // are already cached. The focused list is prioritized. Max 2 concurrent topics loads.
 func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Service,
@@ -159,7 +178,21 @@ func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Ser
 	var cmds []tea.Cmd
 	for _, listID := range candidates {
 		if p.topicsInFlight >= maxTopicsInFlight {
-			break
+			// Free a slot for the focused list by cancelling a non-focused load.
+			if focusedList != nil && listID == focusedList.ID {
+				for id, cancel := range p.topicsCancels {
+					if id != focusedList.ID {
+						cancel()
+						delete(p.topicsCancels, id)
+						p.deleteCacheEntry(repoCacheKey{id, true})
+						p.topicsInFlight--
+						break
+					}
+				}
+			}
+			if p.topicsInFlight >= maxTopicsInFlight {
+				break
+			}
 		}
 		// Only schedule topics when basic repos are cached.
 		basicKey := repoCacheKey{listID, false}
@@ -203,18 +236,21 @@ func (m *model) focusList(idx int) tea.Cmd {
 	}
 	key := repoCacheKey{list.ID, m.showPreview}
 	e := m.preloader.cache[key]
+	if m.showPreview {
+		if e == nil || e.state == repoCacheIdle || e.state == repoCacheLoading {
+			if basic := m.preloader.cache[repoCacheKey{list.ID, false}]; basic != nil &&
+				basic.state == repoCacheLoaded {
+				m.populateDisplayedRepos(basic.repos)
+				if e == nil || e.state == repoCacheIdle {
+					return m.startRepoLoad(list.ID, true)
+				}
+				return nil
+			}
+		}
+	}
 	switch {
 	case e != nil && e.state == repoCacheLoaded:
-		// Populate display slice immediately from cache.
-		sorted := make([]githubapi.Repository, len(e.repos))
-		copy(sorted, e.repos)
-		sortRepos(sorted, m.sortRepos)
-		m.displayedRepos = sorted
-		if m.repoSearchActive && m.repoSearchQuery != "" {
-			*m = m.rebuildDisplayed()
-		}
-		m.repoCursor = 0
-		m.repoOffset = 0
+		m.populateDisplayedRepos(e.repos)
 		return nil
 	case e != nil && e.state == repoCacheLoading:
 		m.displayedRepos = nil
@@ -241,6 +277,39 @@ func (m *model) focusList(idx int) tea.Cmd {
 		m.displayedRepos = nil
 		return m.preloader.schedulePreload(m.ctx, m.svc)
 	}
+}
+
+func (m *model) populateDisplayedRepos(repos []githubapi.Repository) {
+	sorted := make([]githubapi.Repository, len(repos))
+	copy(sorted, repos)
+	sortRepos(sorted, m.sortRepos)
+	m.displayedRepos = sorted
+	if m.repoSearchActive && m.repoSearchQuery != "" {
+		*m = m.rebuildDisplayed()
+	}
+	m.repoCursor = 0
+	m.repoOffset = 0
+}
+
+func (m model) repoPaneCacheEntry() *repoCacheEntry {
+	if m.focusedList == nil {
+		return nil
+	}
+	if m.showPreview {
+		detailed := m.preloader.cache[repoCacheKey{m.focusedList.ID, true}]
+		if detailed != nil && detailed.state == repoCacheLoaded {
+			return detailed
+		}
+		basic := m.preloader.cache[repoCacheKey{m.focusedList.ID, false}]
+		if basic != nil && basic.state == repoCacheLoaded {
+			return basic
+		}
+		if detailed != nil {
+			return detailed
+		}
+		return basic
+	}
+	return m.preloader.cache[repoCacheKey{m.focusedList.ID, false}]
 }
 
 func (m *model) startRepoLoad(listID string, withTopics bool) tea.Cmd {
@@ -273,13 +342,10 @@ func (m *model) setRepoCursor(idx int) {
 	m.repoCursor = idx
 }
 
-// currentRepos returns the repos for the focused list (using current withTopics state).
+// currentRepos returns the repos currently backing the repo pane.
 // Returns nil when loading, idle, or no list is focused.
 func (m model) currentRepos() []githubapi.Repository {
-	if m.focusedList == nil {
-		return nil
-	}
-	e := m.preloader.cache[repoCacheKey{m.focusedList.ID, m.showPreview}]
+	e := m.repoPaneCacheEntry()
 	if e == nil || e.state != repoCacheLoaded {
 		return nil
 	}

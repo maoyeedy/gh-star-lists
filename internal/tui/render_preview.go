@@ -11,15 +11,100 @@ import (
 )
 
 func truncateToWidth(s string, maxW int) string {
+	if maxW <= 0 {
+		return ""
+	}
 	if lipgloss.Width(s) <= maxW {
 		return s
 	}
 	const ellipsis = "..."
+	ellipsisW := lipgloss.Width(ellipsis)
+	if maxW < ellipsisW {
+		return strings.Repeat(".", maxW)
+	}
 	runes := []rune(s)
-	for len(runes) > 0 && lipgloss.Width(string(runes))+lipgloss.Width(ellipsis) > maxW {
+	for len(runes) > 0 && lipgloss.Width(string(runes))+ellipsisW > maxW {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + ellipsis
+}
+
+func wrapToWidth(s string, maxW int) []string {
+	if maxW <= 0 {
+		return []string{""}
+	}
+	paragraphs := strings.Split(s, "\n")
+	lines := make([]string, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		words := strings.Fields(paragraph)
+		if len(words) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		line := ""
+		for _, word := range words {
+			if line == "" {
+				if lipgloss.Width(word) <= maxW {
+					line = word
+					continue
+				}
+				chunks := splitLongWord(word, maxW)
+				lines = append(lines, chunks[:len(chunks)-1]...)
+				line = chunks[len(chunks)-1]
+				continue
+			}
+			candidate := line + " " + word
+			if lipgloss.Width(candidate) <= maxW {
+				line = candidate
+				continue
+			}
+			lines = append(lines, line)
+			if lipgloss.Width(word) <= maxW {
+				line = word
+				continue
+			}
+			chunks := splitLongWord(word, maxW)
+			lines = append(lines, chunks[:len(chunks)-1]...)
+			line = chunks[len(chunks)-1]
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func splitLongWord(s string, maxW int) []string {
+	if maxW <= 0 {
+		return []string{""}
+	}
+	var chunks []string
+	var chunk []rune
+	chunkW := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if len(chunk) > 0 && chunkW+rw > maxW {
+			chunks = append(chunks, string(chunk))
+			chunk = nil
+			chunkW = 0
+		}
+		chunk = append(chunk, r)
+		chunkW += rw
+	}
+	if len(chunk) > 0 {
+		chunks = append(chunks, string(chunk))
+	}
+	if len(chunks) == 0 {
+		return []string{""}
+	}
+	return chunks
+}
+
+func appendWrapped(lines []string, text string, maxW int, style lipgloss.Style) []string {
+	for _, line := range wrapToWidth(text, maxW) {
+		lines = append(lines, style.Render(line))
+	}
+	return lines
 }
 
 // formatPreviewContent builds styled preview lines for a single repository.
@@ -34,11 +119,9 @@ func formatPreviewContent(repo githubapi.Repository, w int) []string {
 	now := time.Now().UTC()
 	var lines []string
 
-	// Line 1: NameWithOwner
-	lines = append(lines, stylePaneTitle.Render(truncateToWidth(repo.NameWithOwner, maxW)))
+	lines = appendWrapped(lines, repo.NameWithOwner, maxW, stylePaneTitle)
 
-	// Line 2: URL
-	lines = append(lines, styleRepoURL.Render(truncateToWidth(repo.URL, maxW)))
+	lines = appendWrapped(lines, repo.URL, maxW, styleRepoURL)
 
 	// Blank line
 	lines = append(lines, "")
@@ -61,8 +144,6 @@ func formatPreviewContent(repo githubapi.Repository, w int) []string {
 		badge = "  " + styleRepoBadge.Render("archived")
 	case repo.IsFork:
 		badge = "  " + styleRepoBadge.Render("fork")
-	default:
-		badge = "  " + styleRepoBadge.Render("source")
 	}
 
 	lines = append(lines, starsStr+langStr+badge)
@@ -73,7 +154,7 @@ func formatPreviewContent(repo githubapi.Repository, w int) []string {
 	// Description
 	lines = append(lines, stylePaneSubtitle.Render("Description"))
 	if repo.Description != "" {
-		lines = append(lines, styleRepoName.Render(truncateToWidth(repo.Description, maxW)))
+		lines = appendWrapped(lines, repo.Description, maxW, styleRepoName)
 	} else {
 		lines = append(lines, styleEmptyState.Render("(no description)"))
 	}
@@ -106,11 +187,16 @@ func formatPreviewContent(repo githubapi.Repository, w int) []string {
 	// Topics
 	topicsVal := ""
 	if len(repo.Topics) > 0 {
-		topicsVal = truncateToWidth(strings.Join(repo.Topics, ", "), maxW)
+		topicsVal = strings.Join(repo.Topics, ", ")
 	} else {
 		topicsVal = styleEmptyState.Render("-")
 	}
-	lines = append(lines, stylePaneSubtitle.Render("Topics:")+" "+topicsVal)
+	lines = append(lines, stylePaneSubtitle.Render("Topics:"))
+	if len(repo.Topics) > 0 {
+		lines = appendWrapped(lines, topicsVal, maxW, styleRepoName)
+	} else {
+		lines = append(lines, topicsVal)
+	}
 
 	return lines
 }

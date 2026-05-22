@@ -19,6 +19,102 @@ type diskCacheEntry struct {
 	Repo    *Repository  `json:"repo,omitempty"`
 }
 
+type diskCacheEntryJSON struct {
+	Version int                   `json:"version"`
+	Expiry  time.Time             `json:"expiry"`
+	Lists   []StarList            `json:"lists,omitempty"`
+	Repos   []diskCacheRepository `json:"repos,omitempty"`
+	Repo    *diskCacheRepository  `json:"repo,omitempty"`
+}
+
+type diskCacheRepository struct {
+	ID                string   `json:"id,omitempty"`
+	NameWithOwner     string   `json:"nameWithOwner"`
+	Description       string   `json:"description"`
+	IsFork            bool     `json:"isFork"`
+	StargazerCount    int      `json:"stargazerCount"`
+	PushedAt          string   `json:"pushedAt"`
+	URL               string   `json:"url"`
+	Language          string   `json:"language"`
+	StarredAt         string   `json:"starredAt,omitempty"`
+	IsArchived        bool     `json:"isArchived,omitempty"`
+	License           string   `json:"license,omitempty"`
+	Topics            []string `json:"topics,omitempty"`
+	NormNameWithOwner string   `json:"normNameWithOwner,omitempty"`
+	NormDescription   string   `json:"normDescription,omitempty"`
+	NormLanguage      string   `json:"normLanguage,omitempty"`
+}
+
+func (e diskCacheEntry) MarshalJSON() ([]byte, error) {
+	entry := diskCacheEntryJSON{
+		Version: e.Version,
+		Expiry:  e.Expiry,
+		Lists:   e.Lists,
+		Repos:   repositoriesToDiskCache(e.Repos),
+		Repo:    repositoryToDiskCachePtr(e.Repo),
+	}
+	return json.Marshal(entry)
+}
+
+func (e *diskCacheEntry) UnmarshalJSON(data []byte) error {
+	var entry diskCacheEntryJSON
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return err
+	}
+	e.Version = entry.Version
+	e.Expiry = entry.Expiry
+	e.Lists = entry.Lists
+	e.Repos = repositoriesFromDiskCache(entry.Repos)
+	e.Repo = repositoryFromDiskCachePtr(entry.Repo)
+	return nil
+}
+
+func repositoriesToDiskCache(repos []Repository) []diskCacheRepository {
+	if repos == nil {
+		return nil
+	}
+	out := make([]diskCacheRepository, len(repos))
+	for i, repo := range repos {
+		out[i] = repositoryToDiskCache(repo)
+	}
+	return out
+}
+
+func repositoryToDiskCachePtr(repo *Repository) *diskCacheRepository {
+	if repo == nil {
+		return nil
+	}
+	out := repositoryToDiskCache(*repo)
+	return &out
+}
+
+func repositoryToDiskCache(repo Repository) diskCacheRepository {
+	return diskCacheRepository(repo)
+}
+
+func repositoriesFromDiskCache(repos []diskCacheRepository) []Repository {
+	if repos == nil {
+		return nil
+	}
+	out := make([]Repository, len(repos))
+	for i, repo := range repos {
+		out[i] = repositoryFromDiskCache(repo)
+	}
+	return out
+}
+
+func repositoryFromDiskCachePtr(repo *diskCacheRepository) *Repository {
+	if repo == nil {
+		return nil
+	}
+	out := repositoryFromDiskCache(*repo)
+	return &out
+}
+
+func repositoryFromDiskCache(repo diskCacheRepository) Repository {
+	return Repository(repo)
+}
+
 // NewDiskCacheService wraps inner with an opt-in disk read cache.
 // Cache entries use the host, method type, list ID, and withTopics in the
 // cache key. Entries expire after TTL (default 5 min). Mutations and

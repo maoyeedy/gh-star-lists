@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -74,6 +75,81 @@ func TestPreviewToggleLoadsTopics(t *testing.T) {
 	}
 }
 
+func TestPreviewToggleKeepsBasicReposVisibleWhileTopicsLoad(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.repoCursor = 1
+
+	m2 := update(m, keyPress('p'))
+
+	if !m2.showPreview {
+		t.Fatal("showPreview should be true after p")
+	}
+	if len(m2.displayedRepos) != len(svc.repos) {
+		t.Fatalf("displayedRepos len = %d, want %d", len(m2.displayedRepos), len(svc.repos))
+	}
+	if m2.repoCursor != 1 {
+		t.Fatalf("repoCursor = %d after preview toggle, want 1", m2.repoCursor)
+	}
+	rendered := m2.renderRepoPane(80, 10)
+	if strings.Contains(rendered, "Loading") {
+		t.Fatalf("repo pane rendered loading while basic repos were cached:\n%s", rendered)
+	}
+}
+
+func TestPreviewLoadEnrichesStarredAt(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{
+		repos: []githubapi.Repository{
+			{ID: "R_1", NameWithOwner: "owner/repo"},
+		},
+		starred: []githubapi.Repository{
+			{ID: "R_1", NameWithOwner: "owner/repo", StarredAt: "2026-05-21T17:23:22Z"},
+		},
+	}
+
+	// loadReposCmd (withTopics) returns repos without starredAt.
+	msg := loadReposCmd(context.Background(), svc, "UL_1", true, 0)()
+	loaded, ok := msg.(reposLoadedMsg)
+	if !ok {
+		t.Fatalf("loadReposCmd returned %T, want reposLoadedMsg", msg)
+	}
+	if loaded.err != nil {
+		t.Fatalf("loadReposCmd error: %v", loaded.err)
+	}
+	if got := loaded.repos[0].StarredAt; got != "" {
+		t.Fatalf("StarredAt = %q, want empty (enrichment is async)", got)
+	}
+	if svc.starredCalls != 0 {
+		t.Fatalf(
+			"starredCalls = %d, want 0 (starredAt fetched by enrichStarredAtCmd)",
+			svc.starredCalls,
+		)
+	}
+
+	// enrichStarredAtCmd fetches starredAt and returns enriched repos.
+	p := newPreloader()
+	msg2 := enrichStarredAtCmd(context.Background(), svc, p, "UL_1", loaded.repos, 0)()
+	enriched, ok := msg2.(starredAtEnrichedMsg)
+	if !ok {
+		t.Fatalf("enrichStarredAtCmd returned %T, want starredAtEnrichedMsg", msg2)
+	}
+	if enriched.err != nil {
+		t.Fatalf("enrichStarredAtCmd error: %v", enriched.err)
+	}
+	if got := enriched.repos[0].StarredAt; got != "2026-05-21T17:23:22Z" {
+		t.Fatalf("StarredAt = %q after enrichment", got)
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d after enrichment, want 1", svc.starredCalls)
+	}
+}
+
 // TestPreviewNoReloadInListPane verifies 'p' in list pane only toggles without fetching.
 func TestPreviewNoReloadInListPane(t *testing.T) {
 	t.Parallel()
@@ -112,6 +188,40 @@ func TestPreviewPaneRendersInThreeColumnLayout(t *testing.T) {
 	}
 	if !found {
 		t.Error("three-column layout should have rows with at least 2 '|' separators")
+	}
+}
+
+func TestPreviewSeparatorsStayAlignedAtNarrowThreeColumnWidth(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.width = 120
+	m.height = 24
+
+	g := calcPaneGeometry(m.width, m.showPreview)
+	rows := strings.Split(m.renderLayout(), "\n")
+	for i, row := range rows[1 : len(rows)-1] {
+		plain := stripANSI(row)
+		sep1 := strings.Index(plain, "|")
+		sep2 := strings.LastIndex(plain, "|")
+		sep1Col := lipgloss.Width(plain[:sep1])
+		sep2Col := lipgloss.Width(plain[:sep2])
+		if sep1Col != g.sep1Col || sep2Col != g.sep2Col {
+			t.Fatalf(
+				"row %d separators = (%d, %d), want (%d, %d): %q",
+				i,
+				sep1Col,
+				sep2Col,
+				g.sep1Col,
+				g.sep2Col,
+				plain,
+			)
+		}
 	}
 }
 
@@ -160,6 +270,9 @@ func TestPreviewDetailBlock(t *testing.T) {
 			t.Errorf("preview pane missing %q; got:\n%s", want, rendered)
 		}
 	}
+	if strings.Contains(stripANSI(rendered), "source") {
+		t.Errorf("preview pane should not render source badge for normal repos; got:\n%s", rendered)
+	}
 }
 
 // TestPreviewFallbacks verifies that empty fields render the appropriate
@@ -195,6 +308,41 @@ func TestPreviewFallbacks(t *testing.T) {
 	// "-" must appear for at least one empty field (language, license, topics).
 	if !strings.Contains(rendered, "-") {
 		t.Errorf("preview pane should contain '-' for empty fields; got:\n%s", rendered)
+	}
+}
+
+func TestPreviewDescriptionWraps(t *testing.T) {
+	t.Parallel()
+	repo := githubapi.Repository{
+		ID:             "R_wrap",
+		NameWithOwner:  "owner/repo",
+		Description:    "alpha beta gamma delta",
+		URL:            "https://github.com/owner/repo",
+		StargazerCount: 1,
+	}
+	svc := &fakeService{
+		lists: []githubapi.StarList{{ID: "UL_1", Name: "list", RepoCount: 1}},
+		repos: []githubapi.Repository{repo},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.repoCursor = 0
+
+	rendered := previewPane(m, 20, 20)
+	plain := stripANSI(rendered)
+
+	if !strings.Contains(plain, "alpha beta gamma\n") {
+		t.Fatalf("preview description should wrap first line; got:\n%s", rendered)
+	}
+	if !strings.Contains(plain, "delta") {
+		t.Fatalf("preview description should include wrapped continuation; got:\n%s", rendered)
+	}
+	if strings.Contains(plain, "alpha beta gamma...") {
+		t.Fatalf("preview description should wrap instead of truncate; got:\n%s", rendered)
 	}
 }
 

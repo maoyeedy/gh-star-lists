@@ -1278,6 +1278,49 @@ func TestRunAllSortedByStarred(t *testing.T) {
 	}
 }
 
+func TestRunListSortedByStarredEnrichesStarredAt(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{ID: "UL_1", Name: "Theme"},
+		},
+		repos: []githubapi.Repository{
+			{
+				ID:            "R_1",
+				NameWithOwner: "HyDE-Project/HyDE",
+				URL:           "https://github.com/HyDE-Project/HyDE",
+			},
+		},
+		starred: []githubapi.Repository{
+			{
+				ID:            "R_1",
+				NameWithOwner: "HyDE-Project/HyDE",
+				URL:           "https://github.com/HyDE-Project/HyDE",
+				StarredAt:     "2026-05-21T17:23:22Z",
+			},
+		},
+	}
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "Theme", "--sort", "starred", "--json"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"starredAt":"2026-05-21T17:23:22Z"`) {
+		t.Fatalf("stdout missing enriched starredAt:\n%s", stdout.String())
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d, want 1", svc.starredCalls)
+	}
+}
+
 func TestRunWebOpensListURL(t *testing.T) {
 	tests := []struct {
 		name    string

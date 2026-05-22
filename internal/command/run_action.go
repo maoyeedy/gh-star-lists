@@ -48,8 +48,28 @@ func fetchReposForAction(
 		if err != nil {
 			return nil, err
 		}
-		return service.ListRepositories(ctx, resolvedID, directListOptions(parsed, withTopics))
+		repos, err := service.ListRepositories(
+			ctx,
+			resolvedID,
+			directListOptions(parsed, withTopics),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if sortNeedsStarredAt(parsed) {
+			return githubapi.WithStarredAt(ctx, service, repos)
+		}
+		return repos, nil
 	}
+}
+
+func sortNeedsStarredAt(parsed Parsed) bool {
+	for _, key := range parsed.SortKeys {
+		if key == SortKeyStarred {
+			return true
+		}
+	}
+	return false
 }
 
 func topicsNeeded(parsed Parsed) bool {

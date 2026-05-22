@@ -30,7 +30,11 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 		// when preview is waiting on topics and basic repos are the best data.
 		if m.focusedList != nil && msg.listID == m.focusedList.ID &&
 			msg.withTopics == m.showPreview {
-			m.populateDisplayedRepos(entry.repos)
+			if msg.withTopics {
+				m.refreshDisplayedRepos(entry.repos)
+			} else {
+				m.populateDisplayedRepos(entry.repos)
+			}
 		} else if m.focusedList != nil && msg.listID == m.focusedList.ID &&
 			m.showPreview &&
 			!msg.withTopics {
@@ -113,7 +117,7 @@ func (m model) handleStarredAtEnriched(msg starredAtEnrichedMsg) (tea.Model, tea
 	}
 	// Refresh displayed repos if this is the focused list and preview is showing.
 	if m.focusedList != nil && msg.listID == m.focusedList.ID && m.showPreview {
-		m.populateDisplayedRepos(msg.repos)
+		m.refreshDisplayedRepos(msg.repos)
 	}
 	return m, nil
 }

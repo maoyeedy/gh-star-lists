@@ -281,6 +281,22 @@ func (m *model) focusList(idx int) tea.Cmd {
 }
 
 func (m *model) populateDisplayedRepos(repos []domain.Repository) {
+	m.populateDisplayedReposWithCursor(repos, false)
+}
+
+func (m *model) refreshDisplayedRepos(repos []domain.Repository) {
+	m.populateDisplayedReposWithCursor(repos, true)
+}
+
+func (m *model) populateDisplayedReposWithCursor(repos []domain.Repository, preserveCursor bool) {
+	var previousRepoID string
+	previousCursor := m.repoCursor
+	previousOffset := m.repoOffset
+	previousPreviewOffset := m.previewOffset
+	if preserveCursor && m.repoCursor >= 0 && m.repoCursor < len(m.displayedRepos) {
+		previousRepoID = repoIdentity(m.displayedRepos[m.repoCursor])
+	}
+
 	sorted := make([]domain.Repository, len(repos))
 	copy(sorted, repos)
 	sortRepos(sorted, m.sortRepos)
@@ -288,8 +304,32 @@ func (m *model) populateDisplayedRepos(repos []domain.Repository) {
 	if m.repoSearchActive && m.repoSearchQuery != "" {
 		*m = m.rebuildDisplayed()
 	}
-	m.repoCursor = 0
-	m.repoOffset = 0
+	if !preserveCursor {
+		m.repoCursor = 0
+		m.repoOffset = 0
+		return
+	}
+
+	m.repoCursor = clampInt(previousCursor, 0, len(m.displayedRepos)-1)
+	if previousRepoID != "" {
+		for i, repo := range m.displayedRepos {
+			if repoIdentity(repo) == previousRepoID {
+				m.repoCursor = i
+				break
+			}
+		}
+	}
+	m.repoOffset = clampInt(previousOffset, 0, max(0, len(m.displayedRepos)-m.repoPaneH()))
+	slidden := m.slideRepoOffset()
+	*m = slidden
+	m.previewOffset = previousPreviewOffset
+}
+
+func repoIdentity(repo domain.Repository) string {
+	if repo.ID != "" {
+		return repo.ID
+	}
+	return repo.NameWithOwner
 }
 
 func (m model) repoPaneCacheEntry() *repoCacheEntry {

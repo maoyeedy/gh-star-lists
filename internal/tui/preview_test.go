@@ -102,6 +102,53 @@ func TestPreviewToggleKeepsBasicReposVisibleWhileTopicsLoad(t *testing.T) {
 	}
 }
 
+func TestPreviewTopicsCompletionPreservesRepoCursor(t *testing.T) {
+	t.Parallel()
+	svc := largeSvc(20)
+	m := newTestModel(svc)
+	m.height = 10
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{
+		repos:  svc.repos,
+		listID: svc.lists[0].ID,
+		gen:    m.preloader.generation,
+	})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.showPreview = true
+	m.repoCursor = 7
+	m.repoOffset = 4
+	m.previewOffset = 3
+	selectedID := m.displayedRepos[m.repoCursor].ID
+
+	withTopics := append([]domain.Repository(nil), svc.repos...)
+	withTopics[7].Topics = []string{"cli", "github"}
+	m.preloader.setCacheEntry(repoCacheKey{svc.lists[0].ID, true}, &repoCacheEntry{
+		state: repoCacheLoading,
+		gen:   m.preloader.generation,
+	})
+
+	m2 := update(m, reposLoadedMsg{
+		repos:      withTopics,
+		listID:     svc.lists[0].ID,
+		withTopics: true,
+		gen:        m.preloader.generation,
+	})
+
+	if got := m2.displayedRepos[m2.repoCursor].ID; got != selectedID {
+		t.Fatalf("cursor repo ID = %q, want %q after topics load", got, selectedID)
+	}
+	if m2.repoCursor != 7 {
+		t.Fatalf("repoCursor = %d after topics load, want 7", m2.repoCursor)
+	}
+	if m2.repoOffset != 4 {
+		t.Fatalf("repoOffset = %d after topics load, want 4", m2.repoOffset)
+	}
+	if m2.previewOffset != 3 {
+		t.Fatalf("previewOffset = %d after topics load, want 3", m2.previewOffset)
+	}
+}
+
 func TestPreviewLoadEnrichesStarredAt(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{
@@ -147,6 +194,50 @@ func TestPreviewLoadEnrichesStarredAt(t *testing.T) {
 	}
 	if svc.starredCalls != 1 {
 		t.Fatalf("starredCalls = %d after enrichment, want 1", svc.starredCalls)
+	}
+}
+
+func TestPreviewStarredAtEnrichmentPreservesRepoCursorByIdentity(t *testing.T) {
+	t.Parallel()
+	svc := largeSvc(6)
+	m := newTestModel(svc)
+	m.height = 8
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.showPreview = true
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m.sortRepos = sortReposStarredAt
+
+	detailed := append([]domain.Repository(nil), svc.repos...)
+	m.preloader.setCacheEntry(repoCacheKey{svc.lists[0].ID, true}, &repoCacheEntry{
+		state: repoCacheLoaded,
+		repos: detailed,
+		gen:   m.preloader.generation,
+	})
+	m.populateDisplayedRepos(detailed)
+	m.repoCursor = 3
+	m.repoOffset = 1
+	selectedID := m.displayedRepos[m.repoCursor].ID
+
+	enriched := append([]domain.Repository(nil), detailed...)
+	enriched[0].StarredAt = "2026-05-22T10:00:00Z"
+	enriched[1].StarredAt = "2026-05-22T09:00:00Z"
+	enriched[2].StarredAt = "2026-05-22T08:00:00Z"
+	enriched[3].StarredAt = "2026-05-22T08:30:00Z"
+	enriched[4].StarredAt = "2026-05-22T07:00:00Z"
+	enriched[5].StarredAt = "2026-05-22T06:00:00Z"
+
+	m2 := update(m, starredAtEnrichedMsg{
+		repos:  enriched,
+		listID: svc.lists[0].ID,
+		gen:    m.preloader.generation,
+	})
+
+	if got := m2.displayedRepos[m2.repoCursor].ID; got != selectedID {
+		t.Fatalf("cursor repo ID = %q, want %q after starredAt enrichment", got, selectedID)
+	}
+	if m2.repoCursor == 0 {
+		t.Fatalf("repoCursor reset to first item after starredAt enrichment")
 	}
 }
 

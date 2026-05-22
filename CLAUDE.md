@@ -37,6 +37,11 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 
 ## New Feature Planning
 
+- **Split-file discipline.** Each package uses focused sub-files. Before adding to a monolithic file, check whether the code belongs in an existing split file; if no split file covers this theme and the addition would exceed ~100 lines, create `<pkg>_<theme>.go`. Key split files by package:
+  - `command`: `run_action.go` · `run_filter.go` · `run_sort.go` · `run_index.go` · `run_prompt.go` · `run_output.go` · `run_tui.go` · `types.go` · `validate.go`
+  - `githubapi`: `graphql_queries.go` · `graphql_types.go` · `graphql_service.go` · `graphql_helpers.go` · `diskcache_policy.go` · `diskcache_store.go` · `diskcache_coalesce.go` · `diskcache_invalidate.go`
+  - `search`: `tokenize.go` · `edit.go` · `scoring.go`
+  - `tui`: `navigate.go` · `selection.go` · `preview.go` · `update_lists.go` · `update_repos.go` · `update_mutation.go` · `update_refresh.go`
 - **Shared before specialized.** Add logic to `githubapi` or neutral packages (e.g. `internal/humanize`) before `tui` or `command`. No data-transform or business-rule duplication across the boundary.
 - **Package-level over interface method.** If new behavior can be built from existing `Service` methods, use a package-level function (no ripple to 3+ implementations).
 - **Bulk ops.** Always `errgroup.SetLimit(5)` with `atomic.Int64` tracking. Check `ctx.Err()` at pagination/batch tops.
@@ -76,6 +81,7 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 - [ ] Bulk operation? `errgroup.SetLimit(5)` + `atomic.Int64` + `sync.Mutex`
 - [ ] New cache? test hit + miss, verify value varies, receiver propagates
 - [ ] New iota? `<Prefix>End` sentinel, cycle with `% int(<Prefix>End)`
+- [ ] Code in the right split file? (e.g. filters → `run_filter.go`, sort → `run_sort.go`, TUI launch → `run_tui.go`; new theme with >100 lines → new `<pkg>_<theme>.go`)
 - [ ] Build passes? `make lint && make check`
 - [ ] Non-ASCII? `make ascii-check`
 

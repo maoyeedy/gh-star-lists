@@ -31,7 +31,7 @@ Plan the sequence yourself based on what you discover. The only ordering rule: *
 - After `merge`: the source list is deleted by design; clean up any repos unexpectedly added to the target.
 - Delete all `__test*` lists before declaring done.
 
-**`browse`** is TTY-only. Verify it exits with a clear error (not a panic) when stdout is not a TTY: `go run . browse 2>&1 | head -5`. A non-zero exit with a readable message counts as passing.
+**`tui`** is TTY-only. Verify it exits with a clear error (not a panic) when stdout is not a TTY: `go run . tui 2>&1 | head -5`. A non-zero exit with a readable message counts as passing.
 
 **Dry-run flag** — where a command supports `--dry-run`, run with it first to verify the plan output before running for real.
 

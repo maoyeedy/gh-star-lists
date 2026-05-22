@@ -75,7 +75,7 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 - [ ] New output mode? `WriteStarListsWithOptions` + `WriteRepositoriesWithOptions` + `SelectOutputMode`
 - [ ] New GraphQL query? paginate with `$endCursor`/`$first` + `HasNextPage` + `ctx.Err()` guard
 - [ ] New service method? add to `Service` + `lazyService` + `cacheService` + all `fakeService` impls
-- [ ] New TUI action? wire `browse` in parse.go → dispatch in run.go → help → TTY guard
+- [ ] New TUI action? wire `tui` in parse.go → dispatch in run.go → help → TTY guard
 - [ ] New TUI key binding? keys.go → model.handleKey → help overlay → test
 - [ ] Shared logic needed? extract to `githubapi`/`humanize`/neutral package before duplicating
 - [ ] Bulk operation? `errgroup.SetLimit(5)` + `atomic.Int64` + `sync.Mutex`

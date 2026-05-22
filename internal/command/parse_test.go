@@ -910,6 +910,6 @@ func TestParseMouseFlag(t *testing.T) {
 	// --mouse on a non-tui action returns an error
 	_, err = command.Parse([]string{"list", "--mouse"})
 	if err == nil {
-		t.Error("expected error for --mouse on non-browse action")
+		t.Error("expected error for --mouse on non-tui action")
 	}
 }

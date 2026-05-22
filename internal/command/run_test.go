@@ -2478,15 +2478,21 @@ func TestRunTUINonTTYReturnsUsageError(t *testing.T) {
 	}
 }
 
-func TestRunBrowseAliasNonTTYReturnsUsageError(t *testing.T) {
+func TestRunUnknownCommandReturnsUsageError(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
 	defer command.CanPromptForTest(prevCanPrompt)
 
 	var stdout, stderr strings.Builder
-	code := runCommand(context.Background(), []string{"browse"}, &stdout, &stderr, fixtureService())
+	code := runCommand(
+		context.Background(),
+		[]string{"unknown"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
 
 	if code != command.ExitUsage {
-		t.Fatalf("browse alias: exit = %d, want ExitUsage on non-TTY", code)
+		t.Fatalf("unknown command: exit = %d, want ExitUsage", code)
 	}
 }
 

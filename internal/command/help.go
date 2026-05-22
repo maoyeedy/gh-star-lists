@@ -8,8 +8,6 @@ import (
 
 const helpTextFull = `gh star-lists
 
-Query and manage GitHub Star Lists through the GitHub CLI authentication context.
-
 Usage:
   gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
   gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
@@ -42,7 +40,7 @@ Commands:
   merge             Merge all repositories from one Star List into another,
                     then delete the source list.
   unstar <REPO>     Unstar a repository.
-  tui               Open interactive two-pane browser (alias: browse).
+  tui               Open interactive two-pane browser.
 
 Output:
   human             Table output optimized for reading (default).
@@ -97,16 +95,11 @@ Examples:
   gh star-lists copy --from tools --to backup
   gh star-lists merge --from old --to new
 
-Authentication:
-  Uses the user's existing gh authentication. This command does not store tokens.
-
 Host:
   --host <HOST>     GitHub Enterprise hostname (default: github.com).
 `
 
 const helpTextCompact = `gh star-lists
-
-Query and manage GitHub Star Lists through the GitHub CLI.
 
 Usage:
   gh star-lists [list] [flags]
@@ -115,20 +108,18 @@ Usage:
   gh star-lists --full
 
 Commands:
-  list    List your Star Lists (default).
-  repos   List repositories in a Star List.
-  create  Create a new Star List.
-  edit    Update a Star List.
-  delete  Delete a Star List.
-  add     Add a starred repo to a Star List.
-  remove  Remove a repo from a Star List.
-  move    Move a repo between Star Lists.
-  copy    Copy all repos from one list to another.
-  merge   Merge one list into another and delete the source.
-  unstar  Unstar a repository.
-  tui     Interactive two-pane browser (alias: browse).
-
-Aliases: ls=list  rm=remove  mv=move  cp=copy  browse=tui
+  list (ls)     List your Star Lists (default).
+  repos         List repositories in a Star List.
+  create        Create a new Star List.
+  edit          Update a Star List.
+  delete        Delete a Star List.
+  add           Add a starred repo to a Star List.
+  remove (rm)   Remove a repo from a Star List.
+  move (mv)     Move a repo between Star Lists.
+  copy (cp)     Copy all repos from one list to another.
+  merge         Merge one list into another and delete the source.
+  unstar        Unstar a repository.
+  tui           Interactive two-pane browser.
 
 Examples:
   gh star-lists                                         # list your Star Lists
@@ -139,9 +130,6 @@ Examples:
 
 Run gh star-lists <command> --help for command details.
 Run gh star-lists --full for the complete flag reference.
-
-Authentication:
-  Uses the user's existing gh authentication. This command does not store tokens.
 `
 
 var commandHelp = map[Action]string{
@@ -412,7 +400,6 @@ Examples:
     --cache-ttl    Cache TTL (default: 5m, 0 to disable)
     --no-cache     Disable response cache
 
-  Alias: browse
 `,
 }
 
@@ -479,9 +466,6 @@ func UsageText() string {
 
 Tip: in a terminal, 'gh star-lists' with no arguments opens the interactive browser.
 Use 'gh star-lists tui --help' for browser options.
-
-Authentication:
-  Uses the user's existing gh authentication. This command does not store tokens.
 
 Host:
   --host <HOST>     GitHub Enterprise hostname (default: github.com).

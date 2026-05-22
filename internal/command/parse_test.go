@@ -77,6 +77,26 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "repos unlisted sort starred",
+			argv: []string{"repos", "--unlisted", "--sort", "starred"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				Mode:     format.OutputHuman,
+				Unlisted: true,
+				SortKeys: []string{"starred"},
+			},
+		},
+		{
+			name: "repos all sort starred",
+			argv: []string{"repos", "--all", "--sort", "starred"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				Mode:     format.OutputHuman,
+				All:      true,
+				SortKeys: []string{"starred"},
+			},
+		},
+		{
 			name: "long help short circuits",
 			argv: []string{"--help"},
 			want: command.Parsed{Action: command.ActionHelp, Mode: format.OutputHuman},
@@ -637,11 +657,6 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "list unsupported sort key",
 			argv:        []string{"list", "--sort", "stars"},
 			wantMessage: "unsupported sort key \"stars\" for list",
-		},
-		{
-			name:        "sort repos by starred",
-			argv:        []string{"repos", "--unlisted", "--sort", "starred"},
-			wantMessage: "unsupported sort key \"starred\" for repos",
 		},
 		{
 			name:        "repos unsupported sort key",

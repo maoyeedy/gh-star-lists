@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
@@ -101,12 +102,18 @@ func sortRepos(repos []githubapi.Repository, key sortReposKey) {
 	})
 }
 
-func (m model) cycleSort() model {
+func (m model) cycleSort() (model, tea.Cmd) {
 	if m.active == paneList {
 		m.sortLists = sortListsKey((int(m.sortLists) + 1) % int(sortListsEnd))
 		sortStarLists(m.lists, m.sortLists)
+		m = m.rebuildDisplayed()
 		m.listCursor = 0
 		m.listOffset = 0
+		if len(m.displayedLists) > 0 {
+			return m, (&m).focusList(0)
+		}
+		m.focusedList = nil
+		m.displayedRepos = nil
 	} else {
 		m.sortRepos = sortReposKey((int(m.sortRepos) + 1) % int(sortReposEnd))
 		sortRepos(m.displayedRepos, m.sortRepos)
@@ -114,5 +121,5 @@ func (m model) cycleSort() model {
 		m.previewOffset = 0
 		m.repoOffset = 0
 	}
-	return m
+	return m, nil
 }

@@ -19,6 +19,13 @@ func TestSortCycleListsPane(t *testing.T) {
 	if m2.sortLists == initial {
 		t.Error("sortLists should change after s key")
 	}
+	if m2.listCursor != 0 {
+		t.Errorf("listCursor = %d, want 0 after list sort", m2.listCursor)
+	}
+	if m2.focusedList == nil || len(m2.displayedLists) == 0 ||
+		m2.focusedList.ID != m2.displayedLists[0].ID {
+		t.Fatalf("focusedList = %+v, want displayedLists[0]", m2.focusedList)
+	}
 	// Cycle 4 times should return to start
 	cur := m
 	for i := 0; i < 4; i++ {
@@ -26,6 +33,49 @@ func TestSortCycleListsPane(t *testing.T) {
 	}
 	if cur.sortLists != initial {
 		t.Errorf("sortLists after 4 cycles = %d, want %d (initial)", cur.sortLists, initial)
+	}
+}
+
+func TestListsLoadedRebindsFocusedListRename(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[1]
+	m.listCursor = 1
+
+	renamed := append([]githubapi.StarList(nil), svc.lists...)
+	renamed[1].Name = "Renamed"
+	m2 := update(m, listsLoadedMsg{lists: renamed})
+
+	if m2.focusedList == nil || m2.focusedList.ID != "UL_2" ||
+		m2.focusedList.Name != "Renamed" {
+		t.Fatalf("focusedList = %+v, want renamed UL_2", m2.focusedList)
+	}
+	if m2.listCursor != 1 {
+		t.Fatalf("listCursor = %d, want 1", m2.listCursor)
+	}
+}
+
+func TestListsLoadedRefocusesAfterFocusedListDeleted(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[1]
+	m.listCursor = 1
+
+	remaining := []githubapi.StarList{svc.lists[0], svc.lists[2]}
+	m2 := update(m, listsLoadedMsg{lists: remaining})
+
+	if m2.focusedList == nil {
+		t.Fatal("focusedList should be rebound to remaining list")
+	}
+	if m2.focusedList.ID == "UL_2" {
+		t.Fatalf("focusedList = %+v, deleted list should not remain focused", m2.focusedList)
+	}
+	if len(m2.displayedLists) > 0 && m2.focusedList.ID != m2.displayedLists[0].ID {
+		t.Fatalf("focusedList = %+v, want first displayed list", m2.focusedList)
 	}
 }
 

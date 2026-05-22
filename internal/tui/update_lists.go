@@ -5,6 +5,10 @@ import (
 )
 
 func (m model) handleListsLoaded(msg listsLoadedMsg) (tea.Model, tea.Cmd) {
+	var previousFocusedID string
+	if m.focusedList != nil {
+		previousFocusedID = m.focusedList.ID
+	}
 	m.lists = msg.lists
 	m.listsLoading = false
 	sortStarLists(m.lists, m.sortLists)
@@ -31,6 +35,26 @@ func (m model) handleListsLoaded(msg listsLoadedMsg) (tea.Model, tea.Cmd) {
 		m.preloader.inFlight = 0
 		preloadCmd := m.preloader.schedulePreload(m.ctx, m.svc)
 		return m, preloadCmd
+	}
+	if previousFocusedID != "" {
+		for i, list := range m.displayedLists {
+			if list.ID == previousFocusedID {
+				m.listCursor = i
+				cmd := (&m).focusList(i)
+				return m, cmd
+			}
+		}
+		if len(m.displayedLists) > 0 {
+			m.listCursor = 0
+			cmd := (&m).focusList(0)
+			return m, cmd
+		}
+		m.focusedList = nil
+		m.displayedRepos = nil
+		m.repoCursor = 0
+		m.previewOffset = 0
+		m.repoOffset = 0
+		m.selected = nil
 	}
 	return m, nil
 }

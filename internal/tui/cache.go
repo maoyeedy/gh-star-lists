@@ -201,7 +201,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 			break
 		}
 	}
-	key := repoCacheKey{list.ID, false}
+	key := repoCacheKey{list.ID, m.showPreview}
 	e := m.preloader.cache[key]
 	switch {
 	case e != nil && e.state == repoCacheLoaded:
@@ -222,6 +222,9 @@ func (m *model) focusList(idx int) tea.Cmd {
 	case e != nil && e.state == repoCacheError:
 		m.displayedRepos = nil
 		return nil
+	case m.showPreview:
+		m.displayedRepos = nil
+		return m.startRepoLoad(list.ID, true)
 	default: // repoCacheIdle or absent: promote and start
 		// Cancel in-flight loads for non-focused lists to free concurrency slots.
 		for id, cancel := range m.preloader.preloadCancels {
@@ -238,6 +241,29 @@ func (m *model) focusList(idx int) tea.Cmd {
 		m.displayedRepos = nil
 		return m.preloader.schedulePreload(m.ctx, m.svc)
 	}
+}
+
+func (m *model) startRepoLoad(listID string, withTopics bool) tea.Cmd {
+	loadCtx, cancel := context.WithCancel(m.ctx)
+	key := repoCacheKey{listID, withTopics}
+	if withTopics {
+		if m.preloader.topicsCancels == nil {
+			m.preloader.topicsCancels = make(map[string]context.CancelFunc)
+		}
+		m.preloader.topicsCancels[listID] = cancel
+		m.preloader.topicsInFlight++
+	} else {
+		if m.preloader.preloadCancels == nil {
+			m.preloader.preloadCancels = make(map[string]context.CancelFunc)
+		}
+		m.preloader.preloadCancels[listID] = cancel
+		m.preloader.inFlight++
+	}
+	m.preloader.setCacheEntry(key, &repoCacheEntry{
+		state: repoCacheLoading,
+		gen:   m.preloader.generation,
+	})
+	return loadReposCmd(loadCtx, m.svc, listID, withTopics, m.preloader.generation)
 }
 
 func (m *model) setRepoCursor(idx int) {

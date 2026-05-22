@@ -297,3 +297,62 @@ func TestPreviewToggleSchedulesTopicsLoadForFocusedListOnly(t *testing.T) {
 		t.Errorf("repoCache[UL_3, true] should not exist; focused list is UL_1")
 	}
 }
+
+func TestPreviewUsesTopicsRepoByIDAfterSort(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[0]
+	m.active = paneRepo
+	m.showPreview = true
+	m.displayedRepos = []githubapi.Repository{
+		{ID: "R_1", NameWithOwner: "owner/z", StargazerCount: 1},
+		{ID: "R_2", NameWithOwner: "owner/a", StargazerCount: 100},
+	}
+	m.repoCursor = 1
+	m.preloader.setCacheEntry(repoCacheKey{m.focusedList.ID, true}, &repoCacheEntry{
+		state: repoCacheLoaded,
+		repos: []githubapi.Repository{
+			{ID: "R_1", NameWithOwner: "owner/z", Topics: []string{"wrong"}},
+			{ID: "R_2", NameWithOwner: "owner/a", Topics: []string{"right"}},
+		},
+		gen: m.preloader.generation,
+	})
+
+	lines := strings.Join(m.previewContentLines(80), "\n")
+	if !strings.Contains(lines, "right") {
+		t.Fatalf("preview lines = %q, want topics for repo R_2", lines)
+	}
+	if strings.Contains(lines, "wrong") {
+		t.Fatalf("preview lines = %q, should not use cache index topic", lines)
+	}
+}
+
+func TestPreviewUsesTopicsRepoByNameAfterSearch(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.focusedList = &m.lists[0]
+	m.active = paneRepo
+	m.showPreview = true
+	m.displayedRepos = []githubapi.Repository{{NameWithOwner: "owner/match"}}
+	m.repoCursor = 0
+	m.preloader.setCacheEntry(repoCacheKey{m.focusedList.ID, true}, &repoCacheEntry{
+		state: repoCacheLoaded,
+		repos: []githubapi.Repository{
+			{NameWithOwner: "owner/other", Topics: []string{"wrong"}},
+			{NameWithOwner: "owner/match", Topics: []string{"right"}},
+		},
+		gen: m.preloader.generation,
+	})
+
+	lines := strings.Join(m.previewContentLines(80), "\n")
+	if !strings.Contains(lines, "right") {
+		t.Fatalf("preview lines = %q, want topics for owner/match", lines)
+	}
+	if strings.Contains(lines, "wrong") {
+		t.Fatalf("preview lines = %q, should not use cache index topic", lines)
+	}
+}

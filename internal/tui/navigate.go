@@ -104,8 +104,8 @@ func (m model) activateRepoPane() (model, tea.Cmd) {
 		// does NOT touch repoCursor/repoOffset.
 		cmd = (&m).focusList(m.listCursor)
 	}
-	// Cache-loaded branch: skip focusList entirely -- displayedRepos is current
-	// and we want to preserve repoCursor.
+	// Cache-loaded branch: skip focusList -- displayedRepos is current and we
+	// want to preserve repoCursor.
 	m.active = paneRepo
 	return m, cmd
 }

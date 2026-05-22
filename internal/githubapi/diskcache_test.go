@@ -99,6 +99,39 @@ func TestDiskCacheInvalidation(t *testing.T) {
 	waitForDiskCacheIdle(t, ds)
 }
 
+func TestDiskCacheRemoveStarInvalidatesListRepositories(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	inner := &fakeCacheInner{
+		repos: map[string][]Repository{
+			"UL_1": {{ID: "R_1", NameWithOwner: "owner/stale"}},
+		},
+	}
+	svc := NewDiskCacheService(inner, DiskCacheOptions{TTL: 1 * time.Hour})
+	ds := svc.(*diskCacheService)
+	ds.cacheDir = t.TempDir()
+
+	if _, err := ds.ListRepositories(ctx, "UL_1"); err != nil {
+		t.Fatalf("first ListRepositories: %v", err)
+	}
+	waitForDiskCacheEntry(t, ds, ds.canonicalKey("repos", "UL_1", "topics:false"))
+	inner.repos["UL_1"] = []Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
+
+	if err := ds.RemoveStar(ctx, "R_1"); err != nil {
+		t.Fatalf("RemoveStar: %v", err)
+	}
+	repos, err := ds.ListRepositories(ctx, "UL_1")
+	if err != nil {
+		t.Fatalf("second ListRepositories: %v", err)
+	}
+	if len(repos) != 1 || repos[0].NameWithOwner != "owner/fresh" {
+		t.Fatalf("ListRepositories after RemoveStar = %+v, want owner/fresh", repos)
+	}
+	if inner.reposCalls["UL_1"] != 2 {
+		t.Fatalf("repos calls = %d, want 2", inner.reposCalls["UL_1"])
+	}
+}
+
 func TestDiskCacheTTLExpiry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

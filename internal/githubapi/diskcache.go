@@ -220,6 +220,6 @@ func (s *diskCacheService) RemoveStar(ctx context.Context, repoID string) error 
 	if err := s.inner.RemoveStar(ctx, repoID); err != nil {
 		return err
 	}
-	s.invalidateStarred()
+	s.invalidateAll()
 	return nil
 }

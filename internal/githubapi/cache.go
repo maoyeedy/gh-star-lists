@@ -229,7 +229,7 @@ func (s *cacheService) RemoveStar(ctx context.Context, repoID string) error {
 	if err := s.inner.RemoveStar(ctx, repoID); err != nil {
 		return err
 	}
-	s.invalidateStarred()
+	s.invalidateAfterUnstar()
 	return nil
 }
 
@@ -246,6 +246,13 @@ func (s *cacheService) invalidateLists() {
 
 func (s *cacheService) invalidateStarred() {
 	s.mu.Lock()
+	s.starredEntry = make(map[bool]*cacheEntry[[]Repository])
+	s.mu.Unlock()
+}
+
+func (s *cacheService) invalidateAfterUnstar() {
+	s.mu.Lock()
+	s.reposEntry = make(map[reposCacheKey]*cacheEntry[[]Repository])
 	s.starredEntry = make(map[bool]*cacheEntry[[]Repository])
 	s.mu.Unlock()
 }

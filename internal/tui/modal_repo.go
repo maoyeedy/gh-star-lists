@@ -87,7 +87,7 @@ func newUnstarRepoModal(ctx context.Context, svc githubapi.Service,
 		svc:             svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
-		return unstarRepoCmd(ctx, svc, repo.NameWithOwner)
+		return unstarRepoCmd(ctx, svc, repo)
 	}
 	return mo, focusCmd
 }

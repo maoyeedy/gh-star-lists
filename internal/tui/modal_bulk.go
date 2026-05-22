@@ -35,9 +35,11 @@ func newBulkAddModal(
 		}
 		targetID := m.choices[m.choiceCursor].ID
 		m.bulkRetry = func(failedNWOs []string) tea.Cmd {
-			return bulkMutateReposCmd(ctx, svc, failedNWOs, "added", []string{targetID}, nil)
+			return bulkMutateReposCmd(
+				ctx, svc, failedNWOs, "added", allLists, []string{targetID}, nil,
+			)
 		}
-		return bulkMutateReposCmd(ctx, svc, nwos, "added", []string{targetID}, nil)
+		return bulkMutateReposCmd(ctx, svc, nwos, "added", allLists, []string{targetID}, nil)
 	}
 	return mo
 }
@@ -46,6 +48,7 @@ func newBulkRemoveModal(
 	ctx context.Context,
 	svc githubapi.Service,
 	nwos []string,
+	allLists []githubapi.StarList,
 	fromListID string,
 ) *modal {
 	mo := &modal{
@@ -55,10 +58,12 @@ func newBulkRemoveModal(
 		svc:   svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
-		return bulkMutateReposCmd(ctx, svc, nwos, "removed", nil, []string{fromListID})
+		return bulkMutateReposCmd(ctx, svc, nwos, "removed", allLists, nil, []string{fromListID})
 	}
 	mo.bulkRetry = func(failedNWOs []string) tea.Cmd {
-		return bulkMutateReposCmd(ctx, svc, failedNWOs, "removed", nil, []string{fromListID})
+		return bulkMutateReposCmd(
+			ctx, svc, failedNWOs, "removed", allLists, nil, []string{fromListID},
+		)
 	}
 	return mo
 }
@@ -94,11 +99,14 @@ func newBulkMoveModal(
 				svc,
 				failedNWOs,
 				"moved",
+				allLists,
 				[]string{targetID},
 				[]string{fromListID},
 			)
 		}
-		return bulkMutateReposCmd(ctx, svc, nwos, "moved", []string{targetID}, []string{fromListID})
+		return bulkMutateReposCmd(
+			ctx, svc, nwos, "moved", allLists, []string{targetID}, []string{fromListID},
+		)
 	}
 	return mo
 }

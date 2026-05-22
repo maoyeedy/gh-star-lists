@@ -5,18 +5,23 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func TestBulkFailureRetryUsesFailedNWOsOnly(t *testing.T) {
 	t.Parallel()
 	svc := &repoMutationFakeService{}
-	svc.membershipsResult.repoID = "R_1"
-	svc.membershipsResult.listIDs = []string{"UL_1"}
+	svc.lists = []githubapi.StarList{{ID: "UL_1", Name: "one"}}
+	svc.repos = []githubapi.Repository{
+		{ID: "R_b", NameWithOwner: "owner/b-repo"},
+		{ID: "R_c", NameWithOwner: "owner/c-repo"},
+	}
 	m := newTestModel(svc)
 	m.modal = newBulkRemoveModal(
 		m.ctx,
 		m.svc,
 		[]string{"owner/a-repo", "owner/b-repo", "owner/c-repo"},
+		svc.lists,
 		"UL_1",
 	)
 	m.modal.submitting = true
@@ -41,19 +46,19 @@ func TestBulkFailureRetryUsesFailedNWOsOnly(t *testing.T) {
 	}
 	executeBatch(cmd)
 
-	want := map[string]bool{"owner/b-repo": true, "owner/c-repo": true}
-	got := make(map[string]bool, len(svc.membershipsCalls))
-	for _, nwo := range svc.membershipsCalls {
-		got[nwo] = true
+	want := map[string]bool{"R_b": true, "R_c": true}
+	got := make(map[string]bool, len(svc.updateListsCalls))
+	for _, call := range svc.updateListsCalls {
+		got[call.repoID] = true
 	}
-	for nwo := range want {
-		if !got[nwo] {
-			t.Errorf("membershipsCalls missing %q", nwo)
+	for repoID := range want {
+		if !got[repoID] {
+			t.Errorf("updateListsCalls missing repo %q", repoID)
 		}
 	}
-	for nwo := range got {
-		if !want[nwo] {
-			t.Errorf("membershipsCalls unexpected %q", nwo)
+	for repoID := range got {
+		if !want[repoID] {
+			t.Errorf("updateListsCalls unexpected repo %q", repoID)
 		}
 	}
 }

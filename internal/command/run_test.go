@@ -1200,19 +1200,81 @@ func TestRunUnlistedSortedByStarred(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr strings.Builder
+	svc := &fakeService{
+		lists: []githubapi.StarList{
+			{ID: "UL_1", Name: "List"},
+		},
+		reposByList: map[string][]githubapi.Repository{
+			"UL_1": {{ID: "R_1", NameWithOwner: "owner/listed"}},
+		},
+		starred: []githubapi.Repository{
+			{
+				ID:            "R_2",
+				NameWithOwner: "owner/old",
+				URL:           "https://github.com/owner/old",
+				StarredAt:     "2024-01-01T00:00:00Z",
+			},
+			{
+				ID:            "R_3",
+				NameWithOwner: "owner/new",
+				URL:           "https://github.com/owner/new",
+				StarredAt:     "2024-03-01T00:00:00Z",
+			},
+		},
+	}
 	code := runCommand(
 		context.Background(),
 		[]string{"repos", "--unlisted", "--sort", "starred"},
 		&stdout,
 		&stderr,
-		&fakeService{},
+		svc,
 	)
 
-	if code != command.ExitUsage {
-		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitUsage, stderr.String())
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "unsupported sort key") {
-		t.Fatalf("expected unsupported sort key error, got stderr=%q", stderr.String())
+	if got := stdout.String(); !strings.Contains(got, "owner/new") ||
+		!strings.Contains(got, "owner/old") ||
+		strings.Index(got, "owner/old") > strings.Index(got, "owner/new") {
+		t.Fatalf("Run --unlisted --sort starred stdout not sorted oldest first:\n%s", got)
+	}
+}
+
+func TestRunAllSortedByStarred(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	svc := &fakeService{
+		starred: []githubapi.Repository{
+			{
+				ID:            "R_1",
+				NameWithOwner: "owner/old",
+				URL:           "https://github.com/owner/old",
+				StarredAt:     "2024-01-01T00:00:00Z",
+			},
+			{
+				ID:            "R_2",
+				NameWithOwner: "owner/new",
+				URL:           "https://github.com/owner/new",
+				StarredAt:     "2024-03-01T00:00:00Z",
+			},
+		},
+	}
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--all", "--sort", "starred"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if got := stdout.String(); !strings.Contains(got, "owner/new") ||
+		!strings.Contains(got, "owner/old") ||
+		strings.Index(got, "owner/old") > strings.Index(got, "owner/new") {
+		t.Fatalf("Run --all --sort starred stdout not sorted oldest first:\n%s", got)
 	}
 }
 

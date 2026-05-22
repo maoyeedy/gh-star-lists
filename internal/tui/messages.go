@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -199,13 +201,17 @@ func copyListCmd(
 	}
 }
 
-func unstarRepoCmd(ctx context.Context, svc githubapi.Service, nameWithOwner string) tea.Cmd {
+func unstarRepoCmd(ctx context.Context, svc githubapi.Service, repo githubapi.Repository) tea.Cmd {
 	return func() tea.Msg {
-		repoID, _, err := svc.GetRepositoryMemberships(ctx, nameWithOwner)
-		if err != nil {
-			return mutationDoneMsg{kind: modalConfirmText, err: err}
+		repoID := repo.ID
+		if repoID == "" {
+			resolved, err := svc.GetRepository(ctx, repo.NameWithOwner)
+			if err != nil {
+				return mutationDoneMsg{kind: modalConfirmText, err: err}
+			}
+			repoID = resolved.ID
 		}
-		err = svc.RemoveStar(ctx, repoID)
+		err := svc.RemoveStar(ctx, repoID)
 		return mutationDoneMsg{kind: modalConfirmText, err: err}
 	}
 }
@@ -215,9 +221,18 @@ func bulkMutateReposCmd(
 	svc githubapi.Service,
 	nwos []string,
 	verb string,
+	allLists []githubapi.StarList,
 	addIDs, removeIDs []string,
 ) tea.Cmd {
 	return func() tea.Msg {
+		index, err := githubapi.LoadMembershipIndex(ctx, svc, allLists)
+		if err != nil {
+			return bulkDoneMsg{
+				verb:       verb,
+				failed:     len(nwos),
+				failedNWOs: append([]string(nil), nwos...),
+			}
+		}
 		var succeeded, failed atomic.Int64
 		var mu sync.Mutex
 		var failedNWOs []string
@@ -226,7 +241,20 @@ func bulkMutateReposCmd(
 		for _, nwo := range nwos {
 			nwo := nwo
 			group.Go(func() error {
-				err := githubapi.ModifyRepositoryMemberships(groupCtx, svc, nwo, addIDs, removeIDs)
+				repoID, memberships, err := index.RepositoryMemberships(groupCtx, svc, nwo)
+				if err == nil {
+					for _, id := range addIDs {
+						memberships[id] = struct{}{}
+					}
+					for _, id := range removeIDs {
+						delete(memberships, id)
+					}
+					err = svc.UpdateRepositoryLists(
+						groupCtx,
+						repoID,
+						slices.Sorted(maps.Keys(memberships)),
+					)
+				}
 				if err != nil {
 					failed.Add(1)
 					mu.Lock()

@@ -160,6 +160,48 @@ func TestCacheServiceHits(t *testing.T) {
 	}
 }
 
+func TestCacheServiceRemoveStarInvalidatesListRepositories(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	inner := &fakeCacheInner{
+		repos: map[string][]Repository{
+			"UL_1": {{ID: "R_1", NameWithOwner: "owner/stale"}},
+		},
+		starred: []Repository{{ID: "R_1", NameWithOwner: "owner/stale"}},
+	}
+	svc := newCacheService(inner)
+	svc.ttl = 10 * time.Minute
+
+	if _, err := svc.ListRepositories(ctx, "UL_1"); err != nil {
+		t.Fatalf("first ListRepositories: %v", err)
+	}
+	if _, err := svc.ListStarredRepositories(ctx); err != nil {
+		t.Fatalf("first ListStarredRepositories: %v", err)
+	}
+	inner.repos["UL_1"] = []Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
+	inner.starred = []Repository{{ID: "R_2", NameWithOwner: "owner/fresh"}}
+
+	if err := svc.RemoveStar(ctx, "R_1"); err != nil {
+		t.Fatalf("RemoveStar: %v", err)
+	}
+	repos, err := svc.ListRepositories(ctx, "UL_1")
+	if err != nil {
+		t.Fatalf("second ListRepositories: %v", err)
+	}
+	if len(repos) != 1 || repos[0].NameWithOwner != "owner/fresh" {
+		t.Fatalf("ListRepositories after RemoveStar = %+v, want owner/fresh", repos)
+	}
+	if inner.reposCalls["UL_1"] != 2 {
+		t.Fatalf("repos calls = %d, want 2", inner.reposCalls["UL_1"])
+	}
+	if _, err := svc.ListStarredRepositories(ctx); err != nil {
+		t.Fatalf("second ListStarredRepositories: %v", err)
+	}
+	if inner.starredCalls != 2 {
+		t.Fatalf("starred calls = %d, want 2", inner.starredCalls)
+	}
+}
+
 func TestCacheServiceMisses(t *testing.T) {
 	inner := &fakeCacheInner{
 		lists: []StarList{

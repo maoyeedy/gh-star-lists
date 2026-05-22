@@ -52,8 +52,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleOpen()
 
 	case key.Matches(msg, keys.Sort):
-		m = m.cycleSort()
-		return m, nil
+		return m.cycleSort()
 
 	case key.Matches(msg, keys.Refresh):
 		return m.handleRefresh()
@@ -99,7 +98,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if len(m.selected) > 0 {
-			m.modal = newBulkRemoveModal(m.ctx, m.svc, m.selectedNWOs(), m.focusedList.ID)
+			m.modal = newBulkRemoveModal(m.ctx, m.svc, m.selectedNWOs(), m.lists, m.focusedList.ID)
 		} else {
 			repo := m.displayedRepos[m.repoCursor]
 			m.modal = newRemoveRepoModal(m.ctx, m.svc, repo, m.focusedList.ID)

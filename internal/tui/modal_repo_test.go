@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func TestAddRepoModalOpensInRepoPane(t *testing.T) {
@@ -179,9 +180,11 @@ func TestRemoveRepoCmd(t *testing.T) {
 func TestUnstarRepoCmd(t *testing.T) {
 	t.Parallel()
 	svc := &repoMutationFakeService{}
-	svc.membershipsResult.repoID = "R_star_1"
 
-	cmd := unstarRepoCmd(context.Background(), svc, "owner/repo")
+	cmd := unstarRepoCmd(context.Background(), svc, githubapi.Repository{
+		ID:            "R_star_1",
+		NameWithOwner: "owner/repo",
+	})
 	msg := cmd()
 	done, ok := msg.(mutationDoneMsg)
 	if !ok {
@@ -192,5 +195,8 @@ func TestUnstarRepoCmd(t *testing.T) {
 	}
 	if len(svc.removeStarCalls) != 1 || svc.removeStarCalls[0] != "R_star_1" {
 		t.Errorf("RemoveStar calls = %v, want [R_star_1]", svc.removeStarCalls)
+	}
+	if len(svc.membershipsCalls) != 0 {
+		t.Errorf("GetRepositoryMemberships calls = %v, want none", svc.membershipsCalls)
 	}
 }

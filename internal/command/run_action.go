@@ -26,7 +26,7 @@ func fetchReposForAction(
 		if err != nil {
 			return nil, err
 		}
-		index, err := loadMembershipIndex(ctx, service, lists)
+		index, err := githubapi.LoadMembershipIndex(ctx, service, lists)
 		if err != nil {
 			return nil, err
 		}
@@ -36,7 +36,7 @@ func fetchReposForAction(
 		}
 		unlisted := make([]githubapi.Repository, 0, len(starred))
 		for _, r := range starred {
-			if _, inList := index.byRepo[strings.ToLower(r.NameWithOwner)]; !inList {
+			if !index.ContainsRepository(r.NameWithOwner) {
 				unlisted = append(unlisted, r)
 			}
 		}
@@ -170,11 +170,11 @@ func runListCopy(
 	if from == to {
 		return writeFailure(stderr, fmt.Errorf("--from and --to resolve to the same list"))
 	}
-	index, err := loadMembershipIndex(ctx, service, lists)
+	index, err := githubapi.LoadMembershipIndex(ctx, service, lists)
 	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 	}
-	repos := index.reposByList[from]
+	repos := index.RepositoriesForList(from)
 	if !fromFound {
 		repos, err = service.ListRepositories(ctx, from)
 		if err != nil {
@@ -205,7 +205,7 @@ func runListCopy(
 	for _, repo := range repos {
 		repo := repo
 		group.Go(func() error {
-			repoID, memberships, err := index.repositoryMemberships(
+			repoID, memberships, err := index.RepositoryMemberships(
 				groupCtx,
 				service,
 				repo.NameWithOwner,

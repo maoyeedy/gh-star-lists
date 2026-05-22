@@ -121,11 +121,32 @@ func (m model) previewContentLines(w int) []string {
 	repo := m.displayedRepos[m.repoCursor]
 	if m.focusedList != nil {
 		if e := m.preloader.cache[repoCacheKey{m.focusedList.ID, true}]; e != nil &&
-			e.state == repoCacheLoaded && m.repoCursor < len(e.repos) {
-			repo = e.repos[m.repoCursor]
+			e.state == repoCacheLoaded {
+			if detailed, ok := previewRepoByIdentity(repo, e.repos); ok {
+				repo = detailed
+			}
 		}
 	}
 	return formatPreviewContent(repo, w)
+}
+
+func previewRepoByIdentity(
+	selected githubapi.Repository,
+	repos []githubapi.Repository,
+) (githubapi.Repository, bool) {
+	if selected.ID != "" {
+		for _, repo := range repos {
+			if repo.ID == selected.ID {
+				return repo, true
+			}
+		}
+	}
+	for _, repo := range repos {
+		if repo.NameWithOwner == selected.NameWithOwner {
+			return repo, true
+		}
+	}
+	return githubapi.Repository{}, false
 }
 
 func (m model) renderPreviewPane(w, h int) string {

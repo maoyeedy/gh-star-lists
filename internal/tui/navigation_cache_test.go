@@ -87,3 +87,28 @@ func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
 		)
 	}
 }
+
+func TestCursorMovePreviewWithBasicCacheSchedulesTopicsLoad(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m.preloader.setCacheEntry(repoCacheKey{svc.lists[1].ID, false}, &repoCacheEntry{
+		state: repoCacheLoaded,
+		repos: []githubapi.Repository{{ID: "R_2", NameWithOwner: "owner/basic"}},
+		gen:   m.preloader.generation,
+	})
+	m.active = paneList
+	m.showPreview = true
+	m.listCursor = 0
+
+	m2 := update(m, specialKey(tea.KeyDown))
+
+	entry := m2.preloader.cache[repoCacheKey{svc.lists[1].ID, true}]
+	if entry == nil {
+		t.Fatal("topics cache entry should exist after focusing cached basic list")
+	}
+	if entry.state != repoCacheLoading {
+		t.Fatalf("topics cache state = %d, want repoCacheLoading", entry.state)
+	}
+}

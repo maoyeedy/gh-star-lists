@@ -58,6 +58,7 @@ func TestBulkDoneMsgPartialFailureKeepsModalOpen(t *testing.T) {
 		m.ctx,
 		m.svc,
 		[]string{"owner/a-repo", "owner/b-repo"},
+		m.lists,
 		m.focusedList.ID,
 	)
 	m.modal.submitting = true

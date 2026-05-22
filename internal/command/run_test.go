@@ -2611,7 +2611,7 @@ func TestRunTUINoColorPropagated(t *testing.T) {
 	}
 }
 
-func TestRunBareTTYCallsRunTUI(t *testing.T) {
+func TestRunBareTTYDoesNotCallRunTUI(t *testing.T) {
 	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
 	defer command.CanPromptForTest(prevCanPrompt)
 
@@ -2630,8 +2630,11 @@ func TestRunBareTTYCallsRunTUI(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("exit = %d, want ExitSuccess", code)
 	}
-	if !called {
-		t.Error("runTUI was not called for bare gh star-lists on TTY")
+	if called {
+		t.Error("runTUI was called for bare gh star-lists on TTY, should be CLI list output")
+	}
+	if got := stdout.String(); !strings.Contains(got, "Go Tools") {
+		t.Errorf("stdout = %q, want human list output containing Go Tools", got)
 	}
 }
 

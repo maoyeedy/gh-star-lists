@@ -230,11 +230,6 @@ func RunWithOptions(
 	}
 	switch parsed.Action {
 	case ActionList:
-		if canPrompt() && !parsed.hasCLIFlags() {
-			return launchTUI(
-				ctx, stderr, parsed, service, originalService, cacheTTL, diagnosticOptions,
-			)
-		}
 		lists, err := service.ListStarLists(ctx, directListOptions(parsed, false))
 		if err != nil {
 			return writeRuntimeFailure(stderr, ActionList, "", err)

@@ -111,28 +111,6 @@ type Parsed struct {
 	Mouse          bool
 }
 
-func (p Parsed) hasCLIFlags() bool {
-	if p.Mode != format.OutputHuman {
-		return true
-	}
-	if p.Template != "" || p.JQ != "" || p.OutputPath != "" {
-		return true
-	}
-	if p.Limit > 0 {
-		return true
-	}
-	if len(p.Filters) > 0 {
-		return true
-	}
-	if len(p.SortKeys) > 0 {
-		return true
-	}
-	if p.Search != "" {
-		return true
-	}
-	return false
-}
-
 type UsageError struct {
 	Message string
 }

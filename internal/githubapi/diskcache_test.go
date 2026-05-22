@@ -319,6 +319,7 @@ func TestConcurrentDiskCacheFillDeduplication(t *testing.T) {
 	close(inner.release)
 	wg.Wait()
 	close(writeRelease)
+	waitForDiskCacheIdle(t, ds)
 	close(errs)
 
 	for err := range errs {
@@ -445,6 +446,7 @@ func TestConcurrentDiskCacheFillSharesResultBeforeDiskWriteCompletes(t *testing.
 	}
 
 	close(writeRelease)
+	waitForDiskCacheIdle(t, ds)
 	if calls := atomic.LoadInt32(&inner.reposCalls); calls != 1 {
 		t.Fatalf("inner ListRepositories calls = %d, want 1", calls)
 	}

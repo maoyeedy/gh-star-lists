@@ -69,6 +69,23 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) activateSearch() (tea.Model, tea.Cmd) {
+	if m.active == paneList {
+		m.listSearchActive = true
+		m.listSearchQuery = ""
+		m.listCursor = 0
+		m.listOffset = 0
+	} else {
+		m.repoSearchActive = true
+		m.repoSearchQuery = ""
+		m.repoCursor = 0
+		m.repoOffset = 0
+	}
+	m.previewOffset = 0
+	m = m.rebuildDisplayed()
+	return m, nil
+}
+
 func (m model) rebuildDisplayed() model {
 	repos := m.currentRepos()
 	if m.listSearchQuery == "" {

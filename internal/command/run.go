@@ -118,7 +118,7 @@ func runParsedAction(inv runInvocation) int {
 		return runDeleteAction(inv)
 	case ActionAdd, ActionRemove, ActionMove:
 		return runRepoMembershipAction(inv)
-	case ActionCopy, ActionMerge:
+	case ActionCopy:
 		return runListCopyAction(inv)
 	case ActionUnstar:
 		return runUnstarAction(inv)

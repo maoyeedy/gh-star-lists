@@ -44,11 +44,11 @@ func listByRaw(lists []domain.StarList, raw string) (domain.StarList, bool) {
 }
 
 func actionNeedsFrom(a Action) bool {
-	return a == ActionRemove || a == ActionMove || a == ActionCopy || a == ActionMerge
+	return a == ActionRemove || a == ActionMove || a == ActionCopy
 }
 
 func actionNeedsTo(a Action) bool {
-	return a == ActionAdd || a == ActionMove || a == ActionCopy || a == ActionMerge
+	return a == ActionAdd || a == ActionMove || a == ActionCopy
 }
 
 func missingSelectorError(a Action, needFrom, needTo bool) error {

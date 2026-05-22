@@ -19,7 +19,6 @@ const (
 	ActionRemove Action = "remove"
 	ActionMove   Action = "move"
 	ActionCopy   Action = "copy"
-	ActionMerge  Action = "merge"
 	ActionUnstar Action = "unstar"
 	ActionHelp   Action = "help"
 	ActionTUI    Action = "tui"
@@ -59,7 +58,7 @@ func canonicalCommand(token string) string {
 	}
 	switch token {
 	case "list", "repos", "create", "edit", "delete",
-		"add", "remove", "move", "copy", "merge", "unstar", "tui":
+		"add", "remove", "move", "copy", "unstar", "tui":
 		return token
 	}
 	return ""

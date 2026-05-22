@@ -224,14 +224,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "merge without flags parses cleanly",
-			argv: []string{"merge"},
-			want: command.Parsed{
-				Action: command.ActionMerge,
-				Mode:   format.OutputHuman,
-			},
-		},
-		{
 			name: "json before subcommand",
 			argv: []string{"--json", "repos", "list-id"},
 			want: command.Parsed{
@@ -770,11 +762,6 @@ func TestParseUsageErrors(t *testing.T) {
 			wantMessage: "copy requires distinct --from and --to",
 		},
 		{
-			name:        "merge rejects identical from and to case insensitive",
-			argv:        []string{"merge", "--from", "Work", "--to", "work"},
-			wantMessage: "merge requires distinct --from and --to",
-		},
-		{
 			name:        "move rejects identical from and to",
 			argv:        []string{"move", "owner/repo", "--from", "A", "--to", "A"},
 			wantMessage: "move requires distinct --from and --to",
@@ -836,11 +823,6 @@ func TestParseUsageErrors(t *testing.T) {
 		{
 			name:        "search on copy rejected",
 			argv:        []string{"copy", "--from", "A", "--to", "B", "--search", "foo"},
-			wantMessage: "--search is only supported for repos",
-		},
-		{
-			name:        "search on merge rejected",
-			argv:        []string{"merge", "--from", "A", "--to", "B", "--search", "foo"},
 			wantMessage: "--search is only supported for repos",
 		},
 		{

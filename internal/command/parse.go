@@ -492,13 +492,13 @@ func Parse(argv []string) (Parsed, error) {
 				DryRun:     dryRunFlag,
 				Host:       hostValue,
 			}, nil
-		case "copy", "merge":
+		case "copy":
 			if len(positionals) != 1 {
-				return Parsed{}, usage("%s does not accept positional arguments", cmd)
+				return Parsed{}, usage("copy does not accept positional arguments")
 			}
 			if fromValue != "" && toValue != "" &&
 				strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
-				return Parsed{}, usage("%s requires distinct --from and --to", cmd)
+				return Parsed{}, usage("copy requires distinct --from and --to")
 			}
 			if err := validateWriteOutputFlags(
 				jsonFlag,
@@ -514,12 +514,8 @@ func Parse(argv []string) (Parsed, error) {
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			action := ActionCopy
-			if cmd == "merge" {
-				action = ActionMerge
-			}
 			return Parsed{
-				Action:       action,
+				Action:       ActionCopy,
 				FromListID:   fromValue,
 				ToListID:     toValue,
 				Mode:         mode,

@@ -1795,18 +1795,6 @@ func TestRunDryRun(t *testing.T) {
 			},
 		},
 		{
-			name:     "merge",
-			mkSvc:    sortableFixtureService,
-			argv:     []string{"merge", "--from", "zeta", "--to", "Alpha", "--dry-run"},
-			wantOut:  `Would merge 3 repositories from "zeta" to "Alpha".`,
-			wantOut2: `Would delete source Star List "zeta".`,
-			checkFn: func(t *testing.T, svc *fakeService) {
-				if svc.deleteCalls != 0 {
-					t.Fatalf("deleteCalls = %d, want 0", svc.deleteCalls)
-				}
-			},
-		},
-		{
 			name:    "unstar",
 			mkSvc:   fixtureService,
 			argv:    []string{"unstar", "cli/cli", "--dry-run"},
@@ -2035,11 +2023,6 @@ func TestRunNonTTYMissingListSelectorFailsWithUsageError(t *testing.T) {
 			name:    "copy without flags",
 			argv:    []string{"copy"},
 			wantErr: "copy requires --from and --to",
-		},
-		{
-			name:    "merge without flags",
-			argv:    []string{"merge"},
-			wantErr: "merge requires --from and --to",
 		},
 	}
 

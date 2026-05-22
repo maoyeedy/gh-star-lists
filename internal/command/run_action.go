@@ -310,22 +310,12 @@ func runListCopyAction(inv runInvocation) int {
 			inv.diagnosticOptions,
 		)
 	}
-	if parsed.Action == ActionMerge || parsed.DeleteSource {
+	if parsed.DeleteSource {
 		fromList, _ := listByRaw(fetchedLists, parsed.FromListID)
-		toList, _ := listByRaw(fetchedLists, parsed.ToListID)
-		var actionPhrase string
-		if parsed.Action == ActionMerge {
-			actionPhrase = fmt.Sprintf(
-				"merge %q into %q",
-				displayListName(fromList, parsed.FromListID),
-				displayListName(toList, parsed.ToListID),
-			)
-		} else {
-			actionPhrase = fmt.Sprintf(
-				"copy and delete %q",
-				displayListName(fromList, parsed.FromListID),
-			)
-		}
+		actionPhrase := fmt.Sprintf(
+			"copy and delete %q",
+			displayListName(fromList, parsed.FromListID),
+		)
 		if err := requireYes(parsed, actionPhrase); err != nil {
 			return writeUsageFailure(inv.stderr, err, inv.diagnosticOptions)
 		}
@@ -507,12 +497,12 @@ func runListCopy(
 		_, _ = fmt.Fprintf(
 			stdout,
 			"Would %s %d repositories from %q to %q.\n",
-			copyVerb(parsed),
+			"copy",
 			total,
 			displayListName(fromList, parsed.FromListID),
 			displayListName(toList, parsed.ToListID),
 		)
-		if parsed.DeleteSource || parsed.Action == ActionMerge {
+		if parsed.DeleteSource {
 			_, _ = fmt.Fprintf(
 				stdout,
 				"Would delete source Star List %q.\n",
@@ -525,7 +515,7 @@ func runListCopy(
 	if err != nil {
 		return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 	}
-	if parsed.DeleteSource || parsed.Action == ActionMerge {
+	if parsed.DeleteSource {
 		if err := appSvc.DeleteList(ctx, from); err != nil {
 			return writeRuntimeFailure(stderr, parsed.Action, parsed.FromListID, err)
 		}
@@ -601,13 +591,6 @@ func noChangeMessage(parsed Parsed, from, to domain.StarList) string {
 	}
 }
 
-func copyVerb(parsed Parsed) string {
-	if parsed.Action == ActionMerge {
-		return "merge"
-	}
-	return "copy"
-}
-
 func copySummary(
 	parsed Parsed,
 	changed int64,
@@ -617,9 +600,6 @@ func copySummary(
 	from := displayListName(fromList, parsed.FromListID)
 	to := displayListName(toList, parsed.ToListID)
 	verb := "Copied"
-	if parsed.Action == ActionMerge {
-		verb = "Merged"
-	}
 	if total == 0 {
 		return fmt.Sprintf("Source list %q is empty, nothing to %s.", from, strings.ToLower(verb))
 	}
@@ -631,7 +611,7 @@ func copySummary(
 		from,
 		to,
 	)
-	if parsed.DeleteSource || parsed.Action == ActionMerge {
+	if parsed.DeleteSource {
 		summary += fmt.Sprintf(" Source %q deleted.", from)
 	} else if changed == 0 {
 		summary = fmt.Sprintf(

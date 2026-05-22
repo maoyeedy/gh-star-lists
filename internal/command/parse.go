@@ -38,6 +38,7 @@ func Parse(argv []string) (Parsed, error) {
 		yesFlag          bool
 		dryRunFlag       bool
 		deleteSourceFlag bool
+		mouseFlag        bool
 		toValue          string
 		fromValue        string
 		nameValue        string
@@ -92,6 +93,8 @@ func Parse(argv []string) (Parsed, error) {
 				return Parsed{}, usage("--cache-ttl must not be negative")
 			}
 			cacheTTL = &d
+		case "--mouse":
+			mouseFlag = true
 		case "--no-cache":
 			noCacheFlag = true
 		case "--no-color":
@@ -577,6 +580,58 @@ func Parse(argv []string) (Parsed, error) {
 				DryRun:   dryRunFlag,
 				Host:     hostValue,
 			}, nil
+		case "tui":
+			if len(positionals) > 1 {
+				return Parsed{}, usage(
+					"too many arguments for tui: %s",
+					strings.Join(positionals[1:], " "),
+				)
+			}
+			if jsonFlag || tsvFlag || plainFlag || fzfFlag {
+				return Parsed{}, usage(
+					"--json, --tsv, --plain, and --fzf are not supported for tui",
+				)
+			}
+			if templateStr != "" {
+				return Parsed{}, usage("--template is not supported for tui")
+			}
+			if jqValue != "" {
+				return Parsed{}, usage("--jq is not supported for tui")
+			}
+			if outputPath != "" {
+				return Parsed{}, usage("--output is not supported for tui")
+			}
+			if webFlag {
+				return Parsed{}, usage("--web is not supported for tui")
+			}
+			if unlistedFlag {
+				return Parsed{}, usage("--unlisted is not supported for tui")
+			}
+			if allFlag {
+				return Parsed{}, usage("--all is not supported for tui")
+			}
+			if searchValue != "" {
+				return Parsed{}, usage("--search is not supported for tui")
+			}
+			if limit != 0 {
+				return Parsed{}, usage("--limit is not supported for tui")
+			}
+			if len(filters) > 0 {
+				return Parsed{}, usage("--filter is not supported for tui")
+			}
+			if len(sortKeys) > 0 {
+				return Parsed{}, usage("--sort is not supported for tui")
+			}
+			if sortDesc {
+				return Parsed{}, usage("--desc is not supported for tui")
+			}
+			return Parsed{
+				Action:   ActionTUI,
+				Host:     hostValue,
+				NoColor:  noColorFlag,
+				Mouse:    mouseFlag,
+				CacheTTL: cacheTTL,
+			}, nil
 		default:
 			return Parsed{}, &UnknownCommandError{Command: positionals[0]}
 		}
@@ -593,6 +648,9 @@ func Parse(argv []string) (Parsed, error) {
 	}
 	if searchValue != "" {
 		return Parsed{}, usage("--search is only supported for repos")
+	}
+	if mouseFlag {
+		return Parsed{}, usage("--mouse is only supported for 'tui' subcommand")
 	}
 	if err := validateFilters(ActionList, filters); err != nil {
 		return Parsed{}, err

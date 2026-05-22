@@ -106,10 +106,10 @@ func validateSort(action Action, sortKeys []string, sortDesc bool) error {
 			}
 		case ActionRepos:
 			switch key {
-			case SortKeyName, SortKeyStars, SortKeyPushed, SortKeyLanguage, SortKeyStarred:
+			case SortKeyName, SortKeyStars, SortKeyPushed, SortKeyLanguage:
 			default:
 				return usage(
-					"unsupported sort key %q for repos; supported keys: name, stars, pushed, language, starred",
+					"unsupported sort key %q for repos; supported keys: name, stars, pushed, language",
 					key,
 				)
 			}

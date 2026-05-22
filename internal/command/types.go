@@ -47,10 +47,11 @@ const (
 )
 
 var commandAliases = map[string]string{
-	"ls": "list",
-	"rm": "remove",
-	"mv": "move",
-	"cp": "copy",
+	"ls":     "list",
+	"rm":     "remove",
+	"mv":     "move",
+	"cp":     "copy",
+	"browse": "tui",
 }
 
 func canonicalCommand(token string) string {
@@ -59,7 +60,7 @@ func canonicalCommand(token string) string {
 	}
 	switch token {
 	case "list", "repos", "create", "edit", "delete",
-		"add", "remove", "move", "copy", "merge", "unstar":
+		"add", "remove", "move", "copy", "merge", "unstar", "tui":
 		return token
 	}
 	return ""

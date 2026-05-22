@@ -3,7 +3,6 @@ package command
 import (
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/search"
@@ -23,8 +22,6 @@ func Parse(argv []string) (Parsed, error) {
 		rawSortTerms     []string
 		sortDesc         bool
 		limit            int
-		cacheTTL         *time.Duration
-		noCacheFlag      bool
 		noColorFlag      bool
 		filters          []Filter
 		searchValue      string
@@ -80,23 +77,8 @@ func Parse(argv []string) (Parsed, error) {
 			rawSortTerms = append(rawSortTerms, strings.Split(raw, ",")...)
 		case "--desc", "-d":
 			sortDesc = true
-		case "--cache-ttl":
-			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --cache-ttl")
-			}
-			i++
-			d, err := time.ParseDuration(argv[i])
-			if err != nil {
-				return Parsed{}, usage("invalid value for --cache-ttl: %v", err)
-			}
-			if d < 0 {
-				return Parsed{}, usage("--cache-ttl must not be negative")
-			}
-			cacheTTL = &d
 		case "--mouse":
 			mouseFlag = true
-		case "--no-cache":
-			noCacheFlag = true
 		case "--no-color":
 			noColorFlag = true
 		case "--host":
@@ -250,13 +232,6 @@ func Parse(argv []string) (Parsed, error) {
 		}
 		mode = format.OutputJSON
 	}
-	if noCacheFlag && cacheTTL != nil {
-		return Parsed{}, usage("cannot combine --no-cache and --cache-ttl")
-	}
-	if noCacheFlag {
-		zero := time.Duration(0)
-		cacheTTL = &zero
-	}
 	sortKeys, sortTerms, err = parseSortTerms(rawSortTerms, sortDesc)
 	if err != nil {
 		return Parsed{}, err
@@ -334,7 +309,6 @@ func Parse(argv []string) (Parsed, error) {
 				NoColor:    noColorFlag,
 				Filters:    filters,
 				Search:     searchValue,
-				CacheTTL:   cacheTTL,
 				OutputPath: outputPath,
 				Template:   templateStr,
 				JQ:         jqValue,
@@ -626,11 +600,10 @@ func Parse(argv []string) (Parsed, error) {
 				return Parsed{}, usage("--desc is not supported for tui")
 			}
 			return Parsed{
-				Action:   ActionTUI,
-				Host:     hostValue,
-				NoColor:  noColorFlag,
-				Mouse:    mouseFlag,
-				CacheTTL: cacheTTL,
+				Action:  ActionTUI,
+				Host:    hostValue,
+				NoColor: noColorFlag,
+				Mouse:   mouseFlag,
 			}, nil
 		default:
 			return Parsed{}, &UnknownCommandError{Command: positionals[0]}
@@ -667,7 +640,6 @@ func Parse(argv []string) (Parsed, error) {
 		Limit:      limit,
 		NoColor:    noColorFlag,
 		Filters:    filters,
-		CacheTTL:   cacheTTL,
 		OutputPath: outputPath,
 		Template:   templateStr,
 		JQ:         jqValue,

@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"io"
-	"time"
 
 	"github.com/cli/go-gh/v2/pkg/browser"
 
@@ -22,44 +21,14 @@ func RunTUIForTest(
 	return prev
 }
 
-type combinedInvalidator struct {
-	githubapi.Service
-	invalidateDisk func()
-}
-
-func (c *combinedInvalidator) Invalidate() {
-	if inv, ok := c.Service.(interface{ Invalidate() }); ok {
-		inv.Invalidate()
-	}
-	if c.invalidateDisk != nil {
-		c.invalidateDisk()
-	}
-}
-
-func newCombinedInvalidator(
-	svc githubapi.Service,
-	diskSvc githubapi.Service,
-) githubapi.Service {
-	return &combinedInvalidator{
-		Service: svc,
-		invalidateDisk: func() {
-			if inv, ok := diskSvc.(interface{ Invalidate() }); ok {
-				inv.Invalidate()
-			}
-		},
-	}
-}
-
 func launchTUI(
 	ctx context.Context,
 	stderr io.Writer,
 	parsed Parsed,
-	svc, originalSvc githubapi.Service,
-	cacheTTL time.Duration,
+	svc githubapi.Service,
 	diagnosticOpts format.Options,
 ) int {
-	tuiSvc := wrapServiceForTUI(svc, originalSvc, cacheTTL, parsed.Host)
-	if err := runTUI(ctx, tuiSvc, tui.Options{
+	if err := runTUI(ctx, svc, tui.Options{
 		NoColor: parsed.NoColor,
 		Mouse:   parsed.Mouse,
 		Stderr:  stderr,
@@ -72,25 +41,4 @@ func launchTUI(
 		return ExitFailure
 	}
 	return ExitSuccess
-}
-
-func wrapServiceForTUI(
-	svc githubapi.Service,
-	originalSvc githubapi.Service,
-	cacheTTL time.Duration,
-	host string,
-) githubapi.Service {
-	if cacheTTL <= 0 {
-		return svc
-	}
-	hostVal := host
-	if hostVal == "" {
-		hostVal = "default"
-	}
-	diskSvc := githubapi.NewDiskCacheService(originalSvc, githubapi.DiskCacheOptions{
-		TTL:  cacheTTL,
-		Host: hostVal,
-	})
-	memSvc := githubapi.NewCacheServiceWithOptions(diskSvc, githubapi.CacheOptions{TTL: cacheTTL})
-	return newCombinedInvalidator(memSvc, diskSvc)
 }

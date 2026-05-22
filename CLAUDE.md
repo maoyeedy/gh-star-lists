@@ -8,7 +8,7 @@
 - `command.Parse` is pure arg parsing -- no `githubapi` imports, no API calls. Auth-free help paths.
 - `internal/tui` owns its lipgloss rendering; never imports `internal/format`. View-model types (`RepoRow`, `ListRow`) live in `domain` so both `format` and `tui` can consume them.
 - Typed errors at domain boundary: `domain.ErrAuth`, `domain.ErrNotFound`, `domain.ErrRateLimited`. `githubapi` normalizes via `normalizeError`; `command` maps to exit codes via `mapErrorToExitCode`. No string-based error detection.
-- Decorator chain for cross-cutting concerns: `lazyService -> RetryService -> cacheService -> diskCacheService -> graphQLService`. Each decorator implements `Service`, wraps another `Service`, adds one concern.
+- Decorator chain for cross-cutting concerns: `lazyService -> RetryService -> cacheService -> graphQLService`. Each decorator implements `Service`, wraps another `Service`, adds one concern.
 - `NewProductionServiceWithOptions` lazily constructs `go-gh` GraphQL client. Cache decisions stay in `githubapi`; TUI invalidates via `svc.(interface{ Invalidate() })`.
 - Extension delegates auth entirely to `gh`. Never store/forward tokens.
 
@@ -46,7 +46,7 @@ Before adding to a monolithic file, check existing split files. If none covers t
 - `domain`: `domain.go` `page_info.go` `errors.go` `rows.go`
 - `app`: `service.go` `options.go` `filter.go` `sort.go`
 - `command`: `run.go` `run_action.go` `run_filter.go` `run_sort.go` `run_output.go` `run_prompt.go` `run_tui.go` `parse.go` `types.go` `validate.go` `help.go` `search.go`
-- `githubapi`: `client.go` `graphql_queries.go` `graphql_types.go` `graphql_service.go` `graphql_helpers.go` `pagination.go` `errors.go` `retry_service.go` `retry.go` `cache.go` `diskcache.go` `diskcache_policy.go` `diskcache_store.go` `diskcache_coalesce.go` `diskcache_invalidate.go` `membership_index.go` `starred_at.go`
+- `githubapi`: `client.go` `graphql_queries.go` `graphql_types.go` `graphql_service.go` `graphql_helpers.go` `pagination.go` `errors.go` `retry_service.go` `retry.go` `cache.go` `membership_index.go` `starred_at.go`
 - `format`: `rows.go` `options.go` `mode.go` `human.go` `repositories.go` `star_lists.go`
 - `search`: `search.go` `tokenize.go` `edit.go` `scoring.go`
 - `tui`: `model.go` `update.go` `update_lists.go` `update_repos.go` `update_mutation.go` `update_refresh.go` `render.go` `render_repo.go` `render_list.go` `render_preview.go` `render_header.go` `render_footer.go` `render_help.go` `navigate.go` `selection.go` `preview.go` `keys.go` `input.go` `search.go` `sort.go` `cache.go` `modal.go` `modal_list.go` `modal_repo.go` `modal_bulk.go` `modal_help.go` `modal_update.go` `modal_view.go` `styles.go` `geometry.go` `viewport.go` `app.go` `messages.go`

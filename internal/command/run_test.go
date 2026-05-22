@@ -1963,11 +1963,6 @@ func TestRunNestedHelp(t *testing.T) {
 			wantText: "--from <LIST_ID_OR_NAME>",
 		},
 		{
-			name:     "full flag shows full reference",
-			argv:     []string{"--full"},
-			wantText: "--cache-ttl",
-		},
-		{
 			name:     "alias ls help shows list section",
 			argv:     []string{"ls", "--help"},
 			wantText: "gh star-lists list",
@@ -2495,23 +2490,6 @@ func TestRunEditDefaultsPreloaded(t *testing.T) {
 	}
 	if capturedDescDefault != "CLI helpers" {
 		t.Fatalf("description default = %q, want 'CLI helpers'", capturedDescDefault)
-	}
-}
-
-func TestRunNoCacheDisablesCache(t *testing.T) {
-	t.Parallel()
-
-	svc := fixtureService()
-	var stdout, stderr strings.Builder
-
-	code := runCommand(context.Background(), []string{"list", "--no-cache"}, &stdout, &stderr, svc)
-
-	if code != command.ExitSuccess {
-		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
-	}
-	// listCalls must be 1: no cache wrapping means direct service hit
-	if svc.listCalls != 1 {
-		t.Fatalf("listCalls = %d, want 1", svc.listCalls)
 	}
 }
 

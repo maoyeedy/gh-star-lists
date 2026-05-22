@@ -395,8 +395,6 @@ func runTUIAction(inv runInvocation) int {
 		inv.stderr,
 		inv.parsed,
 		inv.service,
-		inv.originalService,
-		inv.cacheTTL,
 		inv.diagnosticOptions,
 	)
 }

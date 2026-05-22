@@ -26,7 +26,7 @@ gh star-lists add cli/cli --to "Tools"            # add a repo to a list
 - **Go 1.26** with `github.com/cli/go-gh/v2` (GraphQL client, auth)
 - TUI: `charm.land/bubbletea/v2` + `bubbles/v2` + `lipgloss/v2`
 - Output: JSON/TSV/plain/template/fzf via `internal/format`
-- Other: in-memory + disk cache, fuzzy search, retry with backoff
+- Other: in-memory cache, fuzzy search, retry with backoff
 - CI: golangci-lint, pre-commit, `gh-extension-precompile` for releases
 - Packages: `command` (parse/dispatch) → `githubapi` (sole API boundary) → `format`/`tui` (output)
 

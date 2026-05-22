@@ -2,7 +2,6 @@ package command
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/app"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
@@ -95,7 +94,6 @@ type Parsed struct {
 	SortDesc       bool
 	NoColor        bool
 	Limit          int
-	CacheTTL       *time.Duration
 	Filters        []Filter
 	Search         string
 	OutputPath     string

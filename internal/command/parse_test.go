@@ -5,13 +5,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/command"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 )
-
-func ptrDuration(d time.Duration) *time.Duration { return &d }
 
 func TestParse(t *testing.T) {
 	t.Parallel()
@@ -359,33 +356,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "cache-ttl flag",
-			argv: []string{"list", "--cache-ttl", "10m"},
-			want: command.Parsed{
-				Action:   command.ActionList,
-				Mode:     format.OutputHuman,
-				CacheTTL: ptrDuration(10 * time.Minute),
-			},
-		},
-		{
-			name: "cache-ttl zero disables",
-			argv: []string{"list", "--cache-ttl", "0"},
-			want: command.Parsed{
-				Action:   command.ActionList,
-				Mode:     format.OutputHuman,
-				CacheTTL: ptrDuration(0),
-			},
-		},
-		{
-			name: "no-cache flag",
-			argv: []string{"list", "--no-cache"},
-			want: command.Parsed{
-				Action:   command.ActionList,
-				Mode:     format.OutputHuman,
-				CacheTTL: ptrDuration(0),
-			},
-		},
-		{
 			name: "limit with sort",
 			argv: []string{"list", "--sort", "name", "--limit", "3"},
 			want: command.Parsed{
@@ -626,11 +596,6 @@ func TestParseUsageErrors(t *testing.T) {
 			name:        "conflicting fzf and json",
 			argv:        []string{"--fzf", "--json"},
 			wantMessage: "cannot combine --plain, --json, --tsv, and --fzf",
-		},
-		{
-			name:        "no-cache and cache-ttl conflict",
-			argv:        []string{"--no-cache", "--cache-ttl", "5m"},
-			wantMessage: "cannot combine --no-cache and --cache-ttl",
 		},
 		{name: "unknown flag", argv: []string{"--xml"}, wantMessage: "unknown flag"},
 		{

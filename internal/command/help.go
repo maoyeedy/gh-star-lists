@@ -9,8 +9,8 @@ import (
 const helpTextFull = `gh star-lists
 
 Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]
@@ -20,7 +20,7 @@ Usage:
   gh star-lists copy --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--delete-source] [--yes] [--dry-run]
   gh star-lists merge --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--yes] [--dry-run]
   gh star-lists unstar <REPO> [--yes] [--dry-run]
-  gh star-lists tui [--no-color] [--mouse] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+  gh star-lists tui [--no-color] [--mouse] [--host <hostname>]
   gh star-lists --help
 
 Tip: in a terminal, 'gh star-lists' with no arguments opens the interactive browser.
@@ -70,10 +70,6 @@ Filtering:
                     Keys: name (case-insensitive contains), fork, language, archived,
                     license, min-stars, max-stars, topic (repos only).
   --search <STR>   Fuzzy-match repositories by name, description, and language.
-
-Caching:
-  --cache-ttl <DURATION>  Override the in-memory cache TTL (default: 5m).
-  --no-cache              Disable response caching for this invocation.
 
 Examples:
   gh star-lists
@@ -153,8 +149,6 @@ Flags:
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
   --jq <QUERY>          jq-style filter (implies JSON).
-  --cache-ttl <D>       Override cache TTL (default: 5m).
-  --no-cache            Disable response caching for this invocation.
 
 Examples:
   gh star-lists
@@ -190,8 +184,6 @@ Flags:
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
   --jq <QUERY>          jq-style filter (implies JSON).
-  --cache-ttl <D>       Override cache TTL (default: 5m).
-  --no-cache            Disable response caching for this invocation.
 
 Examples:
   gh star-lists repos "Go Tools"
@@ -375,7 +367,7 @@ Examples:
   gh star-lists unstar cli/cli --dry-run
 `,
 
-	ActionTUI: `tui [--no-color] [--mouse] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+	ActionTUI: `tui [--no-color] [--mouse] [--host <hostname>]
 
   Open an interactive two-pane browser for your GitHub star lists.
 
@@ -397,8 +389,6 @@ Examples:
     --no-color     Disable colors
     --mouse        Enable mouse support (click to focus, wheel to scroll; disables terminal text selection)
     --host         Target GitHub hostname (default: github.com)
-    --cache-ttl    Cache TTL (default: 5m, 0 to disable)
-    --no-cache     Disable response cache
 
 `,
 }
@@ -450,8 +440,8 @@ func HelpTextWithOptions(options format.Options) string {
 
 func UsageText() string {
 	return `Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--cache-ttl <DURATION>] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]
@@ -461,7 +451,7 @@ func UsageText() string {
   gh star-lists copy --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--delete-source] [--yes] [--dry-run]
   gh star-lists merge --from <LIST_ID_OR_NAME> --to <LIST_ID_OR_NAME> [--yes] [--dry-run]
   gh star-lists unstar <REPO> [--yes] [--dry-run]
-  gh star-lists tui [--no-color] [--mouse] [--host <hostname>] [--cache-ttl <duration>] [--no-cache]
+  gh star-lists tui [--no-color] [--mouse] [--host <hostname>]
   gh star-lists --help
 
 Tip: in a terminal, 'gh star-lists' with no arguments opens the interactive browser.

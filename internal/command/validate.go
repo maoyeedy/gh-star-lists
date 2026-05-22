@@ -20,10 +20,8 @@ func validateWriteOutputFlags(
 	jsonFlag, tsvFlag, plainFlag, fzfFlag bool,
 	templateStr string,
 	outputPath string,
-	jqValue string,
 ) error {
-	if jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" ||
-		jqValue != "" {
+	if jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" {
 		return usage("output flags are not supported for write commands")
 	}
 	return nil

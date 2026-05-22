@@ -9,8 +9,8 @@ import (
 const helpTextFull = `gh star-lists
 
 Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv | --fzf]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]
@@ -47,7 +47,6 @@ Output:
   --fzf             Tab-separated output, column order tuned for fzf piping.
   --output <FILE>   Write output to a file instead of stdout. Prompts before overwriting an existing file; pass --yes to skip the prompt.
   --template <STR>  Go template string applied to JSON data (implies --json data model).
-  --jq <QUERY>      jq-style query applied to JSON output (implies --json).
   --no-color        Disable ANSI color in human output.
   --web             Open the Star List in a browser (repos only; no output flags).
   --unlisted        Show starred repos not in any Star List (repos only; N+1 API calls).
@@ -143,7 +142,7 @@ Flags:
   --no-color            Disable ANSI color.
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
-  --jq <QUERY>          jq-style filter (implies JSON).
+
 
 Examples:
   gh star-lists
@@ -178,7 +177,7 @@ Flags:
   --no-color            Disable ANSI color.
   --output <FILE>       Write output to file.
   --template <STR>      Go template string (implies JSON data model).
-  --jq <QUERY>          jq-style filter (implies JSON).
+
 
 Examples:
   gh star-lists repos "Go Tools"
@@ -414,8 +413,8 @@ func HelpTextWithOptions(options format.Options) string {
 
 func UsageText() string {
 	return `Usage:
-  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf]
-  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--jq <QUERY>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
+  gh star-lists [list] [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv | --fzf]
+  gh star-lists repos <LIST_ID_OR_NAME> [--sort <KEY>] [--desc] [--limit <N>] [--filter <KEY:VALUE> ...] [--output <FILE>] [--template <STR>] [--no-color] [--plain | --json | --tsv | --fzf] [--web] [--unlisted] [--all] [--search <STR>]
   gh star-lists create <NAME> [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists edit <LIST_ID_OR_NAME> [--name <STR>] [--description <STR>] [--private | --public] [--dry-run]
   gh star-lists delete <LIST_ID_OR_NAME> [--yes] [--dry-run]

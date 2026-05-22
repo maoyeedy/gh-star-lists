@@ -15,7 +15,6 @@ type Options struct {
 	Color    bool
 	Now      time.Time
 	Template string
-	JQ       string
 }
 
 // DefaultOptions returns terminal-aware output settings for normal CLI use.

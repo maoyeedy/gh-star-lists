@@ -27,7 +27,6 @@ func Parse(argv []string) (Parsed, error) {
 		searchValue      string
 		outputPath       string
 		templateStr      string
-		jqValue          string
 		hostValue        string
 		webFlag          bool
 		unlistedFlag     bool
@@ -191,15 +190,6 @@ func Parse(argv []string) (Parsed, error) {
 			if templateStr == "" {
 				return Parsed{}, usage("empty value for --template")
 			}
-		case "--jq":
-			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --jq")
-			}
-			i++
-			jqValue = argv[i]
-			if jqValue == "" {
-				return Parsed{}, usage("empty value for --jq")
-			}
 		case "--output":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --output")
@@ -224,14 +214,7 @@ func Parse(argv []string) (Parsed, error) {
 	if templateStr != "" {
 		mode = format.OutputTemplate
 	}
-	if jqValue != "" {
-		if tsvFlag || plainFlag || fzfFlag || templateStr != "" {
-			return Parsed{}, usage(
-				"--jq cannot be combined with --plain, --tsv, --fzf, or --template",
-			)
-		}
-		mode = format.OutputJSON
-	}
+
 	sortKeys, sortTerms, err = parseSortTerms(rawSortTerms, sortDesc)
 	if err != nil {
 		return Parsed{}, err
@@ -285,7 +268,7 @@ func Parse(argv []string) (Parsed, error) {
 				)
 			}
 			if webFlag &&
-				(jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" || jqValue != "") {
+				(jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "") {
 				return Parsed{}, usage("--web cannot be combined with output flags")
 			}
 			if err := validateFilters(ActionRepos, filters); err != nil {
@@ -311,7 +294,6 @@ func Parse(argv []string) (Parsed, error) {
 				Search:     searchValue,
 				OutputPath: outputPath,
 				Template:   templateStr,
-				JQ:         jqValue,
 				Host:       hostValue,
 				Web:        webFlag,
 				Unlisted:   unlistedFlag,
@@ -329,7 +311,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -362,7 +343,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -392,7 +372,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -418,7 +397,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -444,7 +422,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -475,7 +452,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -507,7 +483,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -535,7 +510,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -564,9 +538,6 @@ func Parse(argv []string) (Parsed, error) {
 			}
 			if templateStr != "" {
 				return Parsed{}, usage("--template is not supported for tui")
-			}
-			if jqValue != "" {
-				return Parsed{}, usage("--jq is not supported for tui")
 			}
 			if outputPath != "" {
 				return Parsed{}, usage("--output is not supported for tui")
@@ -638,7 +609,6 @@ func Parse(argv []string) (Parsed, error) {
 		Filters:    filters,
 		OutputPath: outputPath,
 		Template:   templateStr,
-		JQ:         jqValue,
 		Host:       hostValue,
 		Yes:        yesFlag,
 	}, nil

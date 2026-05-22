@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/cli/go-gh/v2/pkg/jq"
 	"github.com/cli/go-gh/v2/pkg/template"
 )
 
@@ -39,20 +38,6 @@ func FormatNameWithOwner(nameWithOwner string, color bool) string {
 		return Bold(true)(nameWithOwner)
 	}
 	return Faint(true)(owner) + Faint(true)("/") + Bold(true)(repo)
-}
-
-func writeJSONSliceWithOptions[T any](w io.Writer, options Options, data []T) error {
-	if options.JQ == "" {
-		return writeJSONSlice(w, data)
-	}
-	if data == nil {
-		data = make([]T, 0)
-	}
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	return jq.Evaluate(bytes.NewReader(jsonData), w, options.JQ)
 }
 
 func writeJSONSlice[T any](w io.Writer, data []T) error {

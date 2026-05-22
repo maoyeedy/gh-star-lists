@@ -37,7 +37,6 @@ func prepareRunInvocation(
 
 	outputOptions := outputOptionsForMode(parsed.Mode)
 	outputOptions.Template = parsed.Template
-	outputOptions.JQ = parsed.JQ
 	if parsed.NoColor {
 		outputOptions.Color = false
 	}

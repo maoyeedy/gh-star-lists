@@ -97,7 +97,6 @@ type Parsed struct {
 	Search         string
 	OutputPath     string
 	Template       string
-	JQ             string
 	Host           string
 	Web            bool
 	Unlisted       bool

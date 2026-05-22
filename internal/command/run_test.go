@@ -1577,45 +1577,6 @@ func TestRunAllStarredRepos(t *testing.T) {
 	}
 }
 
-func TestRunJQ(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		argv    []string
-		wantOut string
-	}{
-		{
-			name:    "list name field",
-			argv:    []string{"list", "--jq", ".[].name"},
-			wantOut: "Go Tools\n",
-		},
-		{
-			name:    "repos nameWithOwner field",
-			argv:    []string{"repos", "UL_1", "--jq", ".[].nameWithOwner"},
-			wantOut: "cli/cli\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			svc := fixtureService()
-			var stdout, stderr strings.Builder
-
-			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
-
-			if code != command.ExitSuccess {
-				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
-			}
-			if got := stdout.String(); got != tt.wantOut {
-				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
-			}
-		})
-	}
-}
-
 func TestRunOutputFileError(t *testing.T) {
 	t.Parallel()
 

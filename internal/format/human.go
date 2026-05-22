@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"time"
+	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/jq"
 	"github.com/cli/go-gh/v2/pkg/template"
@@ -26,7 +26,20 @@ func Red(enabled bool) func(string) string       { return ansiStyle(enabled, "31
 func Green(enabled bool) func(string) string     { return ansiStyle(enabled, "32") }
 func Yellow(enabled bool) func(string) string    { return ansiStyle(enabled, "33") }
 func Cyan(enabled bool) func(string) string      { return ansiStyle(enabled, "36") }
-func faint(enabled bool) func(string) string     { return ansiStyle(enabled, "2") }
+func Faint(enabled bool) func(string) string     { return ansiStyle(enabled, "2") }
+
+// FormatNameWithOwner formats "owner/repo" with the owner and "/" in faint
+// and the repo name in bold. Returns plain text when color is false.
+func FormatNameWithOwner(nameWithOwner string, color bool) string {
+	if !color {
+		return nameWithOwner
+	}
+	owner, repo, ok := strings.Cut(nameWithOwner, "/")
+	if !ok {
+		return Bold(true)(nameWithOwner)
+	}
+	return Faint(true)(owner) + Faint(true)("/") + Bold(true)(repo)
+}
 
 func writeJSONSliceWithOptions[T any](w io.Writer, options Options, data []T) error {
 	if options.JQ == "" {
@@ -65,35 +78,4 @@ func writeTemplate[T any](w io.Writer, options Options, data []T) error {
 		return fmt.Errorf("template execute error: %w", err)
 	}
 	return t.Flush()
-}
-
-func shortAge(value string, now time.Time) string {
-	if value == "" {
-		return "-"
-	}
-	parsed, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return value
-	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	if parsed.After(now) {
-		return parsed.Format("2006-01-02")
-	}
-	duration := now.Sub(parsed)
-	switch {
-	case duration < time.Minute:
-		return "now"
-	case duration < time.Hour:
-		return fmt.Sprintf("%dm ago", int(duration.Minutes()))
-	case duration < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(duration.Hours()))
-	case duration < 30*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(duration.Hours()/24))
-	case duration < 365*24*time.Hour:
-		return fmt.Sprintf("%dmo ago", int(duration.Hours()/(24*30)))
-	default:
-		return fmt.Sprintf("%dy ago", int(duration.Hours()/(24*365)))
-	}
 }

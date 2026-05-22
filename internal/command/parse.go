@@ -1,130 +1,13 @@
 package command
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
+	"github.com/maoyeedy/gh-star-lists/internal/search"
 )
-
-type Action string
-
-const (
-	ActionList   Action = "list"
-	ActionRepos  Action = "repos"
-	ActionCreate Action = "create"
-	ActionEdit   Action = "edit"
-	ActionDelete Action = "delete"
-	ActionAdd    Action = "add"
-	ActionRemove Action = "remove"
-	ActionMove   Action = "move"
-	ActionCopy   Action = "copy"
-	ActionMerge  Action = "merge"
-	ActionUnstar Action = "unstar"
-	ActionHelp   Action = "help"
-)
-
-const (
-	SortKeyAdded     = "added"
-	SortKeyName      = "name"
-	SortKeyStars     = "stars"
-	SortKeyPushed    = "pushed"
-	SortKeyLanguage  = "language"
-	SortKeyRepoCount = "repos"
-	SortKeyStarred   = "starred"
-)
-
-const (
-	FilterKeyName     = "name"
-	FilterKeyFork     = "fork"
-	FilterKeyLanguage = "language"
-	FilterKeyArchived = "archived"
-	FilterKeyLicense  = "license"
-	FilterKeyMinStars = "min-stars"
-	FilterKeyMaxStars = "max-stars"
-	FilterKeyTopic    = "topic"
-)
-
-var commandAliases = map[string]string{
-	"ls": "list",
-	"rm": "remove",
-	"mv": "move",
-	"cp": "copy",
-}
-
-func canonicalCommand(token string) string {
-	if c, ok := commandAliases[token]; ok {
-		return c
-	}
-	switch token {
-	case "list", "repos", "create", "edit", "delete",
-		"add", "remove", "move", "copy", "merge", "unstar":
-		return token
-	}
-	return ""
-}
-
-type Filter struct {
-	Key   string
-	Value string
-}
-
-type SortTerm struct {
-	Key  string
-	Desc bool
-}
-
-type Parsed struct {
-	Action         Action
-	HelpTopic      string
-	FullHelp       bool
-	ListID         string
-	FromListID     string
-	ToListID       string
-	RepoName       string
-	Name           string
-	Description    string
-	DescriptionSet bool
-	Private        bool
-	PrivateSet     bool
-	Mode           format.OutputMode
-	SortKeys       []string
-	SortTerms      []SortTerm
-	SortDesc       bool
-	NoColor        bool
-	Limit          int
-	CacheTTL       *time.Duration
-	Filters        []Filter
-	Search         string
-	OutputPath     string
-	Template       string
-	JQ             string
-	Host           string
-	Web            bool
-	Unlisted       bool
-	All            bool
-	Yes            bool
-	DryRun         bool
-	DeleteSource   bool
-}
-
-type UsageError struct {
-	Message string
-}
-
-func (e *UsageError) Error() string {
-	return e.Message
-}
-
-type UnknownCommandError struct {
-	Command string
-}
-
-func (e *UnknownCommandError) Error() string {
-	return fmt.Sprintf("unknown command %q for \"gh star-lists\"", e.Command)
-}
 
 func Parse(argv []string) (Parsed, error) {
 	var (
@@ -155,6 +38,7 @@ func Parse(argv []string) (Parsed, error) {
 		yesFlag          bool
 		dryRunFlag       bool
 		deleteSourceFlag bool
+		mouseFlag        bool
 		toValue          string
 		fromValue        string
 		nameValue        string
@@ -209,6 +93,8 @@ func Parse(argv []string) (Parsed, error) {
 				return Parsed{}, usage("--cache-ttl must not be negative")
 			}
 			cacheTTL = &d
+		case "--mouse":
+			mouseFlag = true
 		case "--no-cache":
 			noCacheFlag = true
 		case "--no-color":
@@ -311,7 +197,7 @@ func Parse(argv []string) (Parsed, error) {
 			if searchValue == "" {
 				return Parsed{}, usage("empty value for --search")
 			}
-			if len(searchTerms(searchValue)) == 0 {
+			if len(search.Tokens(searchValue)) == 0 {
 				return Parsed{}, usage("search has no searchable terms")
 			}
 		case "--template":
@@ -694,6 +580,58 @@ func Parse(argv []string) (Parsed, error) {
 				DryRun:   dryRunFlag,
 				Host:     hostValue,
 			}, nil
+		case "tui":
+			if len(positionals) > 1 {
+				return Parsed{}, usage(
+					"too many arguments for tui: %s",
+					strings.Join(positionals[1:], " "),
+				)
+			}
+			if jsonFlag || tsvFlag || plainFlag || fzfFlag {
+				return Parsed{}, usage(
+					"--json, --tsv, --plain, and --fzf are not supported for tui",
+				)
+			}
+			if templateStr != "" {
+				return Parsed{}, usage("--template is not supported for tui")
+			}
+			if jqValue != "" {
+				return Parsed{}, usage("--jq is not supported for tui")
+			}
+			if outputPath != "" {
+				return Parsed{}, usage("--output is not supported for tui")
+			}
+			if webFlag {
+				return Parsed{}, usage("--web is not supported for tui")
+			}
+			if unlistedFlag {
+				return Parsed{}, usage("--unlisted is not supported for tui")
+			}
+			if allFlag {
+				return Parsed{}, usage("--all is not supported for tui")
+			}
+			if searchValue != "" {
+				return Parsed{}, usage("--search is not supported for tui")
+			}
+			if limit != 0 {
+				return Parsed{}, usage("--limit is not supported for tui")
+			}
+			if len(filters) > 0 {
+				return Parsed{}, usage("--filter is not supported for tui")
+			}
+			if len(sortKeys) > 0 {
+				return Parsed{}, usage("--sort is not supported for tui")
+			}
+			if sortDesc {
+				return Parsed{}, usage("--desc is not supported for tui")
+			}
+			return Parsed{
+				Action:   ActionTUI,
+				Host:     hostValue,
+				NoColor:  noColorFlag,
+				Mouse:    mouseFlag,
+				CacheTTL: cacheTTL,
+			}, nil
 		default:
 			return Parsed{}, &UnknownCommandError{Command: positionals[0]}
 		}
@@ -710,6 +648,9 @@ func Parse(argv []string) (Parsed, error) {
 	}
 	if searchValue != "" {
 		return Parsed{}, usage("--search is only supported for repos")
+	}
+	if mouseFlag {
+		return Parsed{}, usage("--mouse is only supported for 'tui' subcommand")
 	}
 	if err := validateFilters(ActionList, filters); err != nil {
 		return Parsed{}, err
@@ -733,26 +674,6 @@ func Parse(argv []string) (Parsed, error) {
 		Host:       hostValue,
 		Yes:        yesFlag,
 	}, nil
-}
-
-func validateWriteOutputFlags(
-	jsonFlag, tsvFlag, plainFlag, fzfFlag bool,
-	templateStr string,
-	outputPath string,
-	jqValue string,
-) error {
-	if jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" ||
-		jqValue != "" {
-		return usage("output flags are not supported for write commands")
-	}
-	return nil
-}
-
-func validateWriteSearchFlag(searchValue string) error {
-	if searchValue != "" {
-		return usage("--search is only supported for repos")
-	}
-	return nil
 }
 
 func parseSortTerms(rawTerms []string, globalDesc bool) ([]string, []SortTerm, error) {
@@ -795,102 +716,4 @@ func parseSortTerms(rawTerms []string, globalDesc bool) ([]string, []SortTerm, e
 		return keys, nil, nil
 	}
 	return keys, terms, nil
-}
-
-func validateHost(host string) error {
-	if strings.Contains(host, "://") || strings.Contains(host, "/") {
-		return usage("invalid value for --host: expected hostname, got %q", host)
-	}
-	return nil
-}
-
-var reposOnlyFilterKeys = map[string]struct{}{
-	FilterKeyFork:     {},
-	FilterKeyLanguage: {},
-	FilterKeyArchived: {},
-	FilterKeyLicense:  {},
-	FilterKeyTopic:    {},
-	FilterKeyMinStars: {},
-	FilterKeyMaxStars: {},
-}
-
-func validateFilters(action Action, filters []Filter) error {
-	for i, f := range filters {
-		if _, reposOnly := reposOnlyFilterKeys[f.Key]; reposOnly && action != ActionRepos {
-			return usage("filter key %q is only supported for repos", f.Key)
-		}
-		switch f.Key {
-		case FilterKeyTopic:
-			if strings.Contains(f.Value, ",") {
-				return usage(
-					"invalid filter value for topic: only one topic per --filter; repeat the flag for AND semantics",
-				)
-			}
-		case FilterKeyName, FilterKeyLanguage, FilterKeyLicense:
-		case FilterKeyFork, FilterKeyArchived:
-			if f.Value != "true" && f.Value != "false" {
-				return usage(
-					"invalid filter value for %s: expected true or false, got %q",
-					f.Key, f.Value,
-				)
-			}
-		case FilterKeyMinStars, FilterKeyMaxStars:
-			n, err := strconv.Atoi(f.Value)
-			if err != nil {
-				return usage(
-					"invalid filter value for %s: expected integer, got %q",
-					f.Key,
-					f.Value,
-				)
-			}
-			if n < 0 {
-				filters[i].Value = "0"
-			}
-		default:
-			return usage(
-				"unknown filter key %q; supported keys: name, fork, language, archived, license, min-stars, max-stars, topic",
-				f.Key,
-			)
-		}
-	}
-	return nil
-}
-
-func validateSort(action Action, sortKeys []string, sortDesc bool) error {
-	if len(sortKeys) == 0 {
-		if sortDesc {
-			return usage("--desc requires --sort")
-		}
-		return nil
-	}
-
-	for _, key := range sortKeys {
-		switch action {
-		case ActionList:
-			switch key {
-			case SortKeyAdded, SortKeyName, SortKeyRepoCount:
-			default:
-				return usage(
-					"unsupported sort key %q for list; supported keys: added, name, repos",
-					key,
-				)
-			}
-		case ActionRepos:
-			switch key {
-			case SortKeyName, SortKeyStars, SortKeyPushed, SortKeyLanguage, SortKeyStarred:
-			default:
-				return usage(
-					"unsupported sort key %q for repos; supported keys: name, stars, pushed, language, starred",
-					key,
-				)
-			}
-		default:
-			return nil
-		}
-	}
-	return nil
-}
-
-func usage(format string, args ...any) *UsageError {
-	return &UsageError{Message: fmt.Sprintf(format, args...)}
 }

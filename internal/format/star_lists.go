@@ -5,36 +5,40 @@ import (
 	"io"
 
 	"github.com/cli/go-gh/v2/pkg/tableprinter"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 // WriteStarLists writes Star Lists to w in the requested output mode.
-func WriteStarLists(w io.Writer, mode OutputMode, lists []githubapi.StarList) error {
+func WriteStarLists(w io.Writer, mode OutputMode, lists []domain.StarList) error {
 	return WriteStarListsWithOptions(w, Options{Mode: mode}, lists)
 }
 
 // WriteStarListsWithOptions writes Star Lists with terminal-aware human settings.
-func WriteStarListsWithOptions(w io.Writer, options Options, lists []githubapi.StarList) error {
+func WriteStarListsWithOptions(w io.Writer, options Options, lists []domain.StarList) error {
 	options = normalizeOptions(options)
+	rows := make([]domain.ListRow, len(lists))
+	for i, l := range lists {
+		rows[i] = ListRowFromDomain(l, options.Now)
+	}
 	switch options.Mode {
 	case OutputJSON:
-		return writeJSONSliceWithOptions(w, options, lists)
+		return writeJSONSliceWithOptions(w, options, rows)
 	case OutputTSV:
-		return writeStarListsTSV(w, lists)
+		return writeStarListsTSV(w, rows)
 	case OutputFZF:
-		return writeStarListsFZF(w, lists)
+		return writeStarListsFZF(w, rows)
 	case OutputPlain:
-		return writeStarListsPlain(w, lists)
+		return writeStarListsPlain(w, rows)
 	case OutputTemplate:
-		return writeTemplate(w, options, lists)
+		return writeTemplate(w, options, rows)
 	case OutputHuman:
-		return writeStarListsHuman(w, options, lists)
+		return writeStarListsHuman(w, options, rows)
 	default:
 		return fmt.Errorf("unsupported output mode %q", options.Mode)
 	}
 }
 
-func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
+func writeStarListsTSV(w io.Writer, lists []domain.ListRow) error {
 	for _, list := range lists {
 		if _, err := fmt.Fprintf(
 			w,
@@ -52,7 +56,7 @@ func writeStarListsTSV(w io.Writer, lists []githubapi.StarList) error {
 	return nil
 }
 
-func writeStarListsFZF(w io.Writer, lists []githubapi.StarList) error {
+func writeStarListsFZF(w io.Writer, lists []domain.ListRow) error {
 	for _, list := range lists {
 		if _, err := fmt.Fprintf(
 			w,
@@ -70,20 +74,20 @@ func writeStarListsFZF(w io.Writer, lists []githubapi.StarList) error {
 	return nil
 }
 
-func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarList) error {
+func writeStarListsHuman(w io.Writer, options Options, lists []domain.ListRow) error {
 	if len(lists) == 0 {
 		_, _ = fmt.Fprintln(w, "No Star Lists found.")
 		_, err := fmt.Fprintln(w, "Create one with `gh star-lists create <NAME>`.")
 		return err
 	}
 	boldFn := Bold(options.Color)
-	faintFn := faint(options.Color)
+	faintFn := Faint(options.Color)
 	table := tableprinter.New(w, true, options.Width)
 	table.AddHeader([]string{"NAME", "REPOS", "ADDED", "ID", "URL"}, tableprinter.WithColor(boldFn))
 	for _, list := range lists {
 		table.AddField(list.Name, tableprinter.WithColor(boldFn))
-		table.AddField(fmt.Sprintf("%d", list.RepoCount), tableprinter.WithTruncate(nil))
-		table.AddField(shortAge(list.LastAddedAt, options.Now), tableprinter.WithTruncate(nil))
+		table.AddField(list.RepoCountStr, tableprinter.WithTruncate(nil))
+		table.AddField(list.LastAddedAge, tableprinter.WithTruncate(nil))
 		table.AddField(list.ID, tableprinter.WithColor(faintFn))
 		table.AddField(list.URL, tableprinter.WithTruncate(nil))
 		table.EndRow()
@@ -91,7 +95,7 @@ func writeStarListsHuman(w io.Writer, options Options, lists []githubapi.StarLis
 	return table.Render()
 }
 
-func writeStarListsPlain(w io.Writer, lists []githubapi.StarList) error {
+func writeStarListsPlain(w io.Writer, lists []domain.ListRow) error {
 	if len(lists) == 0 {
 		_, err := fmt.Fprintln(w, "No Star Lists found.")
 		return err
@@ -105,7 +109,7 @@ func writeStarListsPlain(w io.Writer, lists []githubapi.StarList) error {
 				return err
 			}
 		}
-		if _, err := fmt.Fprintf(w, "  Repos: %d\n", list.RepoCount); err != nil {
+		if _, err := fmt.Fprintf(w, "  Repos: %s\n", list.RepoCountStr); err != nil {
 			return err
 		}
 		if list.LastAddedAt != "" {

@@ -1,117 +1,107 @@
-# Repository Guidelines
+# gh-star-lists Guidelines
 
 ## Architecture Invariants
 
-- `githubapi.Service` is the single API boundary consumed by `command`. All GitHub data flows through it. Do not call `graphQLService` or `go-gh` API directly from `command` or `format`.
-- `command.Parse` is pure argument parsing — never imports `githubapi`, never touches GitHub API. Keeps help and usage paths auth-free.
-- JSON field names and TSV column order are scriptable contracts. Machine output changes require coordinated consumer updates.
-- `NewProductionServiceWithOptions` returns a lazy wrapper. `go-gh` GraphQL client constructed on first API call, not at startup.
-- Extension delegates auth entirely to `gh`. Never store, cache, or forward tokens.
-- `NewCacheServiceWithOptions` wraps `Service`. Cache decisions stay in `githubapi`. Never add caching logic to `command` or `format`.
+- `internal/domain` is the zero-dependency leaf. It owns StarList, Repository, PageInfo, input types, typed errors, and view-model rows (RepoRow, ListRow). Nothing in `internal/` may be imported by `domain`.
+- `githubapi.Service` is the sole API boundary. `command`/`tui`/`format` never call GraphQL directly.
+- `internal/app.StarListService` orchestrates use cases (fetch, filter, sort, limit). Commands parse args, call one app method, format output. No business logic in `command/`.
+- `command.Parse` is pure arg parsing -- no `githubapi` imports, no API calls. Auth-free help paths.
+- `internal/tui` owns its lipgloss rendering; never imports `internal/format`. View-model types (`RepoRow`, `ListRow`) live in `domain` so both `format` and `tui` can consume them.
+- Typed errors at domain boundary: `domain.ErrAuth`, `domain.ErrNotFound`, `domain.ErrRateLimited`. `githubapi` normalizes via `normalizeError`; `command` maps to exit codes via `mapErrorToExitCode`. No string-based error detection.
+- Decorator chain for cross-cutting concerns: `lazyService -> RetryService -> cacheService -> diskCacheService -> graphQLService`. Each decorator implements `Service`, wraps another `Service`, adds one concern.
+- `NewProductionServiceWithOptions` lazily constructs `go-gh` GraphQL client. Cache decisions stay in `githubapi`; TUI invalidates via `svc.(interface{ Invalidate() })`.
+- Extension delegates auth entirely to `gh`. Never store/forward tokens.
 
-## Build / Commands
+## Commands
 
-- `make test` — `go test ./...`
-- `make vet` — `go vet ./...`
-- `make build` — `go build -o ./gh-star-lists .`
-- `make fmt` — `go tool goimports -w .`
-- `make lint` — `golangci-lint run --fix`
-- `make check` — `bash scripts/check.sh` (test + vet + build)
-- `make ascii-check` — non-ASCII scanner for Go source
-- `make smoke` — `bash scripts/smoke-local.sh`
-- After editing Go files: `go tool goimports -w <file>`
-- Final gate: `make check`
+| Command | Action |
+|---------|--------|
+| `make test` | `go test ./...` |
+| `make vet` | `go vet ./...` |
+| `make lint` | `golangci-lint run --fix` |
+| `make build` | `go build -o ./gh-star-lists .` |
+| `make check` | test + vet + build |
+| `make ascii-check` | non-ASCII scanner |
+| `make smoke` | `bash scripts/smoke-local.sh` |
 
-## Package Responsibilities
+After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make check`.
+
+## Package Map
 
 | Package | Owns | Does Not Own |
-|---------|------|-------------|
-| `main` | Binary entrypoint, service wiring | Logic, formatting |
-| `command` | CLI parsing (`Parse`), run orchestration (`Run`), exit codes | GitHub API calls, output rendering |
-| `githubapi` | GraphQL queries, pagination, response mapping, caching, retry | CLI args, formatting |
-| `format` | JSON/TSV/human/plain/template serialization (`--jq`, `--template`) | API calls, CLI state |
+|---------|------|--------------|
+| `main` | Entrypoint, wiring | Logic, formatting |
+| `domain` | Core types, typed errors, RepoRow/ListRow | API calls, formatting, rendering |
+| `app` | Use-case orchestration, filter/sort/limit | CLI args, rendering, API protocol |
+| `command` | Parse, Run dispatch, exit codes | API calls, rendering, business logic |
+| `githubapi` | GraphQL, pagination, caching, retry, mutations, error normalization | CLI args, formatting, business logic |
+| `format` | JSON/TSV/human/template serialization, row constructors | API calls, CLI state |
+| `tui` | Bubbletea two-pane browser, keys, sort, rendering | API calls, CLI args, format |
+| `humanize` | `ShortAge`, `FormatStars` | API calls, styling |
 
-## Common Pitfalls
+## Split-File Discipline
 
-**Sort key literals.** Use `command.SortKey*` constants, not raw strings `"added"`, `"stars"`, `"repos"`.
+Before adding to a monolithic file, check existing split files. If none covers the theme and the addition would exceed ~100 lines, create `<pkg>_<theme>.go`.
 
-**Filter key literals.** Use `command.FilterKey*` constants, not raw strings.
-
-**Filter values already lowered.** `Parse` lowers key+value. Compare `f.Value` directly — no `strings.ToLower` needed in filter functions.
-
-**Adding a repos-only filter.** Add key to `reposOnlyFilterKeys` map, handle in `validateFilters` switch, implement in `filterRepositories`.
-
-**ANSI styling.** Use `ansiStyle(enabled, code)` / `bold(bool)` / `faint(bool)` from `internal/format/human.go`. No raw escape sequences.
-
-**JSON serialization.** Use `writeJSONSlice[T](w, data)` or `writeJSONSliceWithOptions(w, options, data)` (for `--jq`). No manual nil-guard + `json.NewEncoder`.
-
-**Template serialization.** Use `writeTemplate[T](w, options, data)` from `internal/format/human.go`. Template engine receives JSON bytes.
-
-**Closure allocation.** Pre-compute `bold()` / `faint()` before loops. Nil when color disabled, so hoisting avoids N conditional allocations.
-
-**Slice pre-allocation.** Paginated fetches: `make([]T, 0, s.pageSize)`. Page size 100.
-
-**Error wrapping.** All GraphQL errors: `fmt.Errorf("GitHub GraphQL request failed: %w", err)`. String asserted in tests.
-
-**Context cancellation.** Check `ctx.Err()` at top of every pagination or batch iteration.
-
-**Sort stability.** Use `sort.Slice`. Comparators provide total order via ID/URL fallback.
-
-**Per-key sort direction.** Comparators return `(int, bool)` — `SortTerm.Desc`. Keys can mix directions: `--sort stars:desc,name:asc`.
-
-**Name resolution.** `resolveList()` returns `resolvedList{ID, URL, Name}` by matching name or ID. `resolveListID` delegates to it. `--web` uses URL. Name-not-found returns raw input — subsequent call surfaces the real error.
-
-**Server-side limit pushdown.** `directListOptions()` pushes `Limit` server-side only when no local post-processing exists (no filters, search, or sort). Otherwise fetches all pages, applies limit locally.
-
-**Topics query guard.** `topicsNeeded()` returns true only for `--filter topic:` or template referencing `Topics`. Avoids fetching topics on every query.
-
-**Destructive operations.** Use `requireYes(parsed, action)`. Non-TTY requires `--yes` or `--dry-run`.
-
-**`membershipIndex` for bulk ops.** `loadMembershipIndex()` fetches all list memberships concurrently (errgroup, limit 5). Used by `unlisted` and `copy`/`merge`.
-
-**Cache invalidation.** Write ops call `invalidateLists()`, `invalidateStarred()`, or `invalidateAll()`. Never in `command` or `format` packages.
-
-**Search buffer reuse.** Hoist `tokenCache` map and `editPrev`/`editCurr` `[]int` buffers outside the repo loop in `searchRepositories()`. Reused via `growIntSlice` to avoid per-repo DP allocation.
-
-**`Topics` field type.** `Repository.Topics` is `[]string` (`json:"-"`). Not in JSON/TSV. Used for `--filter topic:` and template matching.
-
-**Non-ASCII characters.** Run `make ascii-check` before commit. Watch for em dashes, en dashes, smart quotes, non-breaking spaces.
+- `domain`: `domain.go` `page_info.go` `errors.go` `rows.go`
+- `app`: `service.go` `options.go` `filter.go` `sort.go`
+- `command`: `run.go` `run_action.go` `run_filter.go` `run_sort.go` `run_output.go` `run_prompt.go` `run_tui.go` `parse.go` `types.go` `validate.go` `help.go` `search.go`
+- `githubapi`: `client.go` `graphql_queries.go` `graphql_types.go` `graphql_service.go` `graphql_helpers.go` `pagination.go` `errors.go` `retry_service.go` `retry.go` `cache.go` `diskcache.go` `diskcache_policy.go` `diskcache_store.go` `diskcache_coalesce.go` `diskcache_invalidate.go` `membership_index.go` `starred_at.go`
+- `format`: `rows.go` `options.go` `mode.go` `human.go` `repositories.go` `star_lists.go`
+- `search`: `search.go` `tokenize.go` `edit.go` `scoring.go`
+- `tui`: `model.go` `update.go` `update_lists.go` `update_repos.go` `update_mutation.go` `update_refresh.go` `render.go` `render_repo.go` `render_list.go` `render_preview.go` `render_header.go` `render_footer.go` `render_help.go` `navigate.go` `selection.go` `preview.go` `keys.go` `input.go` `search.go` `sort.go` `cache.go` `modal.go` `modal_list.go` `modal_repo.go` `modal_bulk.go` `modal_help.go` `modal_update.go` `modal_view.go` `styles.go` `geometry.go` `viewport.go` `app.go` `messages.go`
 
 ## Code Review Checklist
 
-- [ ] New action? Add `Action*` constant, `Parse` handler, `run.go` case, help/usage text
-- [ ] New filter key? Add `FilterKey*` constant, `reposOnlyFilterKeys` if repos-only, `validateFilters`, `filterRepositories`
-- [ ] New sort key? Add `SortKey*` constant, `validateSort`, comparator case
-- [ ] New flag? Add `Parse` handler, `Parsed` field, thread into action, help/usage
-- [ ] New output mode? Handle in both `WriteStarListsWithOptions` and `WriteRepositoriesWithOptions`, `SelectOutputMode` validation
-- [ ] New GraphQL query? Paginate with `$endCursor`/`$first`, `HasNextPage`, `ctx.Err()` guard
-- [ ] New service method? Add to `Service` interface, `lazyService`, `cacheService`, all `fakeService` impls
-- [ ] Test on stdout? Set `Now` in `Options`, use `testOutputOptions` helper in `run_test.go`
-- [ ] Test uses `errWriter`? Duplicate type in `command_test` and `format_test`
-- [ ] Build passes? `make check`
+- [ ] New action? `Action*` constant -> `Parse` handler -> `run.go` case -> help text
+- [ ] New filter/sort key? `FilterKey*`/`SortKey*` constant -> validate -> filter/compare in `app/filter.go` or `app/sort.go`
+- [ ] New flag? `Parse` handler -> `Parsed` field -> thread into action -> help
+- [ ] New output mode? `WriteStarListsWithOptions` + `WriteRepositoriesWithOptions` + `SelectOutputMode`
+- [ ] New GraphQL query? paginate with `Pager[T]` (not raw `HasNextPage` loop); `ctx.Err()` guard in fetch closure
+- [ ] New service method? add to `Service` + `lazyService` + `cacheService` + `RetryService` + all `fakeService` impls
+- [ ] New app service method? add to `StarListService`; keep command action case thin (parse -> call app -> format)
+- [ ] New domain type? place in `internal/domain`; ensure zero internal imports
+- [ ] New error condition? add to `domain/errors.go`; normalize in `githubapi/errors.go`; exit-code-map in `command/run_output.go`
+- [ ] New view-model field? add to `RepoRow`/`ListRow` in `domain/rows.go`; populate in constructor in `format/rows.go`
+- [ ] Cross-cutting concern? Service decorator: wrap `Service`, implement `Service`, wire into `NewProductionServiceWithOptions`
+- [ ] New TUI key binding? `keys.go` -> `model.handleKey` -> help overlay -> test
+- [ ] Bulk operation? `errgroup.SetLimit(5)` + `atomic.Int64` + `sync.Mutex`
+- [ ] New cache? test hit + miss; verify value varies; confirm receiver propagates
+- [ ] New iota? `<Prefix>End` sentinel; cycle with `% int(<Prefix>End)`
+- [ ] Uses `Repository.StarredAt` for list repos? Enrich via `githubapi.WithStarredAt` -- Star List items don't populate it
+- [ ] Shared logic extracted to `githubapi`/`humanize`/neutral package before duplicating across `tui`/`command`?
+- [ ] Right split file? (filters -> `app/filter.go`, sort -> `app/sort.go`, domain types -> `domain/domain.go`, view models -> `domain/rows.go`)
+- [ ] Build passes? `make lint && make check`
+- [ ] Non-ASCII? `make ascii-check`
 
-## Style & Tooling
+## Common Pitfalls
 
-- UTF-8 LF (`.editorconfig` enforces). No smart quotes, non-breaking spaces, or exotic whitespace.
-- Go tabs for indentation. Let `go tool goimports -w` handle formatting.
-- Prefer raw string literals (backticks) for regexes.
-- Prefer `ast-grep` for structural Go edits (switch cases, signatures, interfaces, structs).
-- Prefer `sd` for focused token/replacement edits and renames.
-- After Go edits: `go tool goimports -w <file>`
-- Final validation: `make check`
-
-## README
-
-- Keep focused on quick-start essentials: install, basic usage, `--help` pointer.
-- Do not duplicate `--help` output or document advanced flags/examples. Defer to `--help`.
-- Limit to ~30 lines. If changes grow beyond that, push detail into `--help` instead.
+- Import `domain` for types (StarList, Repository, RepoRow), `githubapi` only for `Service` interface and constructors.
+- No business logic in `command/`. Filter/sort/limit belongs in `internal/app`. Commands parse + delegate.
+- No string matching for errors. Use `errors.Is(err, domain.ErrAuth)` / `errors.As`.
+- New paginated GraphQL queries use `Pager[T]` with a fetch closure returning `(nodes []T, pageInfo, error)`. No raw `HasNextPage` loops.
+- Convert to `RepoRow`/`ListRow` in format/tui before rendering. Pre-compute fields in `domain/rows.go` rather than at render time.
+- Cross-cutting logic uses Service decorator pattern, not inline in `graphql_service.go`.
+- Use `command.SortKey*`/`FilterKey*` constants, not raw strings. Filter values pre-lowered by `Parse` -- compare `f.Value` directly.
+- ANSI: `ansiStyle(enabled, code)` / `bold(bool)` / `faint(bool)` from `format/human.go`. No raw escapes.
+- JSON: `writeJSONSlice[T](w, data)` or `writeJSONSliceWithOptions(w, opts, data)`. Template: `writeTemplate[T](w, opts, data)`.
+- Sort: `sort.Slice` with ID/URL tiebreak. Comparators return `(int, bool)` respecting `SortTerm.Desc`.
+- Destructive ops: `requireYes(parsed, action)`. Non-TTY needs `--yes` or `--dry-run`.
+- Cache invalidation: write ops call `invalidateLists()`/`invalidateStarred()`/`invalidateAll()` in `githubapi` only.
+- Starred timestamps: Star List `items` repos lack viewer star time. Use `githubapi.WithStarredAt`/`MergeStarredAt` from `ListStarredRepositories` when rendering `Starred:` or sorting by `SortKeyStarred`.
+- Topics: `Repository.Topics` is `[]string` (`json:"-"`). `topicsNeeded()` guards fetch. TUI fetches only for preview/topic-dependent paths.
+- TUI: `Model.View()` returns `tea.View` (`v.AltScreen = true`). `tea.WithColorProfile(colorprofile.NoTTY)` disables color. `lipgloss.Width(s)` not `len(s)`.
+- Search buffer: hoist `tokenCache` map + `editPrev`/`editCurr` `[]int` outside repo loop; reuse via `growIntSlice`.
+- Bulk ops: `errgroup.SetLimit(5)` + `atomic.Int64`. Check `ctx.Err()` at pagination/batch tops.
+- Concurrency in tests: protect recorded call slices with `sync.Mutex` when fake service is called from `errgroup` goroutines.
+- Sentinel iota: end every `iota` block with `<Prefix>End`. Cycle: `% int(<Prefix>End)`.
 
 ## Context7 Library IDs
 
-Pre-resolved. Use `query-docs` directly.
-
-| Library | Context7 ID | Query when… |
-|---------|-------------|-------------|
-| `go-gh/v2` | `/cli/go-gh` | GraphQL executor, pagination, terminal, auth |
-| `Masterminds/sprig` | `/masterminds/sprig` | `--template` function availability |
-| `gopkg.in/yaml.v3` | `/yaml/go-yaml` | YAML marshal/unmarshal, struct tags |
+`go-gh/v2` -> `/cli/go-gh`
+`charm.land/bubbletea/v2` -> `/charmbracelet/bubbletea`
+`charm.land/bubbles/v2` -> `/charmbracelet/bubbles`
+`charm.land/lipgloss/v2` -> `/charmbracelet/lipgloss`
+`golang.org/x/sync` -> `errgroup` for concurrent bulk ops
+`github.com/charmbracelet/colorprofile` -> TUI color detection (`NoTTY`)
+`golang.org/x/tools/cmd/goimports` -> import formatting (`make lint` gate)

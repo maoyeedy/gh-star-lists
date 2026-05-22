@@ -77,6 +77,26 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "repos unlisted sort starred",
+			argv: []string{"repos", "--unlisted", "--sort", "starred"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				Mode:     format.OutputHuman,
+				Unlisted: true,
+				SortKeys: []string{"starred"},
+			},
+		},
+		{
+			name: "repos all sort starred",
+			argv: []string{"repos", "--all", "--sort", "starred"},
+			want: command.Parsed{
+				Action:   command.ActionRepos,
+				Mode:     format.OutputHuman,
+				All:      true,
+				SortKeys: []string{"starred"},
+			},
+		},
+		{
 			name: "long help short circuits",
 			argv: []string{"--help"},
 			want: command.Parsed{Action: command.ActionHelp, Mode: format.OutputHuman},
@@ -499,16 +519,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "sort repos by starred",
-			argv: []string{"repos", "--unlisted", "--sort", "starred"},
-			want: command.Parsed{
-				Action:   command.ActionRepos,
-				Mode:     format.OutputHuman,
-				Unlisted: true,
-				SortKeys: []string{"starred"},
-			},
-		},
-		{
 			name: "filter min-stars negative clamps to zero",
 			argv: []string{"repos", "UL_1", "--filter", "min-stars:-5"},
 			want: command.Parsed{
@@ -898,5 +908,23 @@ func TestParseUsageErrors(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestParseMouseFlag(t *testing.T) {
+	t.Parallel()
+	// --mouse on tui sets Mouse = true
+	p, err := command.Parse([]string{"tui", "--mouse"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !p.Mouse {
+		t.Error("expected Mouse = true")
+	}
+
+	// --mouse on a non-tui action returns an error
+	_, err = command.Parse([]string{"list", "--mouse"})
+	if err == nil {
+		t.Error("expected error for --mouse on non-tui action")
 	}
 }

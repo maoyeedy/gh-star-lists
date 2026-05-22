@@ -10,6 +10,47 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
+// testRetryDoer mirrors the production retryDoer removed from retry.go.
+type testRetryDoer struct {
+	inner       graphQLDoer
+	maxAttempts int
+	baseDelay   time.Duration
+	sleep       func(ctx context.Context, d time.Duration) error
+}
+
+func (r *testRetryDoer) DoWithContext(
+	ctx context.Context,
+	query string,
+	variables map[string]any,
+	response any,
+) error {
+	var lastErr error
+	for attempt := 0; attempt < r.maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := r.inner.DoWithContext(ctx, query, variables, response)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !isTransientGraphQLError(err) {
+			return err
+		}
+		if attempt == r.maxAttempts-1 {
+			break
+		}
+		delay := retryAfterDelay(err)
+		if delay == 0 {
+			delay = backoffWithJitter(r.baseDelay, attempt)
+		}
+		if err := r.sleep(ctx, delay); err != nil {
+			return err
+		}
+	}
+	return lastErr
+}
+
 type fakeRetryExecutor struct {
 	responses []error // return these in sequence; last one repeated if exhausted
 	calls     int
@@ -31,8 +72,8 @@ func (f *fakeRetryExecutor) DoWithContext(
 
 func noopSleep(_ context.Context, _ time.Duration) error { return nil }
 
-func newTestRetryDoer(inner graphQLDoer, maxAttempts int) *retryDoer {
-	return &retryDoer{
+func newTestRetryDoer(inner graphQLDoer, maxAttempts int) *testRetryDoer {
+	return &testRetryDoer{
 		inner:       inner,
 		maxAttempts: maxAttempts,
 		baseDelay:   0,
@@ -96,7 +137,7 @@ func TestRetryDoer_ContextCanceledDuringSleep(t *testing.T) {
 	transient := errors.New("secondary rate limit exceeded")
 	exec := &fakeRetryExecutor{responses: []error{transient}}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &retryDoer{
+	r := &testRetryDoer{
 		inner:       exec,
 		maxAttempts: 3,
 		baseDelay:   0,

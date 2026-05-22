@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 const defaultCacheTTL = 5 * time.Minute
@@ -22,19 +24,19 @@ type cacheService struct {
 	inner Service
 
 	mu           sync.RWMutex
-	listsEntry   *cacheEntry[[]StarList]
-	reposEntry   map[reposCacheKey]*cacheEntry[[]Repository]
-	starredEntry map[bool]*cacheEntry[[]Repository]
-	repoEntry    map[string]*cacheEntry[Repository]
+	listsEntry   *cacheEntry[[]domain.StarList]
+	reposEntry   map[reposCacheKey]*cacheEntry[[]domain.Repository]
+	starredEntry map[bool]*cacheEntry[[]domain.Repository]
+	repoEntry    map[string]*cacheEntry[domain.Repository]
 	ttl          time.Duration
 }
 
 func newCacheService(inner Service) *cacheService {
 	return &cacheService{
 		inner:        inner,
-		reposEntry:   make(map[reposCacheKey]*cacheEntry[[]Repository]),
-		starredEntry: make(map[bool]*cacheEntry[[]Repository]),
-		repoEntry:    make(map[string]*cacheEntry[Repository]),
+		reposEntry:   make(map[reposCacheKey]*cacheEntry[[]domain.Repository]),
+		starredEntry: make(map[bool]*cacheEntry[[]domain.Repository]),
+		repoEntry:    make(map[string]*cacheEntry[domain.Repository]),
 		ttl:          defaultCacheTTL,
 	}
 }
@@ -57,8 +59,8 @@ func NewCacheServiceWithOptions(inner Service, opts CacheOptions) Service {
 
 func (s *cacheService) ListStarLists(
 	ctx context.Context,
-	options ...ListOptions,
-) ([]StarList, error) {
+	options ...domain.ListOptions,
+) ([]domain.StarList, error) {
 	limit := limitFromOptions(options)
 	s.mu.RLock()
 	if s.listsEntry != nil && time.Now().Before(s.listsEntry.expiry) {
@@ -74,7 +76,7 @@ func (s *cacheService) ListStarLists(
 	}
 
 	s.mu.Lock()
-	s.listsEntry = &cacheEntry[[]StarList]{
+	s.listsEntry = &cacheEntry[[]domain.StarList]{
 		data:   lists,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -85,8 +87,8 @@ func (s *cacheService) ListStarLists(
 func (s *cacheService) ListRepositories(
 	ctx context.Context,
 	listID string,
-	options ...ListOptions,
-) ([]Repository, error) {
+	options ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	limit := limitFromOptions(options)
 	key := reposCacheKey{listID: listID, withTopics: withTopicsFromOptions(options)}
 	s.mu.RLock()
@@ -103,7 +105,7 @@ func (s *cacheService) ListRepositories(
 	}
 
 	s.mu.Lock()
-	s.reposEntry[key] = &cacheEntry[[]Repository]{
+	s.reposEntry[key] = &cacheEntry[[]domain.Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -113,8 +115,8 @@ func (s *cacheService) ListRepositories(
 
 func (s *cacheService) ListStarredRepositories(
 	ctx context.Context,
-	options ...ListOptions,
-) ([]Repository, error) {
+	options ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	limit := limitFromOptions(options)
 	withTopics := withTopicsFromOptions(options)
 	s.mu.RLock()
@@ -131,7 +133,7 @@ func (s *cacheService) ListStarredRepositories(
 	}
 
 	s.mu.Lock()
-	s.starredEntry[withTopics] = &cacheEntry[[]Repository]{
+	s.starredEntry[withTopics] = &cacheEntry[[]domain.Repository]{
 		data:   repos,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -142,7 +144,7 @@ func (s *cacheService) ListStarredRepositories(
 func (s *cacheService) GetRepository(
 	ctx context.Context,
 	nameWithOwner string,
-) (Repository, error) {
+) (domain.Repository, error) {
 	s.mu.RLock()
 	if entry, ok := s.repoEntry[nameWithOwner]; ok && time.Now().Before(entry.expiry) {
 		data := entry.data
@@ -153,11 +155,11 @@ func (s *cacheService) GetRepository(
 
 	repo, err := s.inner.GetRepository(ctx, nameWithOwner)
 	if err != nil {
-		return Repository{}, err
+		return domain.Repository{}, err
 	}
 
 	s.mu.Lock()
-	s.repoEntry[nameWithOwner] = &cacheEntry[Repository]{
+	s.repoEntry[nameWithOwner] = &cacheEntry[domain.Repository]{
 		data:   repo,
 		expiry: time.Now().Add(s.ttl),
 	}
@@ -172,10 +174,13 @@ func (s *cacheService) GetRepositoryMemberships(
 	return s.inner.GetRepositoryMemberships(ctx, nameWithOwner)
 }
 
-func (s *cacheService) CreateStarList(ctx context.Context, input StarListInput) (StarList, error) {
+func (s *cacheService) CreateStarList(
+	ctx context.Context,
+	input domain.StarListInput,
+) (domain.StarList, error) {
 	list, err := s.inner.CreateStarList(ctx, input)
 	if err != nil {
-		return StarList{}, err
+		return domain.StarList{}, err
 	}
 	s.invalidateLists()
 	return list, nil
@@ -183,11 +188,11 @@ func (s *cacheService) CreateStarList(ctx context.Context, input StarListInput) 
 
 func (s *cacheService) UpdateStarList(
 	ctx context.Context,
-	input UpdateStarListInput,
-) (StarList, error) {
+	input domain.UpdateStarListInput,
+) (domain.StarList, error) {
 	list, err := s.inner.UpdateStarList(ctx, input)
 	if err != nil {
-		return StarList{}, err
+		return domain.StarList{}, err
 	}
 	s.invalidateLists()
 	return list, nil
@@ -229,8 +234,13 @@ func (s *cacheService) RemoveStar(ctx context.Context, repoID string) error {
 	if err := s.inner.RemoveStar(ctx, repoID); err != nil {
 		return err
 	}
-	s.invalidateStarred()
+	s.invalidateAfterUnstar()
 	return nil
+}
+
+// Invalidate clears all cached entries. Used by the TUI for manual refresh.
+func (s *cacheService) Invalidate() {
+	s.invalidateAll()
 }
 
 func (s *cacheService) invalidateLists() {
@@ -241,22 +251,31 @@ func (s *cacheService) invalidateLists() {
 
 func (s *cacheService) invalidateStarred() {
 	s.mu.Lock()
-	s.starredEntry = make(map[bool]*cacheEntry[[]Repository])
+	s.starredEntry = make(map[bool]*cacheEntry[[]domain.Repository])
+	s.mu.Unlock()
+}
+
+func (s *cacheService) invalidateAfterUnstar() {
+	s.mu.Lock()
+	s.reposEntry = make(map[reposCacheKey]*cacheEntry[[]domain.Repository])
+	s.starredEntry = make(map[bool]*cacheEntry[[]domain.Repository])
 	s.mu.Unlock()
 }
 
 func (s *cacheService) invalidateAll() {
 	s.mu.Lock()
 	s.listsEntry = nil
-	s.reposEntry = make(map[reposCacheKey]*cacheEntry[[]Repository])
-	s.starredEntry = make(map[bool]*cacheEntry[[]Repository])
-	s.repoEntry = make(map[string]*cacheEntry[Repository])
+	s.reposEntry = make(map[reposCacheKey]*cacheEntry[[]domain.Repository])
+	s.starredEntry = make(map[bool]*cacheEntry[[]domain.Repository])
+	s.repoEntry = make(map[string]*cacheEntry[domain.Repository])
 	s.mu.Unlock()
 }
 
 func applyLimit[T any](data []T, limit int) []T {
 	if limit > 0 && len(data) > limit {
-		return data[:limit]
+		result := make([]T, limit)
+		copy(result, data[:limit])
+		return result
 	}
 	return data
 }

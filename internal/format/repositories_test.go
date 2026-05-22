@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
-	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
 func TestWriteRepositoriesTSVUsesLegacyFieldOrder(t *testing.T) {
 	t.Parallel()
 
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{
 			NameWithOwner:  "cli/cli",
 			Description:    "GitHub CLI",
@@ -47,7 +47,7 @@ func TestWriteRepositoriesTSVUsesLegacyFieldOrder(t *testing.T) {
 func TestWriteRepositoriesJSONUsesLowerCamelCaseArray(t *testing.T) {
 	t.Parallel()
 
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{
 			NameWithOwner:  "cli/cli",
 			Description:    "GitHub CLI",
@@ -107,7 +107,7 @@ func TestWriteRepositoriesEmptyOutputs(t *testing.T) {
 func TestWriteRepositoriesHumanIsDeterministic(t *testing.T) {
 	t.Parallel()
 
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{
 			NameWithOwner:  "cli/cli",
 			Description:    "GitHub CLI",
@@ -147,7 +147,7 @@ func TestWriteRepositoriesHumanIsDeterministic(t *testing.T) {
 func TestWriteRepositoriesPlainPreservesDetailedOutput(t *testing.T) {
 	t.Parallel()
 
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{
 			NameWithOwner:  "cli/cli",
 			Description:    "GitHub CLI",
@@ -190,7 +190,7 @@ func TestWriteRepositoriesPlainPreservesDetailedOutput(t *testing.T) {
 func TestWriteRepositoriesReturnsWriterErrors(t *testing.T) {
 	t.Parallel()
 
-	repos := []githubapi.Repository{{NameWithOwner: "cli/cli", URL: "https://github.com/cli/cli"}}
+	repos := []domain.Repository{{NameWithOwner: "cli/cli", URL: "https://github.com/cli/cli"}}
 	if err := format.WriteRepositories(errWriter{}, format.OutputHuman, repos); err == nil {
 		t.Fatal("WriteRepositories human returned nil error for failing writer")
 	}
@@ -211,7 +211,7 @@ func TestWriteRepositoriesReturnsWriterErrors(t *testing.T) {
 func TestWriteRepositoriesFZFColumnOrder(t *testing.T) {
 	t.Parallel()
 
-	repos := []githubapi.Repository{
+	repos := []domain.Repository{
 		{
 			NameWithOwner:  "cli/cli",
 			Description:    "GitHub CLI",

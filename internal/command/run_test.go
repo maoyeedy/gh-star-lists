@@ -3,6 +3,7 @@ package command_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -10,8 +11,10 @@ import (
 	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/command"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
+	"github.com/maoyeedy/gh-star-lists/internal/tui"
 )
 
 type fakeService struct {
@@ -26,15 +29,15 @@ type fakeService struct {
 	addStarCalls        int
 	removeStarCalls     int
 	reposListIDs        []string
-	lists               []githubapi.StarList
-	repos               []githubapi.Repository
-	reposByList         map[string][]githubapi.Repository
-	starred             []githubapi.Repository
-	gotRepo             githubapi.Repository
-	createdList         githubapi.StarList
-	updatedList         githubapi.StarList
-	createdInput        githubapi.StarListInput
-	updatedInput        githubapi.UpdateStarListInput
+	lists               []domain.StarList
+	repos               []domain.Repository
+	reposByList         map[string][]domain.Repository
+	starred             []domain.Repository
+	gotRepo             domain.Repository
+	createdList         domain.StarList
+	updatedList         domain.StarList
+	createdInput        domain.StarListInput
+	updatedInput        domain.UpdateStarListInput
 	updatedRepoID       string
 	updatedListIDs      []string
 	deletedListID       string
@@ -54,8 +57,8 @@ type fakeService struct {
 
 func (f *fakeService) ListStarLists(
 	context.Context,
-	...githubapi.ListOptions,
-) ([]githubapi.StarList, error) {
+	...domain.ListOptions,
+) ([]domain.StarList, error) {
 	f.listCalls++
 	return f.lists, f.listErr
 }
@@ -63,8 +66,8 @@ func (f *fakeService) ListStarLists(
 func (f *fakeService) ListRepositories(
 	_ context.Context,
 	listID string,
-	_ ...githubapi.ListOptions,
-) ([]githubapi.Repository, error) {
+	_ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	f.reposCalls++
 	f.reposListIDs = append(f.reposListIDs, listID)
 	if f.reposByList != nil {
@@ -75,8 +78,8 @@ func (f *fakeService) ListRepositories(
 
 func (f *fakeService) ListStarredRepositories(
 	_ context.Context,
-	_ ...githubapi.ListOptions,
-) ([]githubapi.Repository, error) {
+	_ ...domain.ListOptions,
+) ([]domain.Repository, error) {
 	f.starredCalls++
 	return f.starred, f.starredErr
 }
@@ -84,15 +87,15 @@ func (f *fakeService) ListStarredRepositories(
 func (f *fakeService) GetRepository(
 	_ context.Context,
 	nameWithOwner string,
-) (githubapi.Repository, error) {
+) (domain.Repository, error) {
 	f.getRepoCalls++
 	if f.getRepoErr != nil {
-		return githubapi.Repository{}, f.getRepoErr
+		return domain.Repository{}, f.getRepoErr
 	}
 	if f.gotRepo.ID != "" {
 		return f.gotRepo, nil
 	}
-	return githubapi.Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
+	return domain.Repository{ID: "R_1", NameWithOwner: nameWithOwner}, nil
 }
 
 func (f *fakeService) GetRepositoryMemberships(
@@ -123,32 +126,32 @@ func (f *fakeService) GetRepositoryMemberships(
 
 func (f *fakeService) CreateStarList(
 	_ context.Context,
-	input githubapi.StarListInput,
-) (githubapi.StarList, error) {
+	input domain.StarListInput,
+) (domain.StarList, error) {
 	f.createCalls++
 	f.createdInput = input
 	if f.createErr != nil {
-		return githubapi.StarList{}, f.createErr
+		return domain.StarList{}, f.createErr
 	}
 	if f.createdList.ID != "" {
 		return f.createdList, nil
 	}
-	return githubapi.StarList{Name: input.Name, ID: "UL_new"}, nil
+	return domain.StarList{Name: input.Name, ID: "UL_new"}, nil
 }
 
 func (f *fakeService) UpdateStarList(
 	_ context.Context,
-	input githubapi.UpdateStarListInput,
-) (githubapi.StarList, error) {
+	input domain.UpdateStarListInput,
+) (domain.StarList, error) {
 	f.updateCalls++
 	f.updatedInput = input
 	if f.updateErr != nil {
-		return githubapi.StarList{}, f.updateErr
+		return domain.StarList{}, f.updateErr
 	}
 	if f.updatedList.ID != "" {
 		return f.updatedList, nil
 	}
-	return githubapi.StarList{Name: input.Name, ID: input.ID}, nil
+	return domain.StarList{Name: input.Name, ID: input.ID}, nil
 }
 
 func (f *fakeService) DeleteStarList(_ context.Context, listID string) error {
@@ -188,7 +191,7 @@ func (errWriter) Write([]byte) (int, error) {
 
 func fixtureService() *fakeService {
 	return &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{
 				Name:        "Go Tools",
 				Description: "CLI helpers",
@@ -198,7 +201,7 @@ func fixtureService() *fakeService {
 				URL:         "https://github.com/stars/maoyeedy/lists/go-tools",
 			},
 		},
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{
 				NameWithOwner:  "cli/cli",
 				Description:    "GitHub CLI",
@@ -213,7 +216,7 @@ func fixtureService() *fakeService {
 
 func sortableFixtureService() *fakeService {
 	return &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{
 				Name:        "zeta",
 				Description: "Last by name",
@@ -239,7 +242,7 @@ func sortableFixtureService() *fakeService {
 				URL:         "https://github.com/stars/maoyeedy/lists/beta",
 			},
 		},
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{
 				NameWithOwner:  "owner/zeta",
 				Description:    "Last by name",
@@ -270,7 +273,7 @@ func sortableFixtureService() *fakeService {
 
 func filterableFixtureService() *fakeService {
 	return &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{
 				Name:        "Go Tools",
 				Description: "CLI helpers",
@@ -296,7 +299,7 @@ func filterableFixtureService() *fakeService {
 				URL:         "https://github.com/stars/maoyeedy/lists/rust",
 			},
 		},
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{
 				NameWithOwner:  "owner/go-lib",
 				Description:    "Go library",
@@ -327,10 +330,10 @@ func filterableFixtureService() *fakeService {
 
 func languageFixtureService() *fakeService {
 	return &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "Mixed", ID: "UL_1", URL: "https://github.com/stars/user/lists/mixed"},
 		},
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{
 				NameWithOwner:  "owner/go-tool",
 				Description:    "A Go tool",
@@ -429,7 +432,7 @@ func TestRunWritesListOutput(t *testing.T) {
 		{
 			name: "json",
 			argv: []string{"list", "--json"},
-			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"id\":\"UL_1\",\"repoCount\":3,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n",
+			want: "[{\"name\":\"Go Tools\",\"description\":\"CLI helpers\",\"lastAddedAt\":\"2024-05-01T12:00:00Z\",\"isPrivate\":false,\"id\":\"UL_1\",\"repoCount\":3,\"url\":\"https://github.com/stars/maoyeedy/lists/go-tools\"}]\n",
 		},
 		{
 			name: "tsv",
@@ -1026,6 +1029,7 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 		name      string
 		argv      []string
 		svc       *fakeService
+		wantExit  int
 		wantErr   []string
 		wantList  int
 		wantRepos int
@@ -1034,6 +1038,7 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			name:     "empty args default list",
 			argv:     nil,
 			svc:      &fakeService{listErr: errors.New("not implemented")},
+			wantExit: command.ExitFailure,
 			wantErr:  []string{"error: failed to list Star Lists: not implemented"},
 			wantList: 1,
 		},
@@ -1041,10 +1046,14 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			name: "explicit list auth failure",
 			argv: []string{"list"},
 			svc: &fakeService{
-				listErr: errors.New("GitHub GraphQL request failed: Bad credentials"),
+				listErr: fmt.Errorf(
+					"GitHub GraphQL request failed: %w",
+					&domain.AuthError{Err: errors.New("Bad credentials")},
+				),
 			},
+			wantExit: command.ExitAuth,
 			wantErr: []string{
-				"error: failed to list Star Lists: GitHub GraphQL request failed: Bad credentials",
+				"error: failed to list Star Lists: GitHub GraphQL request failed: GitHub authentication failed: Bad credentials",
 				"gh auth status",
 			},
 			wantList: 1,
@@ -1055,6 +1064,7 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			svc: &fakeService{
 				reposErr: errors.New("GitHub GraphQL request failed: secondary rate limit"),
 			},
+			wantExit: command.ExitFailure,
 			wantErr: []string{
 				"error: failed to list repositories for Star List \"UL_kwDOExample\": GitHub GraphQL request failed: secondary rate limit",
 			},
@@ -1062,9 +1072,10 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 			wantList:  1,
 		},
 		{
-			name: "repos inaccessible list",
-			argv: []string{"repos", "UL_missing"},
-			svc:  &fakeService{reposErr: githubapi.ErrInaccessibleList},
+			name:     "repos inaccessible list",
+			argv:     []string{"repos", "UL_missing"},
+			svc:      &fakeService{reposErr: githubapi.ErrInaccessibleList},
+			wantExit: command.ExitFailure,
 			wantErr: []string{
 				"error: failed to list repositories for Star List \"UL_missing\": GitHub Star List is inaccessible or is not a UserList",
 				"deleted, private, inaccessible to this account, or from another GitHub account",
@@ -1082,8 +1093,8 @@ func TestRunRuntimeAPIErrorsReturnFailure(t *testing.T) {
 
 			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, tt.svc)
 
-			if code != command.ExitFailure {
-				t.Fatalf("Run(%q) exit = %d, want %d", tt.argv, code, command.ExitFailure)
+			if code != tt.wantExit {
+				t.Fatalf("Run(%q) exit = %d, want %d", tt.argv, code, tt.wantExit)
 			}
 			if stdout.Len() != 0 {
 				t.Fatalf("runtime failure stdout = %q, want empty", stdout.String())
@@ -1131,16 +1142,16 @@ func TestRunUnlistedRepos(t *testing.T) {
 	// Two lists with three repos total; starred set has five repos.
 	// Two starred repos (owner/d and owner/e) are not in any list.
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "List A", ID: "UL_1", URL: "https://github.com/stars/user/lists/a"},
 			{Name: "List B", ID: "UL_2", URL: "https://github.com/stars/user/lists/b"},
 		},
-		repos: []githubapi.Repository{
+		repos: []domain.Repository{
 			{NameWithOwner: "owner/a", URL: "https://github.com/owner/a"},
 			{NameWithOwner: "owner/b", URL: "https://github.com/owner/b"},
 			{NameWithOwner: "owner/c", URL: "https://github.com/owner/c"},
 		},
-		starred: []githubapi.Repository{
+		starred: []domain.Repository{
 			{
 				NameWithOwner: "owner/a",
 				StarredAt:     "2026-05-01T00:00:00Z",
@@ -1198,36 +1209,32 @@ func TestRunUnlistedRepos(t *testing.T) {
 func TestRunUnlistedSortedByStarred(t *testing.T) {
 	t.Parallel()
 
+	var stdout, stderr strings.Builder
 	svc := &fakeService{
-		lists: []githubapi.StarList{
-			{Name: "List A", ID: "UL_1", URL: "https://github.com/stars/user/lists/a"},
+		lists: []domain.StarList{
+			{ID: "UL_1", Name: "List"},
 		},
-		repos: []githubapi.Repository{
-			{NameWithOwner: "owner/a", URL: "https://github.com/owner/a"},
+		reposByList: map[string][]domain.Repository{
+			"UL_1": {{ID: "R_1", NameWithOwner: "owner/listed"}},
 		},
-		starred: []githubapi.Repository{
+		starred: []domain.Repository{
 			{
-				NameWithOwner: "owner/a",
-				StarredAt:     "2026-05-01T00:00:00Z",
-				URL:           "https://github.com/owner/a",
+				ID:            "R_2",
+				NameWithOwner: "owner/old",
+				URL:           "https://github.com/owner/old",
+				StarredAt:     "2024-01-01T00:00:00Z",
 			},
 			{
-				NameWithOwner: "owner/b",
-				StarredAt:     "2026-02-01T00:00:00Z",
-				URL:           "https://github.com/owner/b",
-			},
-			{
-				NameWithOwner: "owner/c",
-				StarredAt:     "2026-04-01T00:00:00Z",
-				URL:           "https://github.com/owner/c",
+				ID:            "R_3",
+				NameWithOwner: "owner/new",
+				URL:           "https://github.com/owner/new",
+				StarredAt:     "2024-03-01T00:00:00Z",
 			},
 		},
 	}
-
-	var stdout, stderr strings.Builder
 	code := runCommand(
 		context.Background(),
-		[]string{"repos", "--unlisted", "--sort", "starred", "--desc", "--tsv"},
+		[]string{"repos", "--unlisted", "--sort", "starred"},
 		&stdout,
 		&stderr,
 		svc,
@@ -1236,11 +1243,91 @@ func TestRunUnlistedSortedByStarred(t *testing.T) {
 	if code != command.ExitSuccess {
 		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
 	}
-	// owner/c starred 2026-04, owner/b starred 2026-02; desc order = c first
-	want := "owner/c\t\tno\t0\t\thttps://github.com/owner/c\t\n" +
-		"owner/b\t\tno\t0\t\thttps://github.com/owner/b\t\n"
-	if got := stdout.String(); got != want {
-		t.Fatalf("Run --unlisted --sort starred stdout mismatch\ngot:  %q\nwant: %q", got, want)
+	if got := stdout.String(); !strings.Contains(got, "owner/new") ||
+		!strings.Contains(got, "owner/old") ||
+		strings.Index(got, "owner/old") > strings.Index(got, "owner/new") {
+		t.Fatalf("Run --unlisted --sort starred stdout not sorted oldest first:\n%s", got)
+	}
+}
+
+func TestRunAllSortedByStarred(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	svc := &fakeService{
+		starred: []domain.Repository{
+			{
+				ID:            "R_1",
+				NameWithOwner: "owner/old",
+				URL:           "https://github.com/owner/old",
+				StarredAt:     "2024-01-01T00:00:00Z",
+			},
+			{
+				ID:            "R_2",
+				NameWithOwner: "owner/new",
+				URL:           "https://github.com/owner/new",
+				StarredAt:     "2024-03-01T00:00:00Z",
+			},
+		},
+	}
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "--all", "--sort", "starred"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if got := stdout.String(); !strings.Contains(got, "owner/new") ||
+		!strings.Contains(got, "owner/old") ||
+		strings.Index(got, "owner/old") > strings.Index(got, "owner/new") {
+		t.Fatalf("Run --all --sort starred stdout not sorted oldest first:\n%s", got)
+	}
+}
+
+func TestRunListSortedByStarredEnrichesStarredAt(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	svc := &fakeService{
+		lists: []domain.StarList{
+			{ID: "UL_1", Name: "Theme"},
+		},
+		repos: []domain.Repository{
+			{
+				ID:            "R_1",
+				NameWithOwner: "HyDE-Project/HyDE",
+				URL:           "https://github.com/HyDE-Project/HyDE",
+			},
+		},
+		starred: []domain.Repository{
+			{
+				ID:            "R_1",
+				NameWithOwner: "HyDE-Project/HyDE",
+				URL:           "https://github.com/HyDE-Project/HyDE",
+				StarredAt:     "2026-05-21T17:23:22Z",
+			},
+		},
+	}
+	code := runCommand(
+		context.Background(),
+		[]string{"repos", "Theme", "--sort", "starred", "--json"},
+		&stdout,
+		&stderr,
+		svc,
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("Run exit = %d, want %d; stderr=%q", code, command.ExitSuccess, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"starredAt":"2026-05-21T17:23:22Z"`) {
+		t.Fatalf("stdout missing enriched starredAt:\n%s", stdout.String())
+	}
+	if svc.starredCalls != 1 {
+		t.Fatalf("starredCalls = %d, want 1", svc.starredCalls)
 	}
 }
 
@@ -1457,7 +1544,7 @@ func TestRunAllStarredRepos(t *testing.T) {
 	t.Parallel()
 
 	svc := fixtureService()
-	svc.starred = []githubapi.Repository{
+	svc.starred = []domain.Repository{
 		{
 			NameWithOwner:  "cli/cli",
 			Description:    "GitHub CLI",
@@ -1762,7 +1849,7 @@ func TestRunUnlistedEmpty(t *testing.T) {
 	t.Parallel()
 
 	svc := fixtureService()
-	svc.starred = []githubapi.Repository{
+	svc.starred = []domain.Repository{
 		{NameWithOwner: "cli/cli", URL: "https://github.com/cli/cli"},
 	}
 	var stdout, stderr strings.Builder
@@ -1985,7 +2072,7 @@ func TestRunNonTTYMissingListSelectorFailsWithUsageError(t *testing.T) {
 
 func TestRunPromptForListOnAdd(t *testing.T) {
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
 			{Name: "Rust Libs", ID: "UL_2", RepoCount: 1},
 		},
@@ -2058,12 +2145,12 @@ func TestRunPromptCancelledExitsCleanly(t *testing.T) {
 
 func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "List A", ID: "UL_1", RepoCount: 1},
 			{Name: "List B", ID: "UL_2", RepoCount: 2},
 			{Name: "List C", ID: "UL_3", RepoCount: 3},
 		},
-		reposByList: map[string][]githubapi.Repository{
+		reposByList: map[string][]domain.Repository{
 			"UL_1": {{NameWithOwner: "cli/cli", ID: "R_1"}},
 		},
 	}
@@ -2114,7 +2201,7 @@ func TestRunPromptForMoveExcludesFromInToChoices(t *testing.T) {
 
 func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
 			{Name: "Go Tools", ID: "UL_2", RepoCount: 1},
 			{Name: "Rust Libs", ID: "UL_3", RepoCount: 2},
@@ -2159,11 +2246,11 @@ func TestRunDuplicateListNamesIncludeIDInPicker(t *testing.T) {
 
 func TestRunPromptForReposList(t *testing.T) {
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "Go Tools", ID: "UL_1", RepoCount: 1},
 			{Name: "Rust Libs", ID: "UL_2", RepoCount: 1},
 		},
-		reposByList: map[string][]githubapi.Repository{
+		reposByList: map[string][]domain.Repository{
 			"UL_2": {{NameWithOwner: "rust-lang/rust", URL: "https://github.com/rust-lang/rust"}},
 		},
 	}
@@ -2237,7 +2324,7 @@ func TestRunPromptForCreateInputs(t *testing.T) {
 
 func TestRunEditNoSelectionShowsNoChanges(t *testing.T) {
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "Go Tools", ID: "UL_1", RepoCount: 3},
 		},
 	}
@@ -2369,7 +2456,7 @@ func TestRunConfirmationPromptNamesTarget(t *testing.T) {
 
 func TestRunEditDefaultsPreloaded(t *testing.T) {
 	svc := &fakeService{
-		lists: []githubapi.StarList{
+		lists: []domain.StarList{
 			{Name: "Go Tools", Description: "CLI helpers", ID: "UL_1", RepoCount: 3},
 		},
 	}
@@ -2488,5 +2575,234 @@ func TestRunColorizesHumanDiagnostics(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "\x1b[33merror: unknown flag") {
 		t.Fatalf("stderr = %q, want yellow usage diagnostic", stderr.String())
+	}
+}
+
+func TestRunTUINonTTYReturnsUsageError(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage on non-TTY", code)
+	}
+	if !strings.Contains(stderr.String(), "tui requires a terminal") {
+		t.Fatalf("stderr = %q, want TTY error message", stderr.String())
+	}
+}
+
+func TestRunUnknownCommandReturnsUsageError(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"unknown"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitUsage {
+		t.Fatalf("unknown command: exit = %d, want ExitUsage", code)
+	}
+}
+
+func TestRunTUITTYCallsRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if !called {
+		t.Error("runTUI was not called")
+	}
+}
+
+func TestRunTUIErrorReturnsFailure(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			return errors.New("tui error")
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"tui"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitFailure {
+		t.Fatalf("exit = %d, want ExitFailure when TUI errors", code)
+	}
+}
+
+func TestRunTUIHelp(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"tui", "--help"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if !strings.Contains(stdout.String(), "tui") {
+		t.Fatalf("tui --help stdout = %q, want tui-specific help", stdout.String())
+	}
+}
+
+func TestRunTUIRejectsOutputFlag(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"tui", "--json"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage for --json on tui", code)
+	}
+}
+
+func TestRunTUINoExtraArgsAllowed(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr strings.Builder
+	code := runCommand(
+		context.Background(),
+		[]string{"tui", "unexpected-arg"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if code != command.ExitUsage {
+		t.Fatalf("exit = %d, want ExitUsage for unexpected positional arg", code)
+	}
+}
+
+func TestRunTUINoColorPropagated(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var capturedNoColor bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, opts tui.Options) error {
+			capturedNoColor = opts.NoColor
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	runCommand(
+		context.Background(),
+		[]string{"tui", "--no-color"},
+		&stdout,
+		&stderr,
+		fixtureService(),
+	)
+
+	if !capturedNoColor {
+		t.Error("NoColor should be true when --no-color flag passed")
+	}
+}
+
+func TestRunBareTTYDoesNotCallRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if called {
+		t.Error("runTUI was called for bare gh star-lists on TTY, should be CLI list output")
+	}
+	if got := stdout.String(); !strings.Contains(got, "Go Tools") {
+		t.Errorf("stdout = %q, want human list output containing Go Tools", got)
+	}
+}
+
+func TestRunBareWithJSONDoesNotCallRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return true })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{"--json"}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if called {
+		t.Error("runTUI was called for gh star-lists --json, should be CLI list output")
+	}
+}
+
+func TestRunBareNonTTYDoesNotCallRunTUI(t *testing.T) {
+	prevCanPrompt := command.CanPromptForTest(func() bool { return false })
+	defer command.CanPromptForTest(prevCanPrompt)
+
+	var called bool
+	prevRunTUI := command.RunTUIForTest(
+		func(_ context.Context, _ githubapi.Service, _ tui.Options) error {
+			called = true
+			return nil
+		},
+	)
+	defer command.RunTUIForTest(prevRunTUI)
+
+	var stdout, stderr strings.Builder
+	code := runCommand(context.Background(), []string{}, &stdout, &stderr, fixtureService())
+
+	if code != command.ExitSuccess {
+		t.Fatalf("exit = %d, want ExitSuccess", code)
+	}
+	if called {
+		t.Error("runTUI was called for bare gh star-lists on non-TTY, should be CLI list output")
 	}
 }

@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"context"
-	"maps"
-	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -16,16 +13,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, keys.Back):
-		// Clear selection first if any; second Esc then navigates back / quits.
-		if len(m.selected) > 0 {
-			m.selected = nil
-			return m, nil
-		}
-		if m.active == paneRepo {
-			m.active = paneList
-			return m, nil
-		}
-		return m, tea.Quit
+		return m.handleBack()
 
 	case key.Matches(msg, keys.Left):
 		if m.active == paneRepo {
@@ -40,71 +28,22 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Up):
-		if m.active == paneList {
-			newIdx := clampInt(m.listCursor-1, 0, len(m.displayedLists)-1)
-			cmd := (&m).focusList(newIdx)
-			m = m.slideListOffset()
-			return m, cmd
-		}
-		(&m).setRepoCursor(clampInt(m.repoCursor-1, 0, len(m.displayedRepos)-1))
-		m = m.slideRepoOffset()
-		return m, nil
+		return m.handleUp()
 
 	case key.Matches(msg, keys.Down):
-		if m.active == paneList {
-			newIdx := clampInt(m.listCursor+1, 0, len(m.displayedLists)-1)
-			cmd := (&m).focusList(newIdx)
-			m = m.slideListOffset()
-			return m, cmd
-		}
-		(&m).setRepoCursor(clampInt(m.repoCursor+1, 0, len(m.displayedRepos)-1))
-		m = m.slideRepoOffset()
-		return m, nil
+		return m.handleDown()
 
 	case key.Matches(msg, keys.PgUp):
-		paneH := m.repoPaneH()
-		if m.active == paneList {
-			newIdx := clampInt(m.listCursor-(paneH-1), 0, len(m.displayedLists)-1)
-			cmd := (&m).focusList(newIdx)
-			m = m.slideListOffset()
-			return m, cmd
-		}
-		(&m).setRepoCursor(clampInt(m.repoCursor-(paneH-1), 0, len(m.displayedRepos)-1))
-		m = m.slideRepoOffset()
-		return m, nil
+		return m.handlePageUp()
 
 	case key.Matches(msg, keys.PgDn):
-		paneH := m.repoPaneH()
-		if m.active == paneList {
-			newIdx := clampInt(m.listCursor+(paneH-1), 0, len(m.displayedLists)-1)
-			cmd := (&m).focusList(newIdx)
-			m = m.slideListOffset()
-			return m, cmd
-		}
-		(&m).setRepoCursor(clampInt(m.repoCursor+(paneH-1), 0, len(m.displayedRepos)-1))
-		m = m.slideRepoOffset()
-		return m, nil
+		return m.handlePageDown()
 
 	case key.Matches(msg, keys.Home):
-		if m.active == paneList {
-			cmd := (&m).focusList(0)
-			m.listOffset = 0
-			return m, cmd
-		}
-		(&m).setRepoCursor(0)
-		m.repoOffset = 0
-		return m, nil
+		return m.handleHome()
 
 	case key.Matches(msg, keys.End):
-		if m.active == paneList {
-			newIdx := max(0, len(m.displayedLists)-1)
-			cmd := (&m).focusList(newIdx)
-			m = m.slideListOffset()
-			return m, cmd
-		}
-		(&m).setRepoCursor(max(0, len(m.displayedRepos)-1))
-		m = m.slideRepoOffset()
-		return m, nil
+		return m.handleEnd()
 
 	case key.Matches(msg, keys.Enter):
 		return m.handleEnter()
@@ -204,79 +143,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Preview):
-		wasShowing := m.showPreview
-		m.showPreview = !m.showPreview
-		m.previewOffset = 0
-		if wasShowing {
-			m.preloader.cancelTopicsPreloads()
-			return m, nil
-		}
-		if m.focusedList != nil {
-			topicsKey := repoCacheKey{m.focusedList.ID, true}
-			e := m.preloader.cache[topicsKey]
-			if e == nil || e.state == repoCacheIdle {
-				if m.preloader.topicsInFlight >= maxTopicsInFlight {
-					return m, nil
-				}
-				loadCtx, cancel := context.WithCancel(m.ctx)
-				if m.preloader.topicsCancels == nil {
-					m.preloader.topicsCancels = make(map[string]context.CancelFunc)
-				}
-				m.preloader.topicsCancels[m.focusedList.ID] = cancel
-				m.preloader.setCacheEntry(topicsKey, &repoCacheEntry{
-					state: repoCacheLoading,
-					gen:   m.preloader.generation,
-				})
-				m.preloader.topicsInFlight++
-				return m, loadReposCmd(
-					loadCtx,
-					m.svc,
-					m.focusedList.ID,
-					true,
-					m.preloader.generation,
-				)
-			}
-		}
-		return m, nil
+		return m.handlePreview()
 
 	case key.Matches(msg, keys.Search):
-		if m.active == paneList {
-			m.listSearchActive = true
-			m.listSearchQuery = ""
-			m.listCursor = 0
-			m.listOffset = 0
-		} else {
-			m.repoSearchActive = true
-			m.repoSearchQuery = ""
-			m.repoCursor = 0
-			m.repoOffset = 0
-		}
-		m.previewOffset = 0
-		m = m.rebuildDisplayed()
-		return m, nil
+		return m.activateSearch()
 
 	case key.Matches(msg, keys.Select):
-		if m.active != paneRepo || len(m.displayedRepos) == 0 {
-			return m, nil
-		}
-		nwo := m.displayedRepos[m.repoCursor].NameWithOwner
-		if m.selected == nil {
-			m.selected = make(map[string]struct{})
-		}
-		if _, ok := m.selected[nwo]; ok {
-			delete(m.selected, nwo)
-		} else {
-			m.selected[nwo] = struct{}{}
-		}
-		return m, nil
+		return m.handleSelect()
 	}
 
 	return m, nil
-}
-
-// selectedNWOs returns sorted NameWithOwner strings from the selection set.
-func (m model) selectedNWOs() []string {
-	return slices.Sorted(maps.Keys(m.selected))
 }
 
 func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
@@ -354,26 +230,6 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	}
 	// paneRepo: open in browser
 	return m.openFocusedRepoURL()
-}
-
-// activateRepoPane switches focus to the repo pane, triggering a load if
-// the focused list's repos aren't cached. Does not modify repoCursor or repoOffset.
-func (m model) activateRepoPane() (model, tea.Cmd) {
-	if len(m.displayedLists) == 0 {
-		return m, nil
-	}
-	var cmd tea.Cmd
-	key := repoCacheKey{m.displayedLists[m.listCursor].ID, m.showPreview}
-	e := m.preloader.cache[key]
-	if e == nil || e.state == repoCacheIdle {
-		// Not cached / idle: focusList triggers load. Its idle/default branch
-		// does NOT touch repoCursor/repoOffset.
-		cmd = (&m).focusList(m.listCursor)
-	}
-	// Cache-loaded branch: skip focusList entirely -- displayedRepos is current
-	// and we want to preserve repoCursor.
-	m.active = paneRepo
-	return m, cmd
 }
 
 func (m model) handleOpen() (tea.Model, tea.Cmd) {

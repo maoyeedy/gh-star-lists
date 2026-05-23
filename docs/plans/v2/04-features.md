@@ -2,99 +2,110 @@
 
 ## Context
 
-Collect focused, Star Lists-specific UX improvements inspired by `gh-dash` without turning this extension into a general GitHub dashboard. These items should make the TUI more intuitive, more discoverable, and faster to scan while staying within the current CLI capacity and existing `githubapi.Service` boundary.
+Focused, Star Lists-specific UX improvements that make the TUI faster to scan and harder to misuse — without growing it into a general GitHub dashboard. Every item reuses an existing `githubapi.Service` method or an existing CLI semantic.
 
-**Prerequisite:** TUI v2 cleanup and performance plans provide stable component boundaries, per-pane state, contextual help, and improved preload/cache behavior.
+**Prerequisite:** TUI v2 cleanup and performance plans (stable component boundaries, per-pane state, preload/cache behavior).
 
 ## Scope
 
 **In** | **Out**
 ---|---
-More intuitive list/repo/preview scanning | PR, issue, notification, branch, or workflow dashboards
-Better contextual affordances and status | YAML config, themes, configurable keybindings
-Small TUI-only affordances backed by existing CLI actions | Plugin hooks, custom shell commands, scripting surface
-Virtual TUI views for CLI-supported data like all starred/unlisted | New GitHub domain features outside Star Lists
-Safer, clearer modal copy and confirmations | Changing machine output contracts
+Pane counts and repo header row | New chrome (separators, faint dividers, full-row highlights)
+List detail via existing modal pattern | Permanent preview pane, adaptive (wide/narrow) layout
+Searchable list pickers, clearer destructive copy | YAML config, themes, configurable keybindings
+"Unlisted" as a virtual TUI list | "All Starred" virtual list, plugin hooks, scripting surface
+TUI-only affordances backed by existing CLI actions | New GitHub domain features outside Star Lists
+Safer modal confirmations | Changing machine output contracts
 
 ## Current state
 
-- TUI has list/repo panes, optional repo preview, modals, search, sort, selection, bulk operations, mouse support, and browser open.
-- Bulk operations (`bulkMutateReposCmd`) run concurrently via `errgroup.SetLimit(5)` with `atomic.Int64` result tracking.
-- Single-repo mutations (`addRepoToListCmd`, `moveRepoCmd`, `removeRepoFromListCmd`) delegate to `githubapi.ModifyRepositoryMemberships`.
-- `copyListCmd` uses `ModifyRepositoryMemberships` per-repo in an errgroup.
-- `internal/humanize` package provides shared `ShortAge` formatting to both TUI and CLI.
-- Column widths use a constant (`starWidth = 6`); per-frame width-caching infrastructure was removed as dead code.
-- Sort enums use sentinel values (`sortListsEnd`, `sortReposEnd`); cycle bounds use `% int(sortXxxEnd)`.
-- TUI launch wiring extracted into `launchTUI()` in `command/run.go`; the two call sites (explicit `browse` and list fallback) share it.
-- Footer hints are useful but sparse and manually selected.
-- Preview focuses on repositories only.
-- Sort is cycle-only.
-- Pick-list modals are not searchable.
-- All starred and unlisted repositories exist in CLI but not as first-class TUI browsing entries.
+- Two-pane TUI: list pane, repo pane. `modalRepoDetail` shows repo info on demand.
+- Search bar already shows `displayed/total` count when active (`render_list.go`); empty states and loading spinner exist.
+- Pickers (`modal_list.go`) are j/k lists capped at 8 visible rows, no filter.
+- `parse.go` explicitly rejects `--all` and `--unlisted` for `browse` (deliberate exclusion to date).
+- Bulk ops run via `errgroup.SetLimit(5)` with `atomic.Int64` tracking.
+- `internal/humanize.ShortAge` shared by TUI and CLI.
+- Sort enums use `<Prefix>End` sentinels; cycle via `% int(...End)`.
 
 ## Design
 
-- Favor immediate comprehension: visible counts, active pane cues, clear empty states, and action hints.
-- Keep advanced features discoverable but not noisy.
-- Avoid new config; choose conservative defaults in code.
-- Prefer TUI affordances that reuse existing service methods and CLI behavior.
-- Follow CLAUDE.md "When Planning New Features" section: shared before specialized, interface vs. package-level helper, concurrency-by-default for bulk, no speculative cache infrastructure, sentinel enum values, test concurrency safety.
+- Reuse the modal pattern where a permanent pane is tempting — it already works.
+- Add at most one new dimension (`isVirtual bool` on list rows) gated by one predicate (`canMutate(list)`); do not scatter ad-hoc checks across input/modals.
+- No layout-mode toggles, no adaptive geometry. The current two-pane split stays.
+- No new config; conservative defaults in code.
+- Follow CLAUDE.md "Code Review Checklist": shared before specialized, sentinel iotas, concurrency-safe tests, no speculative cache infra.
 
 ## Phases
 
-| Phase | Goal | Parallel-with | Depends-on | Files | Subagent |
-|---|---|---|---|---|---|
-| P1 - Scan polish | Improve visible structure, counts, empty states, and cursor/column readability | P2 | none | `internal/tui/render*.go`, `internal/tui/styles.go` | general-purpose |
-| P2 - Preview affordances | Expand preview usefulness for list and repo focus without new API boundaries | P1 | none | `internal/tui/render_preview.go`, `internal/tui/input.go` | general-purpose |
-| P3 - Modal ergonomics | Add search/filter and clearer copy to list pickers and destructive confirmations | none | P1 | `internal/tui/modal*.go` | general-purpose |
-| P4 - Existing-capacity views | Add optional TUI entries for all starred and unlisted repos using existing service/CLI semantics | none | P2, P3 | `internal/tui/cache.go`, `internal/tui/render_list.go`, `internal/tui/messages.go` | general-purpose |
+| Phase | Goal | Parallel-with | Depends-on | Files |
+|---|---|---|---|---|
+| P1 — Pane counts + repo header | Two highest-impact scan cues, nothing else | P2, P3 | none | `render_header.go`, `render_repo.go`, `render_list.go` |
+| P2 — List detail modal | Extend `keys.Preview` to lists; mirror `modalRepoDetail` | P1, P3 | none | `modal_repo.go`, `modal_view.go`, `modal.go`, `input.go` |
+| P3 — Picker search + safer confirms | Filterable destination pickers, explicit consequences in destructive copy | P1, P2 | none | `modal_list.go`, `modal_view.go`, `modal_update.go` |
+| P4 — Unlisted virtual list | One virtual entry; one `isVirtual` flag; one `canMutate` predicate | none | P1, P2, P3 | `cache.go`, `render_list.go`, `input.go`, `messages.go` |
 
-Phase order: (P1 || P2) -> P3 -> P4.
+Phase order: (P1 ‖ P2 ‖ P3) → P4.
 
 ---
 
-### P1 - Scan polish
+### P1 — Pane counts + repo header
 
-Add lightweight visual cues that reduce guesswork: pane titles with counts, fixed repo owner alignment, repo header row, full-row active cursor highlight, faint separators, clearer active/inactive pane styling, and richer empty states for no lists, empty list, loading, error, and no search matches.
+Add pane titles with `(N)` counts on each pane, and a one-line repo column header (name / stars / language) above the repo list. Skip everything else considered for scan polish — separators, full-row highlights, faint dividers — until evidence says they're needed.
 
 ```text
 Exit criteria:
-- Rows remain aligned at narrow and wide widths.
-- Footer and pane titles fit without wrapping.
-- Existing render tests are updated for intentional visual changes.
+- List pane shows "Lists (N)" title; repo pane shows "Repos (N)" title.
+- Repo pane shows a one-line column header that stays aligned at narrow and wide widths.
+- Header band (app name, list name, sort suffix, counts) never wraps.
+- Existing render tests updated for the new lines.
 ```
 
-### P2 - Preview affordances
+### P2 — List detail modal
 
-Make preview useful in both panes. List focus should show list name, privacy, description, repo count, URL, and last-added date (using `humanize.ShortAge`). Repo focus should keep current repository details and add keyboard preview scrolling. Preview position can adapt to terminal width: right side when wide, bottom when narrow.
+Today: `keys.Preview` opens `modalRepoDetail` only when `active == paneRepo` (`input.go:142-146`). Lists have no equivalent — description, privacy, URL, and last-added are invisible inside the TUI.
+
+All fields already exist on `domain.StarList` (`Name`, `Description`, `IsPrivate`, `RepoCount`, `URL`, `LastAddedAt`), so the modal needs no extra fetch and no GraphQL change.
+
+The work is exactly three things:
+
+1. Add `modalListDetail` to the `kind` iota in `modal.go` (before the `modalEnd` sentinel).
+2. Add `newListDetailModal(list domain.StarList)` in `modal_repo.go` (or a new `modal_list_detail.go` if `modal_repo.go` grows past ~150 lines) and a `viewListDetail()` case in `modal_view.go` mirroring `viewRepoDetail`'s structure: title (name + privacy badge), URL, blank, repo count, blank, description, last-added.
+3. Drop the `m.active == paneRepo` guard in `input.go:142`; branch on active pane, open the matching modal.
+
+Use `humanize.ShortAge` for `LastAddedAt`. Reuse `styleRepoBadge` for the privacy badge (`private` / `public`).
+
+Do **not** add j/k scrolling — neither detail modal needs it. Content is bounded, `truncateToWidth` already handles long URLs/descriptions. Revisit only if a real list shows up that doesn't fit.
 
 ```text
 Exit criteria:
-- List pane preview does not require loading repository topics.
-- Repo preview still uses `withTopics=true` only when preview data is needed.
-- Narrow terminals keep list/repo panes usable.
+- `p` on a focused list opens modalListDetail; `p` on a focused repo still opens modalRepoDetail.
+- modalListDetail uses already-loaded StarList fields; no new API call.
+- No scrolling code added; long description/URL truncate as in modalRepoDetail.
+- Test asserts privacy badge text differs for IsPrivate true vs false.
 ```
 
-### P3 - Modal ergonomics
+### P3 — Picker search + safer confirms
 
-Make list pickers searchable and make confirmations more explicit. Destination pickers should exclude impossible targets, show current selection context, and handle many lists. Destructive modals should state what will and will not happen, such as deleting a list without unstarring repos or merging then deleting the source list.
+Add a text-input filter to `modalPickList` (used by add/move/copy/merge destinations). Filter clamps cursor to filtered length. Rewrite destructive modal copy so the user sees the target name and the count of affected repos in one sentence (e.g., `Merge into "Rust" — "Go" will be deleted, 14 repos moved`).
 
 ```text
 Exit criteria:
-- List picker search filters choices without losing cursor bounds.
-- Delete, merge, unstar, and bulk modals include clear target names/counts.
-- Modal tests cover search, empty picker results, and confirmation copy.
+- Picker `/` toggles a filter; arrow keys keep working with cursor clamped to filtered subset.
+- Delete, merge, copy modals state target name and repo count explicitly.
+- Modal tests cover: filter narrowing, empty filter results, cursor clamp, copy strings.
 ```
 
-### P4 - Existing-capacity views
+### P4 — Unlisted virtual list
 
-Expose TUI-only list entries for data the CLI already supports: all starred repositories and unlisted starred repositories. These should behave like read-only virtual lists where repo actions that make sense still work, but list edit/delete/copy/merge actions are disabled.
+Add a single virtual entry "Unlisted" at the top of the list pane, backed by the existing `--unlisted` CLI semantic. Skip "All Starred" — it's better served by `gh star-lists repos --all` piping. Introduce one `isVirtual` field on the list-row model and one `canMutate(list) bool` predicate; every action site that mutates a list calls `canMutate` once. Repo-level actions (open, add-to-list, unstar, preview, sort, search, selection) work as on real lists.
 
 ```text
 Exit criteria:
-- Virtual entries cannot be edited, deleted, copied, or merged as real lists.
-- Repo open, search, sort, preview, selection, add-to-list, and unstar work where valid.
-- Existing real Star List behavior is unchanged.
+- Exactly one virtual entry exists; "All Starred" is not added.
+- `canMutate` is the only branch that distinguishes virtual from real (no scattered isVirtual checks).
+- Edit/delete/copy/merge are unavailable on the virtual entry and announce why via the status line.
+- Real-list behavior is byte-identical to before.
+- Loading the virtual list reuses the existing repo-cache path (no parallel cache type).
 ```
 
 ---
@@ -103,12 +114,13 @@ Exit criteria:
 
 | Test | What it covers |
 |---|---|
-| `TestPaneTitlesShowCounts` | Counts and titles fit across widths |
-| `TestRepoRowsAlignOwnerAndHeader` | Owner/repo and column header alignment |
-| `TestListPreviewContent` | List-focused preview renders metadata |
-| `TestPreviewBottomLayoutNarrow` | Narrow terminal uses bottom preview without broken panes |
-| `TestPickerSearch` | Modal list picker filters and preserves cursor bounds |
-| `TestVirtualListActions` | Virtual all/unlisted entries disable invalid list actions |
+| `TestPaneTitlesShowCounts` | Counts in titles fit across widths without wrapping |
+| `TestRepoHeaderAligns` | Repo column header aligns with rows at narrow + wide widths |
+| `TestListDetailModal` | `p` on a focused list opens modalListDetail with already-loaded fields |
+| `TestListDetailPrivacyBadge` | Privacy badge text reflects `IsPrivate` |
+| `TestPickerFilter` | Picker filter narrows choices and clamps cursor |
+| `TestDestructiveModalCopy` | Delete/merge/copy modals include target name + repo count |
+| `TestUnlistedVirtualEntry` | Virtual entry rejects list-mutation actions via `canMutate` |
 
 ## Verification
 
@@ -122,31 +134,32 @@ Manual smoke:
 
 ```text
 go run . browse --mouse
-# - Resize from wide to narrow; preview remains usable.
-# - Focus a list; preview shows list details.
-# - Focus a repo; preview shows repo details and scrolls by keyboard/mouse.
-# - Open add/move/copy pickers with many lists; search narrows choices.
-# - Select virtual all/unlisted entries; invalid list actions are unavailable.
+# - Pane titles + repo header visible; widths stable.
+# - `p` on a list shows list detail modal; `p` on a repo shows repo detail modal.
+# - Add/move/copy pickers filter with `/`; cursor stays in bounds.
+# - Delete/merge/copy modals show explicit target + count.
+# - "Unlisted" virtual entry exists; edit/delete/copy/merge are unavailable; add-to-list / unstar / open work.
 ```
 
 ## Critical files
 
-- `internal/tui/render.go` - adaptive layout and separators
-- `internal/tui/render_preview.go` - list/repo preview content
-- `internal/tui/modal_view.go` - picker and confirmation views
-- `internal/tui/input.go` - action gating for real vs virtual lists
+- `internal/tui/render_header.go`, `render_repo.go`, `render_list.go` — counts and repo header
+- `internal/tui/modal.go`, `modal_repo.go`, `modal_view.go`, `input.go` — list detail modal + pane-aware Preview key
+- `internal/tui/modal_list.go` — picker filter
+- `internal/tui/input.go` — single `canMutate` gate for the virtual entry
 
 ## Reused utilities
 
-- `truncateToWidth`, `padRight`, `padLeft` - stable text fitting (TUI-side)
-- `humanize.ShortAge(value, now)` - shared relative-age formatting used by both TUI and CLI
-- `githubapi.ModifyRepositoryMemberships(ctx, svc, nwo, addIDs, removeIDs)` - shared membership mutation used by single-repo commands, copy, and bulk operations
-- `lipgloss.Width` - visual width calculations
-- Existing CLI concepts: `--all`, `--unlisted`, add/remove/move/unstar semantics
-- `githubapi.Service` - all data and mutations stay behind the service boundary
+- `truncateToWidth`, `padRight`, `padLeft` — text fitting (TUI-side)
+- `humanize.ShortAge(value, now)` — relative age, shared with CLI
+- `githubapi.Service` — all data and mutations behind the existing boundary
+- `bubbles/v2/textinput` — already imported in `modal_list.go`; reuse for picker filter
+- Existing CLI semantics: `--unlisted`, add/remove/unstar
 
-## Out of scope
+## Explicitly out of scope
 
-- New Star List API capabilities not already represented by the CLI
-- User-defined layouts, themes, or keybindings
-- Any broad `gh-dash` style PR/issue/notification workflow surface
+- "All Starred" virtual entry — use `repos --all` from the CLI
+- Permanent preview pane and adaptive (wide/narrow) layout — modal pattern stays
+- Visual chrome beyond P1: full-row cursor highlight, separators between rows, faint dividers
+- User-defined layouts, themes, keybindings
+- Any `gh-dash` style PR/issue/notification surface

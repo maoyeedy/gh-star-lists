@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"context"
+	"strings"
 	"testing"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestPreloaderRespectsConcurrencyCap(t *testing.T) {
@@ -82,7 +86,7 @@ func TestFocusedLoadPriority(t *testing.T) {
 
 	// Focus UL_4. Since cache is empty focusList enters the idle default case,
 	// enqueues UL_4 at front, and schedulePreload is a no-op (inFlight capped).
-	_ = m.focusList(3)
+	_ = m.focusList(4)
 
 	if len(m.preloader.queue) == 0 {
 		t.Fatal("queue should not be empty after focusList with inFlight capped")
@@ -112,14 +116,122 @@ func TestPreviewKeyOpensRepoDetailModal(t *testing.T) {
 	}
 }
 
-func TestPreviewKeyNoopInListPane(t *testing.T) {
+func TestPreviewKeyOpensListDetailModal(t *testing.T) {
 	t.Parallel()
-	svc := &fakeService{}
+	svc := threeListsSvc()
 	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.active = paneList
 
 	m2 := update(m, keyPress('p'))
-	if m2.modal != nil {
-		t.Error("modal should be nil after 'p' in list pane")
+	if m2.modal == nil {
+		t.Fatal("modal should be non-nil after 'p' in list pane")
+	}
+	if m2.modal.kind != modalListDetail {
+		t.Errorf("modal kind = %d, want modalListDetail", m2.modal.kind)
+	}
+	if m2.modal.list.ID == "" {
+		t.Error("modal list should be populated from displayed lists")
+	}
+}
+
+func TestListDetailPrivacyBadge(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	publicList := svc.lists[0]
+	publicList.IsPrivate = false
+	privateList := svc.lists[1]
+	privateList.IsPrivate = true
+
+	publicView := newListDetailModal(publicList).viewListDetail()
+	privateView := newListDetailModal(privateList).viewListDetail()
+
+	if !strings.Contains(publicView, "public") {
+		t.Fatalf("public list detail should include public badge; view = %q", publicView)
+	}
+	if !strings.Contains(privateView, "private") {
+		t.Fatalf("private list detail should include private badge; view = %q", privateView)
+	}
+	if strings.Contains(publicView, "private") {
+		t.Fatalf("public list detail should not include private badge; view = %q", publicView)
+	}
+	if strings.Contains(privateView, "public") {
+		t.Fatalf("private list detail should not include public badge; view = %q", privateView)
+	}
+}
+
+func TestUnlistedVirtualEntry(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	if len(m.displayedLists) == 0 || m.displayedLists[0].Name != "Unlisted" {
+		t.Fatalf("first displayed list = %+v, want Unlisted virtual entry", m.displayedLists)
+	}
+	counts := map[string]int{}
+	for _, list := range m.displayedLists {
+		counts[list.Name]++
+	}
+	if counts["Unlisted"] != 1 {
+		t.Fatalf("Unlisted count = %d, want 1", counts["Unlisted"])
+	}
+	if counts["All Starred"] != 0 {
+		t.Fatalf("All Starred should not be present; displayedLists = %+v", m.displayedLists)
+	}
+
+	m.active = paneList
+	m.listCursor = 0
+	for _, key := range []rune{'e', 'd', 'c', 'C'} {
+		next := update(m, keyPress(key))
+		if next.modal != nil {
+			t.Fatalf("key %q opened modal for virtual list", key)
+		}
+		if !strings.Contains(next.statusMsg, "virtual list") {
+			t.Fatalf("key %q statusMsg = %q, want virtual-list explanation", key, next.statusMsg)
+		}
+	}
+}
+
+func TestUnlistedVirtualEntryLoadsThroughRepoCache(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{
+		lists: []domain.StarList{{ID: "UL_1", Name: "Go"}},
+		repos: []domain.Repository{
+			{ID: "R_listed", NameWithOwner: "owner/listed"},
+		},
+		starred: []domain.Repository{
+			{ID: "R_listed", NameWithOwner: "owner/listed"},
+			{ID: "R_unlisted", NameWithOwner: "owner/unlisted"},
+		},
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+
+	cmd := m.focusList(0)
+	if cmd == nil {
+		t.Fatal("focusList(Unlisted) should schedule a repo-cache load")
+	}
+	entry := m.preloader.cache[virtualUnlistedListID]
+	if entry == nil || entry.state != repoCacheLoading {
+		t.Fatalf("virtual cache entry = %+v, want loading", entry)
+	}
+
+	msg, ok := loadReposCmd(
+		context.Background(),
+		svc,
+		virtualUnlistedListID,
+		m.preloader.generation,
+	)().(reposLoadedMsg)
+	if !ok {
+		t.Fatal("loadReposCmd should return reposLoadedMsg")
+	}
+	m = update(m, msg)
+	entry = m.preloader.cache[virtualUnlistedListID]
+	if entry == nil || entry.state != repoCacheLoaded {
+		t.Fatalf("virtual cache entry after load = %+v, want loaded", entry)
+	}
+	if len(entry.repos) != 1 || entry.repos[0].NameWithOwner != "owner/unlisted" {
+		t.Fatalf("virtual repos = %+v, want only owner/unlisted", entry.repos)
 	}
 }

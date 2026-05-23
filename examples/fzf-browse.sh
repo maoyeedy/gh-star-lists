@@ -26,7 +26,7 @@ unset FZF_DEFAULT_COMMAND FZF_DEFAULT_OPTS _ZO_FZF_OPTS
 for cmd in fzf gh awk; do
   command -v "$cmd" >/dev/null || { printf 'missing dependency: %s\n' "$cmd" >&2; exit 1; }
 done
-gh auth status >/dev/null 2>&1 || { printf 'not authenticated — run: gh auth login\n' >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { printf 'not authenticated - run: gh auth login\n' >&2; exit 1; }
 
 # Force fzf to use bash so export -f functions survive into fzf subshells
 # regardless of the user's login shell ($SHELL is the login shell, not this script's).

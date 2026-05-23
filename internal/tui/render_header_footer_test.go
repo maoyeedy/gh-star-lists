@@ -41,7 +41,6 @@ func TestHeaderPriorityTruncation(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{}
 	m := newTestModel(svc)
-	m.width = 60
 	m.height = 24
 	// Give it a very long focused list name.
 	longName := "this-is-a-very-long-list-name-that-exceeds-the-terminal-width"
@@ -51,6 +50,7 @@ func TestHeaderPriorityTruncation(t *testing.T) {
 	// Set a non-default sort so sortLabel would appear if there is room.
 	m.sortLists = sortListsName // produces "name" label
 
+	m.width = 60
 	header := m.renderHeader()
 
 	// App name must always be present.
@@ -65,6 +65,14 @@ func TestHeaderPriorityTruncation(t *testing.T) {
 	visW := lipgloss.Width(header)
 	if visW > m.width {
 		t.Errorf("header visible width %d exceeds terminal width %d", visW, m.width)
+	}
+
+	for _, width := range []int{4, 12, 20} {
+		m.width = width
+		header = m.renderHeader()
+		if visW := lipgloss.Width(header); visW > width {
+			t.Errorf("header visible width %d exceeds terminal width %d: %q", visW, width, header)
+		}
 	}
 }
 

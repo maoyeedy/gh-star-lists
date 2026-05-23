@@ -52,8 +52,8 @@ func TestListsLoadedRebindsFocusedListRename(t *testing.T) {
 		m2.focusedList.Name != "Renamed" {
 		t.Fatalf("focusedList = %+v, want renamed UL_2", m2.focusedList)
 	}
-	if m2.listCursor != 1 {
-		t.Fatalf("listCursor = %d, want 1", m2.listCursor)
+	if m2.listCursor != 2 {
+		t.Fatalf("listCursor = %d, want 2", m2.listCursor)
 	}
 }
 

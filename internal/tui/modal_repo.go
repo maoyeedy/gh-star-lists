@@ -104,6 +104,14 @@ func newRepoDetailModal(repo domain.Repository, openBrowser func(string) error) 
 	}
 }
 
+func newListDetailModal(list domain.StarList) *modal {
+	return &modal{
+		kind:  modalListDetail,
+		title: "List Details",
+		list:  list,
+	}
+}
+
 // update handles key events while a modal is active.
 // Returns (nil, nil) to close, or (updated modal, cmd).
 // Returns (nil, cmd) with cmd != nil when a mutation should be submitted;

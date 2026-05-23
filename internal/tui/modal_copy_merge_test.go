@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/maoyeedy/gh-star-lists/internal/domain"
@@ -61,6 +62,30 @@ func TestCopyMergeNoOpInRepoPane(t *testing.T) {
 		if m2.modal != nil {
 			t.Errorf("key %c should be no-op in repo pane", k)
 		}
+	}
+}
+
+func TestDestructiveModalCopyStrings(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	source := svc.lists[0]
+
+	deleteModal, _ := newDeleteListModal(context.Background(), svc, source)
+	deleteView := deleteModal.view()
+	if !strings.Contains(deleteView, `Delete "zeta" - 1 repo will be removed from this list.`) {
+		t.Errorf("delete view = %q, want target name and repo count", deleteView)
+	}
+
+	copyModal := newCopyListModal(context.Background(), svc, source, svc.lists)
+	copyView := copyModal.view()
+	if !strings.Contains(copyView, `Copy into "Alpha" - "zeta" stays, 1 repo copied.`) {
+		t.Errorf("copy view = %q, want source, target, and repo count", copyView)
+	}
+
+	mergeModal := newMergeListModal(context.Background(), svc, source, svc.lists)
+	mergeView := mergeModal.view()
+	if !strings.Contains(mergeView, `Merge into "Alpha" - "zeta" will be deleted, 1 repo moved.`) {
+		t.Errorf("merge view = %q, want source, target, and repo count", mergeView)
 	}
 }
 

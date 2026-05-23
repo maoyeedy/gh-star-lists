@@ -8,6 +8,17 @@ import (
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
+const virtualUnlistedListID = "__virtual_unlisted__"
+
+func unlistedVirtualList() domain.StarList {
+	return domain.StarList{
+		ID:          virtualUnlistedListID,
+		Name:        "Unlisted",
+		Description: "Starred repositories that are not in any Star List.",
+		IsVirtual:   true,
+	}
+}
+
 type repoCacheState int
 
 const (
@@ -143,6 +154,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 	}
 	m.listCursor = idx
 	list := m.displayedLists[idx]
+	m.focusedList = &list
 	// Find the pointer in m.lists to keep focusedList pointing at the canonical slice.
 	for i := range m.lists {
 		if m.lists[i].ID == list.ID {

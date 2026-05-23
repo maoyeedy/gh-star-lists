@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/search"
 )
 
@@ -85,9 +86,9 @@ func (m model) activateSearch() (tea.Model, tea.Cmd) {
 func (m model) rebuildDisplayed() model {
 	repos := m.currentRepos()
 	if m.listSearchQuery == "" {
-		m.displayedLists = m.lists
+		m.displayedLists = withVirtualLists(m.lists)
 	} else {
-		m.displayedLists = search.FilterStarLists(m.lists, m.listSearchQuery)
+		m.displayedLists = search.FilterStarLists(withVirtualLists(m.lists), m.listSearchQuery)
 	}
 	if m.repoSearchQuery == "" {
 		m.displayedRepos = repos
@@ -95,6 +96,13 @@ func (m model) rebuildDisplayed() model {
 		m.displayedRepos = search.FilterRepositories(repos, m.repoSearchQuery)
 	}
 	return m
+}
+
+func withVirtualLists(lists []domain.StarList) []domain.StarList {
+	displayed := make([]domain.StarList, 0, len(lists)+1)
+	displayed = append(displayed, unlistedVirtualList())
+	displayed = append(displayed, lists...)
+	return displayed
 }
 
 func dropLastRune(s string) string {

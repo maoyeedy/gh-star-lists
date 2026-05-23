@@ -66,8 +66,8 @@ $XDG_CACHE_HOME/gh-star-lists/fzf/   (if XDG_CACHE_HOME set)
 $HOME/.cache/gh-star-lists/fzf/      (default)
 ```
 
-- `_lists.<sort>.fzf` — cached list index per sort mode
-- `<list-ID>.<sort>.fzf` — repos per list and sort mode, fetched on first focus
+- `_lists.<sort>.fzf` - cached list index per sort mode
+- `<list-ID>.<sort>.fzf` - repos per list and sort mode, fetched on first focus
 - Mutating fzf actions clear the cache automatically. `Ctrl-R` also clears and reloads.
 
 ## How it works
@@ -124,7 +124,7 @@ Smaller `--height` for less obtrusive overlay. Drop `--color` lines for terminal
 
 ### Preview content
 
-`gsl_preview_list` — formats repo rows in list-mode right pane. It intentionally omits descriptions to keep browsing quiet:
+`gsl_preview_list` - formats repo rows in list-mode right pane. It intentionally omits descriptions to keep browsing quiet:
 
 ```sh
 # Current: Stars  Language  NameWithOwner  Fork marker
@@ -134,7 +134,7 @@ printf "\033[33m%7s \342\230\205\033[0m  \033[36m%-12s\033[0m  \033[37m%s\033[0m
 printf "%-45s  %6s \342\230\205  %s\n", name, fmtstars($2), $5
 ```
 
-`gsl_preview_repo` — formats repo detail in repo-mode right pane. Emits ANSI for hierarchy and label coloring.
+`gsl_preview_repo` - formats repo detail in repo-mode right pane. Emits ANSI for hierarchy and label coloring.
 
 FZF repo columns: `1=NameWithOwner 2=Stars 3=Language 4=URL 5=Desc 6=PushedAt 7=IsFork`
 

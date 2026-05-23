@@ -4,7 +4,7 @@ description: >
   Consolidate GitHub Star Lists by merging small, overlapping, or empty lists
   into broader categories. Trigger: clean up, merge, consolidate, reorganize,
   compact, reduce, "too many" lists, list limits, fragmentation, restructure
-  requests. DESTRUCTIVE — moves repos, deletes emptied lists. Show plan first,
+  requests. DESTRUCTIVE - moves repos, deletes emptied lists. Show plan first,
   ask approval before mutations.
 ---
 
@@ -41,7 +41,7 @@ Judge each list holistically.
 | **Prefix groups** | Lists sharing prefix (e.g. `Foo-A`, `Foo-B`, `Foo-C`) likely fragments of same topic. |
 | **Semantic overlap** | Different prefixes, overlapping keywords (e.g. `Graphics`, `Shader`, `VFX`). `word_clusters` field highlights these. |
 | **Tiny lists** | 1-2 repos usually over-split. Fold into broader sibling. |
-| **Empty lists** | 0 repos — delete candidates. |
+| **Empty lists** | 0 repos - delete candidates. |
 | **Solitary lists** | Don't group with any other. Keep as-is. |
 
 ### How to decide target
@@ -61,8 +61,8 @@ Print full plan in table:
 | Source | Repos | Action | Target |
 |--------|-------|--------|--------|
 | Foo-A  | 2     | MERGE  | Foo    |
-| Bar    | 0     | DELETE | —      |
-| Baz    | 12    | KEEP   | —      |
+| Bar    | 0     | DELETE | -      |
+| Baz    | 12    | KEEP   | -      |
 ```
 
 Summary: **X lists → Y lists** (Z deletions, N repos moved).

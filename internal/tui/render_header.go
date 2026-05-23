@@ -6,6 +6,12 @@ import (
 
 func (m model) renderHeader() string {
 	const appName = "gh star-lists"
+	if m.width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(appName) > m.width {
+		return styleAppTitle.Render(truncateToWidth(appName, m.width))
+	}
 	appW := lipgloss.Width(appName)
 
 	// Build separator and list name segments.
@@ -52,14 +58,7 @@ func (m model) renderHeader() string {
 	}
 
 	// Truncate list name to budget.
-	const ellipsis = "..."
-	ellipsisW := len(ellipsis)
-	// Trim runes until visual width fits.
-	runes := []rune(listName)
-	for len(runes) > 0 && lipgloss.Width(string(runes))+ellipsisW > budget {
-		runes = runes[:len(runes)-1]
-	}
-	truncated := string(runes) + ellipsis
+	truncated := truncateToWidth(listName, budget)
 	return styleAppTitle.Render(appName) +
 		sep +
 		stylePaneTitle.Render(truncated)

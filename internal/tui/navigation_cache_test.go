@@ -67,7 +67,7 @@ func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
 	m.preloader.queue = nil
 
 	m.active = paneList
-	m.listCursor = 0
+	m.listCursor = 1
 	inflightBefore := m.preloader.inFlight
 
 	// Move down to lists[1] which has no cache entry.

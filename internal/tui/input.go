@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"fmt"
+	"time"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -68,7 +72,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.active != paneList || len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		mo, focusCmd := newEditListModal(m.ctx, m.svc, m.displayedLists[m.listCursor])
+		list := m.displayedLists[m.listCursor]
+		if !canMutate(list) {
+			return m.announceListMutationBlocked(list)
+		}
+		mo, focusCmd := newEditListModal(m.ctx, m.svc, list)
 		m.modal = mo
 		return m, focusCmd
 
@@ -76,7 +84,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.active != paneList || len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		mo, focusCmd := newDeleteListModal(m.ctx, m.svc, m.displayedLists[m.listCursor])
+		list := m.displayedLists[m.listCursor]
+		if !canMutate(list) {
+			return m.announceListMutationBlocked(list)
+		}
+		mo, focusCmd := newDeleteListModal(m.ctx, m.svc, list)
 		m.modal = mo
 		return m, focusCmd
 
@@ -126,21 +138,38 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, focusCmd
 
 	case key.Matches(msg, keys.CopyList):
-		if m.active != paneList || len(m.displayedLists) == 0 || len(m.lists) < 2 {
+		if m.active != paneList || len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		m.modal = newCopyListModal(m.ctx, m.svc, m.displayedLists[m.listCursor], m.lists)
+		list := m.displayedLists[m.listCursor]
+		if !canMutate(list) {
+			return m.announceListMutationBlocked(list)
+		}
+		if len(m.lists) < 2 {
+			return m, nil
+		}
+		m.modal = newCopyListModal(m.ctx, m.svc, list, m.lists)
 		return m, nil
 
 	case key.Matches(msg, keys.MergeList):
-		if m.active != paneList || len(m.displayedLists) == 0 || len(m.lists) < 2 {
+		if m.active != paneList || len(m.displayedLists) == 0 {
 			return m, nil
 		}
-		m.modal = newMergeListModal(m.ctx, m.svc, m.displayedLists[m.listCursor], m.lists)
+		list := m.displayedLists[m.listCursor]
+		if !canMutate(list) {
+			return m.announceListMutationBlocked(list)
+		}
+		if len(m.lists) < 2 {
+			return m, nil
+		}
+		m.modal = newMergeListModal(m.ctx, m.svc, list, m.lists)
 		return m, nil
 
 	case key.Matches(msg, keys.Preview):
-		if m.active == paneRepo && len(m.displayedRepos) > 0 {
+		switch {
+		case m.active == paneList && len(m.displayedLists) > 0:
+			m.modal = newListDetailModal(m.displayedLists[m.listCursor])
+		case m.active == paneRepo && len(m.displayedRepos) > 0:
 			m.modal = newRepoDetailModal(m.displayedRepos[m.repoCursor], m.openBrowser)
 		}
 		return m, nil
@@ -161,6 +190,33 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 		return m, nil
 	}
 	g := calcPaneGeometry(m.width)
+	if g.singlePane {
+		if m.active == paneList {
+			idx := contentRow + m.listOffset
+			if idx < 0 || idx >= len(m.displayedLists) {
+				return m, nil
+			}
+			if idx != m.listCursor {
+				cmd := (&m).focusList(idx)
+				return m, cmd
+			}
+			if m.focusedList != nil {
+				e := m.preloader.cache[m.focusedList.ID]
+				if e == nil || e.state == repoCacheIdle {
+					cmd := (&m).focusList(idx)
+					return m, cmd
+				}
+			}
+			return m, nil
+		}
+		if m.focusedList != nil && len(m.displayedRepos) > 0 {
+			idx := contentRow + m.repoOffset
+			if idx >= 0 && idx < len(m.displayedRepos) {
+				(&m).setRepoCursor(idx)
+			}
+		}
+		return m, nil
+	}
 	if msg.X < g.sep1Col {
 		// List pane click.
 		m.active = paneList
@@ -232,4 +288,17 @@ func openBrowserCmd(openBrowser func(string) error, url string) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+func canMutate(list domain.StarList) bool {
+	return !list.IsVirtual
+}
+
+func (m model) announceListMutationBlocked(list domain.StarList) (model, tea.Cmd) {
+	m.statusMsg = fmt.Sprintf(
+		"%s is a virtual list and cannot be edited, deleted, copied, or merged.",
+		list.Name,
+	)
+	m.statusExpiry = time.Now().Add(2 * time.Second)
+	return m, statusClearCmd(m.statusExpiry)
 }

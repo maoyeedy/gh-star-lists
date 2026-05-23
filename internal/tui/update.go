@@ -60,6 +60,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Scroll the pane under the pointer, regardless of which pane is active.
 		g := calcPaneGeometry(m.width)
+		if g.singlePane {
+			if m.active == paneList {
+				m.listCursor = clampInt(m.listCursor+delta, 0, len(m.displayedLists)-1)
+				m = m.slideListOffset()
+			} else {
+				(&m).setRepoCursor(clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1))
+				m = m.slideRepoOffset()
+			}
+			return m, nil
+		}
 		switch {
 		case msg.X < g.sep1Col:
 			// List pane.

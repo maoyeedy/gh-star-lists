@@ -20,7 +20,6 @@ func (m model) handleRefresh() (tea.Model, tea.Cmd) {
 	m.listCursor = 0
 	m.listOffset = 0
 	m.repoCursor = 0
-	m.previewOffset = 0
 	m.repoOffset = 0
 	return m, loadListsCmd(m.ctx, m.svc)
 }

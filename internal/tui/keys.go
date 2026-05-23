@@ -71,7 +71,7 @@ var keys = keyMap{
 	UnstarRepo: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unstar repo")),
 	CopyList:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy list contents")),
 	MergeList:  key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "merge list (destructive)")),
-	Preview:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "toggle preview")),
+	Preview:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "repo details")),
 	Search:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 	Select:     key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "select")),
 }
@@ -105,7 +105,7 @@ func (k keyMap) helpGroups() []helpGroup {
 			},
 		},
 		{
-			title: "Preview",
+			title: "Details",
 			bindings: []key.Binding{
 				k.Preview, k.Open,
 			},

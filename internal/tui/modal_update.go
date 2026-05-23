@@ -23,6 +23,8 @@ func (mo *modal) update(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 		return mo.updateConfirmYesNo(msg)
 	case modalHelp:
 		return mo.updateHelp(msg)
+	case modalRepoDetail:
+		return mo.updateRepoDetail(msg)
 	default:
 		if msg.String() == "esc" {
 			return nil, nil
@@ -155,6 +157,17 @@ func (mo *modal) updateHelp(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 	case "pgdown":
 		mo.scrollOffset += 20
 		return mo, nil
+	}
+	return mo, nil
+}
+
+func (mo *modal) updateRepoDetail(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q", "p":
+		return nil, nil
+	case "enter", "o":
+		cmd := mo.onConfirm(mo)
+		return mo, cmd
 	}
 	return mo, nil
 }

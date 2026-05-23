@@ -61,8 +61,8 @@ func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
 		reposLoadedMsg{repos: svc.repos, listID: m.lists[0].ID, gen: m.preloader.generation},
 	)
 	// Remove loading/loaded entries for UL_2 and UL_3 (simulate idle).
-	delete(m.preloader.cache, repoCacheKey{m.lists[1].ID, false})
-	delete(m.preloader.cache, repoCacheKey{m.lists[2].ID, false})
+	delete(m.preloader.cache, m.lists[1].ID)
+	delete(m.preloader.cache, m.lists[2].ID)
 	m.preloader.inFlight = 0
 	m.preloader.queue = nil
 
@@ -73,7 +73,7 @@ func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
 	// Move down to lists[1] which has no cache entry.
 	m2 := update(m, specialKey(tea.KeyDown))
 
-	cacheEntry := m2.preloader.cache[repoCacheKey{m2.lists[1].ID, false}]
+	cacheEntry := m2.preloader.cache[m2.lists[1].ID]
 	if cacheEntry == nil {
 		t.Fatal("repoCache entry for list[1] should exist after cursor move to idle list")
 	}
@@ -88,27 +88,26 @@ func TestCursorMoveIdleListSchedulesLoad(t *testing.T) {
 	}
 }
 
-func TestCursorMovePreviewWithBasicCacheSchedulesTopicsLoad(t *testing.T) {
+func TestCursorMoveToCachedListKeepsLoadedState(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
-	m.preloader.setCacheEntry(repoCacheKey{svc.lists[1].ID, false}, &repoCacheEntry{
+	m.preloader.setCacheEntry(svc.lists[1].ID, &repoCacheEntry{
 		state: repoCacheLoaded,
 		repos: []domain.Repository{{ID: "R_2", NameWithOwner: "owner/basic"}},
 		gen:   m.preloader.generation,
 	})
 	m.active = paneList
-	m.showPreview = true
 	m.listCursor = 0
 
 	m2 := update(m, specialKey(tea.KeyDown))
 
-	entry := m2.preloader.cache[repoCacheKey{svc.lists[1].ID, true}]
+	entry := m2.preloader.cache[svc.lists[1].ID]
 	if entry == nil {
-		t.Fatal("topics cache entry should exist after focusing cached basic list")
+		t.Fatal("cache entry should exist after focusing cached list")
 	}
-	if entry.state != repoCacheLoading {
-		t.Fatalf("topics cache state = %d, want repoCacheLoading", entry.state)
+	if entry.state != repoCacheLoaded {
+		t.Fatalf("cache state = %d, want repoCacheLoaded (already cached)", entry.state)
 	}
 }

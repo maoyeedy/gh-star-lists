@@ -46,7 +46,7 @@ func TestRefreshBumpsGenerationAndClearsCache(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 
 	// Populate cache with a loaded entry.
-	m.preloader.cache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.cache["UL_1"] = &repoCacheEntry{state: repoCacheLoaded}
 	genBefore := m.preloader.generation
 
 	m2 := update(m, ctrlKey('r'))
@@ -80,7 +80,7 @@ func TestStaleMsgDroppedAfterRefresh(t *testing.T) {
 	stale := reposLoadedMsg{repos: svc.repos, listID: "UL_1", gen: 0}
 	m2 := update(m, stale)
 
-	entry := m2.preloader.cache[repoCacheKey{"UL_1", false}]
+	entry := m2.preloader.cache["UL_1"]
 	if entry != nil && entry.state == repoCacheLoaded {
 		t.Error(
 			"stale reposLoadedMsg (gen=0) should not create a loaded entry after refresh (gen=1)",

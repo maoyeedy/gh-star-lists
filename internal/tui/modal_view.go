@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
+	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/humanize"
 )
 
 func (mo *modal) view() string {
@@ -35,6 +39,9 @@ func (mo *modal) view() string {
 		case modalHelp:
 			body = mo.viewHelp()
 			hint = stylePaneSubtitle.Render("j/k: scroll  esc: close")
+		case modalRepoDetail:
+			body = mo.viewRepoDetail()
+			hint = stylePaneSubtitle.Render("enter/o: open in browser  esc/q/p: close")
 		default:
 			body = mo.body
 			if body == "" {
@@ -135,4 +142,62 @@ func (mo *modal) viewHelp() string {
 func (mo *modal) viewConfirmYesNo() string {
 	return stylePaneSubtitle.Render("Remove repo from current list?") + "\n\n" +
 		"[y] Yes  [n/esc] No"
+}
+
+func (mo *modal) viewRepoDetail() string {
+	r := mo.repo
+	now := time.Now().UTC()
+	var lines []string
+
+	lines = append(lines, stylePaneTitle.Render(r.NameWithOwner))
+	lines = append(lines, styleRepoURL.Render(r.URL))
+	lines = append(lines, "")
+
+	starsStr := styleRepoStars.Render(
+		fmt.Sprintf("%s %s", formatStars(r.StargazerCount), starGlyph),
+	)
+	langStr := ""
+	if r.Language != "" {
+		langStr = "  " + styleRepoLanguage.Render(r.Language)
+	} else {
+		langStr = "  " + styleEmptyState.Render("-")
+	}
+	var badge string
+	switch {
+	case r.IsArchived:
+		badge = "  " + styleRepoBadge.Render("archived")
+	case r.IsFork:
+		badge = "  " + styleRepoBadge.Render("fork")
+	}
+	lines = append(lines, starsStr+langStr+badge)
+	lines = append(lines, "")
+
+	lines = append(lines, stylePaneSubtitle.Render("Description"))
+	if r.Description != "" {
+		lines = append(lines, styleRepoName.Render(r.Description))
+	} else {
+		lines = append(lines, styleEmptyState.Render("(no description)"))
+	}
+	lines = append(lines, "")
+
+	licenseVal := r.License
+	if licenseVal == "" {
+		licenseVal = styleEmptyState.Render("-")
+	}
+	lines = append(lines, stylePaneSubtitle.Render("License:")+" "+licenseVal)
+
+	lines = append(
+		lines,
+		stylePaneSubtitle.Render("Pushed:")+" "+humanize.ShortAge(r.PushedAt, now),
+	)
+
+	starredVal := r.StarredAt
+	if starredVal == "" {
+		starredVal = styleEmptyState.Render("-")
+	} else {
+		starredVal = humanize.ShortAge(r.StarredAt, now)
+	}
+	lines = append(lines, stylePaneSubtitle.Render("Starred:")+" "+starredVal)
+
+	return strings.Join(lines, "\n")
 }

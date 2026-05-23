@@ -20,7 +20,6 @@ func (m model) handleListsLoaded(msg listsLoadedMsg) (tea.Model, tea.Cmd) {
 	if m.focusedList == nil && len(m.lists) > 0 {
 		m.focusedList = &m.lists[0]
 		m.repoCursor = 0
-		m.previewOffset = 0
 		m.repoOffset = 0
 		m.selected = nil
 		// Build the preload queue from the sorted displayed list IDs.
@@ -34,7 +33,8 @@ func (m model) handleListsLoaded(msg listsLoadedMsg) (tea.Model, tea.Cmd) {
 		}
 		m.preloader.inFlight = 0
 		preloadCmd := m.preloader.schedulePreload(m.ctx, m.svc)
-		return m, preloadCmd
+		enrichCmd := enrichStarredAtCmd(m.ctx, m.svc, m.preloader, "", nil, m.preloader.generation)
+		return m, tea.Batch(preloadCmd, enrichCmd)
 	}
 	if previousFocusedID != "" {
 		for i, list := range m.displayedLists {
@@ -52,7 +52,6 @@ func (m model) handleListsLoaded(msg listsLoadedMsg) (tea.Model, tea.Cmd) {
 		m.focusedList = nil
 		m.displayedRepos = nil
 		m.repoCursor = 0
-		m.previewOffset = 0
 		m.repoOffset = 0
 		m.selected = nil
 	}

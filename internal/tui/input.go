@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"time"
-
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
@@ -142,7 +140,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Preview):
-		return m.handlePreview()
+		if m.active == paneRepo && len(m.displayedRepos) > 0 {
+			m.modal = newRepoDetailModal(m.displayedRepos[m.repoCursor], m.openBrowser)
+		}
+		return m, nil
 
 	case key.Matches(msg, keys.Search):
 		return m.activateSearch()
@@ -159,7 +160,7 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 	if contentRow < 0 {
 		return m, nil
 	}
-	g := calcPaneGeometry(m.width, m.showPreview)
+	g := calcPaneGeometry(m.width)
 	if msg.X < g.sep1Col {
 		// List pane click.
 		m.active = paneList
@@ -167,54 +168,28 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 		if idx < 0 || idx >= len(m.displayedLists) {
 			return m, nil
 		}
-
-		// Double-click detection: two clicks on same pane+row within 300ms drills to repo pane.
-		now := time.Now()
-		if m.lastClickPane == int(paneList) && m.lastClickIndex == idx &&
-			!m.lastClickTime.IsZero() && now.Sub(m.lastClickTime) < 300*time.Millisecond {
-			// Double-click: drill into the list, ensure load starts if idle.
-			cmd := (&m).focusList(idx)
-			m.active = paneRepo
-			m.repoCursor = 0
-			m.previewOffset = 0
-			m.repoOffset = 0
-			m.selected = nil
-			// Reset tracker.
-			m.lastClickTime = time.Time{}
-			return m, cmd
-		}
-		// Single click.
 		if idx != m.listCursor {
 			cmd := (&m).focusList(idx)
-			m.lastClickPane = int(paneList)
-			m.lastClickIndex = idx
-			m.lastClickTime = now
 			return m, cmd
 		}
 		// Already focused: if idle, trigger load without switching pane.
-		m.lastClickPane = int(paneList)
-		m.lastClickIndex = idx
-		m.lastClickTime = now
 		if m.focusedList != nil {
-			cacheKey := repoCacheKey{m.focusedList.ID, false}
-			e := m.preloader.cache[cacheKey]
+			e := m.preloader.cache[m.focusedList.ID]
 			if e == nil || e.state == repoCacheIdle {
 				cmd := (&m).focusList(idx)
 				return m, cmd
 			}
 		}
 		return m, nil
-	} else if msg.X > g.sep1Col && (g.sep2Col < 0 || msg.X < g.sep2Col) {
-		// Repo pane click.
-		if m.focusedList != nil && len(m.displayedRepos) > 0 {
-			m.active = paneRepo
-			idx := contentRow + m.repoOffset
-			if idx >= 0 && idx < len(m.displayedRepos) {
-				(&m).setRepoCursor(idx)
-			}
+	}
+	// Repo pane click.
+	if m.focusedList != nil && len(m.displayedRepos) > 0 {
+		m.active = paneRepo
+		idx := contentRow + m.repoOffset
+		if idx >= 0 && idx < len(m.displayedRepos) {
+			(&m).setRepoCursor(idx)
 		}
 	}
-	// Clicks in the preview pane (msg.X > g.sep2Col when showPreview) are no-ops for now.
 	return m, nil
 }
 
@@ -237,10 +212,7 @@ func (m model) handleOpen() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		url := m.displayedLists[m.listCursor].URL
-		if url != "" && m.openBrowser != nil {
-			_ = m.openBrowser(url)
-		}
-		return m, nil
+		return m, openBrowserCmd(m.openBrowser, url)
 	}
 	return m.openFocusedRepoURL()
 }
@@ -250,8 +222,14 @@ func (m model) openFocusedRepoURL() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	url := m.displayedRepos[m.repoCursor].URL
-	if url != "" && m.openBrowser != nil {
-		_ = m.openBrowser(url)
+	return m, openBrowserCmd(m.openBrowser, url)
+}
+
+func openBrowserCmd(openBrowser func(string) error, url string) tea.Cmd {
+	return func() tea.Msg {
+		if openBrowser != nil && url != "" {
+			_ = openBrowser(url)
+		}
+		return nil
 	}
-	return m, nil
 }

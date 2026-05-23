@@ -25,19 +25,17 @@ func (m model) handleMutationDone(msg mutationDoneMsg) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{loadListsCmd(m.ctx, m.svc), statusClearCmd(m.statusExpiry)}
 	// Invalidate repo cache for focused list.
 	if m.focusedList != nil {
-		m.preloader.deleteCacheEntry(repoCacheKey{m.focusedList.ID, false})
-		m.preloader.deleteCacheEntry(repoCacheKey{m.focusedList.ID, true})
+		m.preloader.deleteCacheEntry(m.focusedList.ID)
 	}
 	// For repo-pane mutations, trigger re-fetch of the focused list.
 	if m.active == paneRepo && m.focusedList != nil {
-		key := repoCacheKey{m.focusedList.ID, m.showPreview}
-		m.preloader.setCacheEntry(key, &repoCacheEntry{
+		m.preloader.setCacheEntry(m.focusedList.ID, &repoCacheEntry{
 			state: repoCacheLoading,
 			gen:   m.preloader.generation,
 		})
 		cmds = append(
 			cmds,
-			loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.preloader.generation),
+			loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.preloader.generation),
 		)
 	}
 	return m, tea.Batch(cmds...)
@@ -97,18 +95,16 @@ func (m model) handleBulkDone(msg bulkDoneMsg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, loadListsCmd(m.ctx, m.svc))
 	// Invalidate repo cache for focused list.
 	if m.focusedList != nil {
-		m.preloader.deleteCacheEntry(repoCacheKey{m.focusedList.ID, false})
-		m.preloader.deleteCacheEntry(repoCacheKey{m.focusedList.ID, true})
+		m.preloader.deleteCacheEntry(m.focusedList.ID)
 	}
 	if m.active == paneRepo && m.focusedList != nil {
-		key := repoCacheKey{m.focusedList.ID, m.showPreview}
-		m.preloader.setCacheEntry(key, &repoCacheEntry{
+		m.preloader.setCacheEntry(m.focusedList.ID, &repoCacheEntry{
 			state: repoCacheLoading,
 			gen:   m.preloader.generation,
 		})
 		cmds = append(
 			cmds,
-			loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.showPreview, m.preloader.generation),
+			loadReposCmd(m.ctx, m.svc, m.focusedList.ID, m.preloader.generation),
 		)
 	}
 	return m, tea.Batch(cmds...)

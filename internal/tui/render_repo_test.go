@@ -189,7 +189,7 @@ func TestRepoColumnAlignment(t *testing.T) {
 	}
 }
 
-func TestRepoPanePreviewModeHidesMetadata(t *testing.T) {
+func TestRepoPaneAlwaysShowsStarsAndLang(t *testing.T) {
 	t.Parallel()
 	repo := domain.Repository{
 		ID:             "R_1",
@@ -206,19 +206,18 @@ func TestRepoPanePreviewModeHidesMetadata(t *testing.T) {
 	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
 	m.active = paneRepo
 	m.focusedList = &m.lists[0]
-	m.showPreview = true
 
-	rendered := m.renderRepoPane(36, 8)
+	rendered := m.renderRepoPane(60, 8)
 	plain := stripANSI(rendered)
 
 	if !strings.Contains(plain, repo.NameWithOwner) {
-		t.Fatalf("preview repo pane should show full repo name; got:\n%s", rendered)
+		t.Fatalf("repo pane should show full repo name; got:\n%s", rendered)
 	}
-	if strings.Contains(plain, starGlyph) || strings.Contains(plain, "132") {
-		t.Fatalf("preview repo pane should hide stars; got:\n%s", rendered)
+	if !strings.Contains(rendered, starGlyph) {
+		t.Fatalf("repo pane should show stars; got:\n%s", rendered)
 	}
-	if strings.Contains(plain, repo.Language) {
-		t.Fatalf("preview repo pane should hide language; got:\n%s", rendered)
+	if !strings.Contains(plain, repo.Language) {
+		t.Fatalf("repo pane should show language; got:\n%s", rendered)
 	}
 }
 

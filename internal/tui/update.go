@@ -59,24 +59,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Scroll the pane under the pointer, regardless of which pane is active.
-		g := calcPaneGeometry(m.width, m.showPreview)
+		g := calcPaneGeometry(m.width)
 		switch {
 		case msg.X < g.sep1Col:
 			// List pane.
 			m.listCursor = clampInt(m.listCursor+delta, 0, len(m.displayedLists)-1)
 			m = m.slideListOffset()
-		case m.showPreview && g.sep2Col >= 0 && msg.X > g.sep2Col:
-			// Preview pane wheel scroll.
-			contentH := m.height - 2
-			viewH := contentH
-			content := countPreviewLines(m, g.previewWidth, contentH)
-			previewDelta := 3
-			if delta < 0 {
-				previewDelta = -3
-			}
-			m.previewOffset = slidePreviewOffset(m.previewOffset, previewDelta, content, viewH)
 		default:
-			// Repo pane (between sep1Col and sep2Col, or sep2Col < 0).
+			// Repo pane.
 			(&m).setRepoCursor(clampInt(m.repoCursor+delta, 0, len(m.displayedRepos)-1))
 			m = m.slideRepoOffset()
 		}

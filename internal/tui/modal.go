@@ -20,6 +20,7 @@ const (
 	modalConfirmText
 	modalConfirmYesNo
 	modalHelp
+	modalRepoDetail
 )
 
 type modal struct {
@@ -57,6 +58,9 @@ type modal struct {
 
 	// scroll offset for scrollable modals (help)
 	scrollOffset int
+
+	// repo detail modal
+	repo domain.Repository
 
 	// context for cancel-without-side-effect
 	ctx context.Context

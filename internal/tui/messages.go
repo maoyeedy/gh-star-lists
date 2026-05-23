@@ -17,11 +17,10 @@ import (
 type (
 	listsLoadedMsg struct{ lists []domain.StarList }
 	reposLoadedMsg struct {
-		repos      []domain.Repository
-		err        error
-		listID     string
-		withTopics bool
-		gen        uint64
+		repos  []domain.Repository
+		err    error
+		listID string
+		gen    uint64
 	}
 	starredAtEnrichedMsg struct {
 		repos  []domain.Repository
@@ -46,27 +45,21 @@ func loadReposCmd(
 	ctx context.Context,
 	svc githubapi.Service,
 	listID string,
-	withTopics bool,
 	gen uint64,
 ) tea.Cmd {
 	return func() tea.Msg {
 		if ctx.Err() != nil {
 			return nil
 		}
-		opts := []domain.ListOptions{}
-		if withTopics {
-			opts = append(opts, domain.ListOptions{WithTopics: true})
-		}
-		repos, err := svc.ListRepositories(ctx, listID, opts...)
+		repos, err := svc.ListRepositories(ctx, listID)
 		if ctx.Err() != nil {
 			return nil
 		}
 		return reposLoadedMsg{
-			repos:      repos,
-			err:        err,
-			listID:     listID,
-			withTopics: withTopics,
-			gen:        gen,
+			repos:  repos,
+			err:    err,
+			listID: listID,
+			gen:    gen,
 		}
 	}
 }

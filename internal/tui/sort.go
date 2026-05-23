@@ -118,7 +118,6 @@ func (m model) cycleSort() (model, tea.Cmd) {
 		m.sortRepos = sortReposKey((int(m.sortRepos) + 1) % int(sortReposEnd))
 		sortRepos(m.displayedRepos, m.sortRepos)
 		m.repoCursor = 0
-		m.previewOffset = 0
 		m.repoOffset = 0
 	}
 	return m, nil

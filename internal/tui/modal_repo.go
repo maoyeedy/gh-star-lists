@@ -93,6 +93,17 @@ func newUnstarRepoModal(ctx context.Context, svc githubapi.Service,
 	return mo, focusCmd
 }
 
+func newRepoDetailModal(repo domain.Repository, openBrowser func(string) error) *modal {
+	return &modal{
+		kind:  modalRepoDetail,
+		title: "Repo Details",
+		repo:  repo,
+		onConfirm: func(m *modal) tea.Cmd {
+			return openBrowserCmd(openBrowser, m.repo.URL)
+		},
+	}
+}
+
 // update handles key events while a modal is active.
 // Returns (nil, nil) to close, or (updated modal, cmd).
 // Returns (nil, cmd) with cmd != nil when a mutation should be submitted;

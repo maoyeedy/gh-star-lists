@@ -105,11 +105,11 @@ func (m model) renderRepoPane(w, h int) string {
 	if hasSel {
 		baseW += markerW
 	}
-	showStars := !m.showPreview && w >= 30 && baseW+starWidth+2+minNameW <= w
+	showStars := w >= 30 && baseW+starWidth+2+minNameW <= w
 	if showStars {
 		baseW += starWidth + 2
 	}
-	showLang := !m.showPreview && w >= 34 && baseW+langWidth+2+minNameW <= w
+	showLang := w >= 34 && baseW+langWidth+2+minNameW <= w
 	showBadges := w >= 55
 
 	// Convert visible repos to RepoRow for rendering with pre-computed fields.

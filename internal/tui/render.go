@@ -37,49 +37,8 @@ func (m model) renderLayout() string {
 
 	contentH := m.height - 2
 
-	g := calcPaneGeometry(m.width, m.showPreview)
+	g := calcPaneGeometry(m.width)
 
-	if m.showPreview {
-		// Three-column layout: lists | repos | preview
-		leftPane := m.renderListPane(g.leftWidth, contentH)
-		midPane := m.renderRepoPane(g.repoWidth, contentH)
-		previewPane := m.renderPreviewPane(g.previewWidth, contentH)
-
-		sep := "|"
-		rows := make([]string, contentH)
-		leftLines := strings.Split(leftPane, "\n")
-		midLines := strings.Split(midPane, "\n")
-		previewLines := strings.Split(previewPane, "\n")
-
-		for i := 0; i < contentH; i++ {
-			l, mid, r := "", "", ""
-			if i < len(leftLines) {
-				l = leftLines[i]
-			}
-			if i < len(midLines) {
-				mid = midLines[i]
-			}
-			if i < len(previewLines) {
-				r = previewLines[i]
-			}
-			l = padRight(l, g.leftWidth)
-			mid = padRight(mid, g.repoWidth)
-			rows[i] = l + sep + mid + sep + r
-		}
-
-		header := m.renderHeader()
-		footer := renderFooter(
-			m.active,
-			m.listSearchActive,
-			m.repoSearchActive,
-			m.selected,
-			m.statusMsg,
-			m.statusExpiry,
-		)
-		return header + "\n" + strings.Join(rows, "\n") + "\n" + footer
-	}
-
-	// Two-column layout.
 	leftPane := m.renderListPane(g.leftWidth, contentH)
 	rightPane := m.renderRepoPane(g.repoWidth, contentH)
 

@@ -59,6 +59,9 @@ type modal struct {
 	// scroll offset for scrollable modals (help)
 	scrollOffset int
 
+	// inner content width set by renderer; 0 means unconstrained (tests)
+	width int
+
 	// repo detail modal
 	repo domain.Repository
 

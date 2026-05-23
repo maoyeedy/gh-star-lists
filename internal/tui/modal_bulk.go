@@ -178,7 +178,12 @@ func (mo *modal) viewBulkFailure() string {
 	if end > len(failure.failedNWOs) {
 		end = len(failure.failedNWOs)
 	}
+	const nwoPrefixW = 2 // "  "
+	nwoW := mo.width - nwoPrefixW
 	for _, nwo := range failure.failedNWOs[start:end] {
+		if nwoW > 0 {
+			nwo = truncateToWidth(nwo, nwoW)
+		}
 		lines = append(lines, "  "+nwo)
 	}
 	if start > 0 {

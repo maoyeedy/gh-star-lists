@@ -26,11 +26,6 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 		if m.focusedList != nil && listID == m.focusedList.ID {
 			m.populateDisplayedRepos(entry.repos)
 		}
-		if m.focusedList != nil && listID == m.focusedList.ID {
-			if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
-				m.setRepoCursor(len(m.displayedRepos) - 1)
-			}
-		}
 		// Refresh focusedList pointer only if this load is for the focused list.
 		if m.focusedList != nil && m.focusedList.ID == listID {
 			for i := range m.lists {
@@ -60,6 +55,14 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 
 	cmds := []tea.Cmd{
 		m.preloader.schedulePreload(m.ctx, m.svc),
+	}
+	// Asynchronously enrich repos with StarredAt so the detail modal shows
+	// "Starred:" instead of "-". Star List items don't carry viewer star time;
+	// MergeStarredAt fills it in from ListStarredRepositories (cached per gen).
+	if msg.err == nil {
+		cmds = append(cmds, enrichStarredAtCmd(
+			m.ctx, m.svc, m.preloader, msg.listID, msg.repos, msg.gen,
+		))
 	}
 	return m, tea.Batch(cmds...)
 }

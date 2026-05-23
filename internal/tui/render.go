@@ -24,7 +24,15 @@ func (m model) renderContent() string {
 	}
 	base := m.renderLayout()
 	if m.modal != nil {
-		box := styleModalBorder.Render(m.modal.view())
+		// RoundedBorder (1 col/side) + Padding(1,2) (2 cols/side) = 6 overhead.
+		const modalBorderOverhead = 6
+		const modalHMargin = 8 // at least 4 cols margin on each side
+		maxOuter := m.width - modalHMargin
+		if maxOuter < modalBorderOverhead+4 {
+			maxOuter = modalBorderOverhead + 4
+		}
+		m.modal.width = maxOuter - modalBorderOverhead
+		box := styleModalBorder.Width(m.modal.width).Render(m.modal.view())
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	return base

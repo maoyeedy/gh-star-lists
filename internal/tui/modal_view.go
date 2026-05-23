@@ -104,6 +104,8 @@ func (mo *modal) viewPickList() string {
 		return "(no lists available)"
 	}
 	const maxVisible = 8
+	const prefixW = 2           // "> " or "  "
+	nameW := mo.width - prefixW // 0 when unconstrained; truncation skipped below
 	start := 0
 	if mo.choiceCursor >= maxVisible {
 		start = mo.choiceCursor - maxVisible + 1
@@ -115,18 +117,26 @@ func (mo *modal) viewPickList() string {
 	var lines []string
 	for i := start; i < end; i++ {
 		prefix := "  "
+		name := mo.choices[i].Name
+		if nameW > 0 {
+			name = truncateToWidth(name, nameW)
+		}
 		if i == mo.choiceCursor {
 			prefix = "> "
-			lines = append(lines, prefix+styleCursorActive.Render(mo.choices[i].Name))
+			lines = append(lines, prefix+styleCursorActive.Render(name))
 		} else {
-			lines = append(lines, prefix+mo.choices[i].Name)
+			lines = append(lines, prefix+name)
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (mo *modal) viewHelp() string {
-	lines := renderHelpLines(60)
+	helpW := mo.width
+	if helpW <= 0 {
+		helpW = 60
+	}
+	lines := renderHelpLines(helpW)
 	if mo.scrollOffset >= len(lines) {
 		mo.scrollOffset = max(0, len(lines)-1)
 	}
@@ -149,8 +159,19 @@ func (mo *modal) viewRepoDetail() string {
 	now := time.Now().UTC()
 	var lines []string
 
-	lines = append(lines, stylePaneTitle.Render(r.NameWithOwner))
-	lines = append(lines, styleRepoURL.Render(r.URL))
+	nwo := r.NameWithOwner
+	url := r.URL
+	desc := r.Description
+	if mo.width > 0 {
+		nwo = truncateToWidth(nwo, mo.width)
+		url = truncateToWidth(url, mo.width)
+		if desc != "" {
+			desc = truncateToWidth(desc, mo.width)
+		}
+	}
+
+	lines = append(lines, stylePaneTitle.Render(nwo))
+	lines = append(lines, styleRepoURL.Render(url))
 	lines = append(lines, "")
 
 	starsStr := styleRepoStars.Render(
@@ -173,8 +194,8 @@ func (mo *modal) viewRepoDetail() string {
 	lines = append(lines, "")
 
 	lines = append(lines, stylePaneSubtitle.Render("Description"))
-	if r.Description != "" {
-		lines = append(lines, styleRepoName.Render(r.Description))
+	if desc != "" {
+		lines = append(lines, styleRepoName.Render(desc))
 	} else {
 		lines = append(lines, styleEmptyState.Render("(no description)"))
 	}

@@ -5,7 +5,7 @@ Usage:
   gh star-lists --json | python scripts/analyze-lists.py [--min-prefix-group N]
 
 Outputs a JSON analysis: list details, prefix groupings, empty lists, and
-semantic word overlap hints. Does NOT recommend merges — the AI uses this
+semantic word overlap hints. Does NOT recommend merges - the AI uses this
 data to decide.
 """
 

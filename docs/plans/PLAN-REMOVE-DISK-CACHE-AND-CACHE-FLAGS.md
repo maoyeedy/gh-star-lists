@@ -1,4 +1,4 @@
-# Plan: Remove disk cache and cache CLI flags — Ship Record
+# Plan: Remove disk cache and cache CLI flags - Ship Record
 
 ## What shipped
 
@@ -31,12 +31,12 @@ flags now get a clean unknown-flag usage error (exit code 2).
 
 | File | Change |
 |------|--------|
-| `internal/githubapi/diskcache.go` | Deleted — disk-cache service decorator |
-| `internal/githubapi/diskcache_store.go` | Deleted — `diskCacheRepository` shadow type and BoltDB store |
-| `internal/githubapi/diskcache_coalesce.go` | Deleted — request coalescing for disk cache |
-| `internal/githubapi/diskcache_invalidate.go` | Deleted — disk-cache invalidation helpers |
-| `internal/githubapi/diskcache_policy.go` | Deleted — TTL and path policy |
-| `internal/githubapi/diskcache_test.go` | Deleted — disk-cache test suite |
+| `internal/githubapi/diskcache.go` | Deleted - disk-cache service decorator |
+| `internal/githubapi/diskcache_store.go` | Deleted - `diskCacheRepository` shadow type and BoltDB store |
+| `internal/githubapi/diskcache_coalesce.go` | Deleted - request coalescing for disk cache |
+| `internal/githubapi/diskcache_invalidate.go` | Deleted - disk-cache invalidation helpers |
+| `internal/githubapi/diskcache_policy.go` | Deleted - TTL and path policy |
+| `internal/githubapi/diskcache_test.go` | Deleted - disk-cache test suite |
 | `internal/command/parse.go` | Removed `--cache-ttl` and `--no-cache` cases, conflict check, `CacheTTL` field assignments |
 | `internal/command/types.go` | Removed `Parsed.CacheTTL *time.Duration` field |
 | `internal/command/run_setup.go` | Replaced branching cache setup with unconditional `NewCacheServiceWithOptions`; removed `originalService` and `cacheTTL` from `runInvocation` |

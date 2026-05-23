@@ -2,7 +2,7 @@
 
 ## Context
 
-Focused, Star Lists-specific UX improvements that make the TUI faster to scan and harder to misuse — without growing it into a general GitHub dashboard. Every item reuses an existing `githubapi.Service` method or an existing CLI semantic.
+Focused, Star Lists-specific UX improvements that make the TUI faster to scan and harder to misuse - without growing it into a general GitHub dashboard. Every item reuses an existing `githubapi.Service` method or an existing CLI semantic.
 
 **Prerequisite:** TUI v2 cleanup and performance plans (stable component boundaries, per-pane state, preload/cache behavior).
 
@@ -29,7 +29,7 @@ Safer modal confirmations | Changing machine output contracts
 
 ## Design
 
-- Reuse the modal pattern where a permanent pane is tempting — it already works.
+- Reuse the modal pattern where a permanent pane is tempting - it already works.
 - Add at most one new dimension (`isVirtual bool` on list rows) gated by one predicate (`canMutate(list)`); do not scatter ad-hoc checks across input/modals.
 - No layout-mode toggles, no adaptive geometry. The current two-pane split stays.
 - No new config; conservative defaults in code.
@@ -39,18 +39,18 @@ Safer modal confirmations | Changing machine output contracts
 
 | Phase | Goal | Parallel-with | Depends-on | Files |
 |---|---|---|---|---|
-| P1 — Pane counts + repo header | Two highest-impact scan cues, nothing else | P2, P3 | none | `render_header.go`, `render_repo.go`, `render_list.go` |
-| P2 — List detail modal | Extend `keys.Preview` to lists; mirror `modalRepoDetail` | P1, P3 | none | `modal_repo.go`, `modal_view.go`, `modal.go`, `input.go` |
-| P3 — Picker search + safer confirms | Filterable destination pickers, explicit consequences in destructive copy | P1, P2 | none | `modal_list.go`, `modal_view.go`, `modal_update.go` |
-| P4 — Unlisted virtual list | One virtual entry; one `isVirtual` flag; one `canMutate` predicate | none | P1, P2, P3 | `cache.go`, `render_list.go`, `input.go`, `messages.go` |
+| P1 - Pane counts + repo header | Two highest-impact scan cues, nothing else | P2, P3 | none | `render_header.go`, `render_repo.go`, `render_list.go` |
+| P2 - List detail modal | Extend `keys.Preview` to lists; mirror `modalRepoDetail` | P1, P3 | none | `modal_repo.go`, `modal_view.go`, `modal.go`, `input.go` |
+| P3 - Picker search + safer confirms | Filterable destination pickers, explicit consequences in destructive copy | P1, P2 | none | `modal_list.go`, `modal_view.go`, `modal_update.go` |
+| P4 - Unlisted virtual list | One virtual entry; one `isVirtual` flag; one `canMutate` predicate | none | P1, P2, P3 | `cache.go`, `render_list.go`, `input.go`, `messages.go` |
 
-Phase order: (P1 ‖ P2 ‖ P3) → P4.
+Phase order: (P1 | P2 | P3) → P4.
 
 ---
 
-### P1 — Pane counts + repo header
+### P1 - Pane counts + repo header
 
-Add pane titles with `(N)` counts on each pane, and a one-line repo column header (name / stars / language) above the repo list. Skip everything else considered for scan polish — separators, full-row highlights, faint dividers — until evidence says they're needed.
+Add pane titles with `(N)` counts on each pane, and a one-line repo column header (name / stars / language) above the repo list. Skip everything else considered for scan polish - separators, full-row highlights, faint dividers - until evidence says they're needed.
 
 ```text
 Exit criteria:
@@ -60,9 +60,9 @@ Exit criteria:
 - Existing render tests updated for the new lines.
 ```
 
-### P2 — List detail modal
+### P2 - List detail modal
 
-Today: `keys.Preview` opens `modalRepoDetail` only when `active == paneRepo` (`input.go:142-146`). Lists have no equivalent — description, privacy, URL, and last-added are invisible inside the TUI.
+Today: `keys.Preview` opens `modalRepoDetail` only when `active == paneRepo` (`input.go:142-146`). Lists have no equivalent - description, privacy, URL, and last-added are invisible inside the TUI.
 
 All fields already exist on `domain.StarList` (`Name`, `Description`, `IsPrivate`, `RepoCount`, `URL`, `LastAddedAt`), so the modal needs no extra fetch and no GraphQL change.
 
@@ -74,7 +74,7 @@ The work is exactly three things:
 
 Use `humanize.ShortAge` for `LastAddedAt`. Reuse `styleRepoBadge` for the privacy badge (`private` / `public`).
 
-Do **not** add j/k scrolling — neither detail modal needs it. Content is bounded, `truncateToWidth` already handles long URLs/descriptions. Revisit only if a real list shows up that doesn't fit.
+Do **not** add j/k scrolling - neither detail modal needs it. Content is bounded, `truncateToWidth` already handles long URLs/descriptions. Revisit only if a real list shows up that doesn't fit.
 
 ```text
 Exit criteria:
@@ -84,9 +84,9 @@ Exit criteria:
 - Test asserts privacy badge text differs for IsPrivate true vs false.
 ```
 
-### P3 — Picker search + safer confirms
+### P3 - Picker search + safer confirms
 
-Add a text-input filter to `modalPickList` (used by add/move/copy/merge destinations). Filter clamps cursor to filtered length. Rewrite destructive modal copy so the user sees the target name and the count of affected repos in one sentence (e.g., `Merge into "Rust" — "Go" will be deleted, 14 repos moved`).
+Add a text-input filter to `modalPickList` (used by add/move/copy/merge destinations). Filter clamps cursor to filtered length. Rewrite destructive modal copy so the user sees the target name and the count of affected repos in one sentence (e.g., `Merge into "Rust" - "Go" will be deleted, 14 repos moved`).
 
 ```text
 Exit criteria:
@@ -95,9 +95,9 @@ Exit criteria:
 - Modal tests cover: filter narrowing, empty filter results, cursor clamp, copy strings.
 ```
 
-### P4 — Unlisted virtual list
+### P4 - Unlisted virtual list
 
-Add a single virtual entry "Unlisted" at the top of the list pane, backed by the existing `--unlisted` CLI semantic. Skip "All Starred" — it's better served by `gh star-lists repos --all` piping. Introduce one `isVirtual` field on the list-row model and one `canMutate(list) bool` predicate; every action site that mutates a list calls `canMutate` once. Repo-level actions (open, add-to-list, unstar, preview, sort, search, selection) work as on real lists.
+Add a single virtual entry "Unlisted" at the top of the list pane, backed by the existing `--unlisted` CLI semantic. Skip "All Starred" - it's better served by `gh star-lists repos --all` piping. Introduce one `isVirtual` field on the list-row model and one `canMutate(list) bool` predicate; every action site that mutates a list calls `canMutate` once. Repo-level actions (open, add-to-list, unstar, preview, sort, search, selection) work as on real lists.
 
 ```text
 Exit criteria:
@@ -143,23 +143,23 @@ go run . browse --mouse
 
 ## Critical files
 
-- `internal/tui/render_header.go`, `render_repo.go`, `render_list.go` — counts and repo header
-- `internal/tui/modal.go`, `modal_repo.go`, `modal_view.go`, `input.go` — list detail modal + pane-aware Preview key
-- `internal/tui/modal_list.go` — picker filter
-- `internal/tui/input.go` — single `canMutate` gate for the virtual entry
+- `internal/tui/render_header.go`, `render_repo.go`, `render_list.go` - counts and repo header
+- `internal/tui/modal.go`, `modal_repo.go`, `modal_view.go`, `input.go` - list detail modal + pane-aware Preview key
+- `internal/tui/modal_list.go` - picker filter
+- `internal/tui/input.go` - single `canMutate` gate for the virtual entry
 
 ## Reused utilities
 
-- `truncateToWidth`, `padRight`, `padLeft` — text fitting (TUI-side)
-- `humanize.ShortAge(value, now)` — relative age, shared with CLI
-- `githubapi.Service` — all data and mutations behind the existing boundary
-- `bubbles/v2/textinput` — already imported in `modal_list.go`; reuse for picker filter
+- `truncateToWidth`, `padRight`, `padLeft` - text fitting (TUI-side)
+- `humanize.ShortAge(value, now)` - relative age, shared with CLI
+- `githubapi.Service` - all data and mutations behind the existing boundary
+- `bubbles/v2/textinput` - already imported in `modal_list.go`; reuse for picker filter
 - Existing CLI semantics: `--unlisted`, add/remove/unstar
 
 ## Explicitly out of scope
 
-- "All Starred" virtual entry — use `repos --all` from the CLI
-- Permanent preview pane and adaptive (wide/narrow) layout — modal pattern stays
+- "All Starred" virtual entry - use `repos --all` from the CLI
+- Permanent preview pane and adaptive (wide/narrow) layout - modal pattern stays
 - Visual chrome beyond P1: full-row cursor highlight, separators between rows, faint dividers
 - User-defined layouts, themes, keybindings
 - Any `gh-dash` style PR/issue/notification surface

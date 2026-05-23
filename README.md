@@ -1,6 +1,6 @@
 # gh-star-lists
 
-Explore, sort, filter, and manage GitHub Star Lists from the terminal. Uses your `gh` auth — no tokens stored.
+Explore, sort, filter, and manage GitHub Star Lists from the terminal. Uses your `gh` auth - no tokens stored.
 
 ## Install
 

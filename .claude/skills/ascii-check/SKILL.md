@@ -7,7 +7,7 @@ disable-model-invocation: true
 Run: `LC_ALL=C grep -Pn '[^\x00-\x7F]' --include='*.go' -r .`
 
 If matches found:
-- List each `file:line — <offending text>` with Unicode codepoint (e.g. U+2014 EM DASH)
-- Suggest ASCII replacement (e.g. `—` → `-`, `"` → `"`, `'` → `'`)
+- List each `file:line - <offending text>` with Unicode codepoint (e.g. U+2014 EM DASH)
+- Suggest ASCII replacement (e.g. `-` → `-`, `"` → `"`, `'` → `'`)
 
 If no matches: report "No non-ASCII characters found."

@@ -1,6 +1,6 @@
 ---
 name: go-check
-description: Run full Go validation pipeline — goimports, vet, tests. Use when user asks validate, check, verify, or run Go tests. Also after editing Go files to confirm pass. Invoke /go-check.
+description: Run full Go validation pipeline - goimports, vet, tests. Use when user asks validate, check, verify, or run Go tests. Also after editing Go files to confirm pass. Invoke /go-check.
 disable-model-invocation: true
 ---
 

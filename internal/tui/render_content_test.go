@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
 func TestHelpViewContainsAllKeys(t *testing.T) {
@@ -126,5 +128,76 @@ func TestNoPressEnterHint(t *testing.T) {
 
 	if strings.Contains(rendered, "press enter") {
 		t.Errorf("repo pane should not contain 'press enter' hint; got:\n%s", rendered)
+	}
+}
+
+func TestHalfWidthLayoutPrioritizesRepoNames(t *testing.T) {
+	t.Parallel()
+	repos := []domain.Repository{
+		{
+			ID:             "R_1",
+			NameWithOwner:  "solidjs/solid-start",
+			StargazerCount: 2900,
+			Language:       "HTML",
+		},
+	}
+	svc := &fakeService{
+		lists: []domain.StarList{{ID: "UL_1", Name: "Webdev", RepoCount: 30}},
+		repos: repos,
+	}
+	m := newTestModel(svc)
+	m.width = 80
+	m.height = 12
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	rendered := m.renderContent()
+	plain := stripANSI(rendered)
+
+	if !strings.Contains(plain, "solidjs/solid-start") {
+		t.Fatalf("half-width layout should keep repo name visible; got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, starGlyph) {
+		t.Fatalf("half-width repo pane should hide stars; got:\n%s", rendered)
+	}
+	if strings.Contains(plain, "HTML") {
+		t.Fatalf("half-width repo pane should hide language; got:\n%s", rendered)
+	}
+	if g := calcPaneGeometry(80); g.leftWidth != 24 || g.repoWidth != 55 {
+		t.Fatalf("width 80 geometry = %+v, want left 24 repo 55", g)
+	}
+}
+
+func TestNarrowLayoutRendersOnlyActivePane(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m.width = 71
+	m.height = 12
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+
+	repoView := stripANSI(m.renderContent())
+	if !strings.Contains(repoView, "Repos (2)") {
+		t.Fatalf("repo-only narrow view missing repo pane; got:\n%s", repoView)
+	}
+	if strings.Contains(repoView, "Lists (") {
+		t.Fatalf("repo-only narrow view should not render list pane; got:\n%s", repoView)
+	}
+	if strings.Contains(repoView, "|") {
+		t.Fatalf("single-pane narrow view should not render separator; got:\n%s", repoView)
+	}
+
+	m.active = paneList
+	listView := stripANSI(m.renderContent())
+	if !strings.Contains(listView, "Lists (4)") {
+		t.Fatalf("list-only narrow view missing list pane; got:\n%s", listView)
+	}
+	if strings.Contains(listView, "Repos (") {
+		t.Fatalf("list-only narrow view should not render repo pane; got:\n%s", listView)
 	}
 }

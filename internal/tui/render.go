@@ -46,6 +46,22 @@ func (m model) renderLayout() string {
 	contentH := m.height - 2
 
 	g := calcPaneGeometry(m.width)
+	if g.singlePane {
+		var body string
+		if m.active == paneList {
+			body = m.renderListPane(m.width, contentH)
+		} else {
+			body = m.renderRepoPane(m.width, contentH)
+		}
+		return m.renderHeader() + "\n" + body + "\n" + renderFooter(
+			m.active,
+			m.listSearchActive,
+			m.repoSearchActive,
+			m.selected,
+			m.statusMsg,
+			m.statusExpiry,
+		)
+	}
 
 	leftPane := m.renderListPane(g.leftWidth, contentH)
 	rightPane := m.renderRepoPane(g.repoWidth, contentH)

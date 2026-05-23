@@ -190,6 +190,33 @@ func (m model) handleMouseClick(msg tea.MouseClickMsg) (model, tea.Cmd) {
 		return m, nil
 	}
 	g := calcPaneGeometry(m.width)
+	if g.singlePane {
+		if m.active == paneList {
+			idx := contentRow + m.listOffset
+			if idx < 0 || idx >= len(m.displayedLists) {
+				return m, nil
+			}
+			if idx != m.listCursor {
+				cmd := (&m).focusList(idx)
+				return m, cmd
+			}
+			if m.focusedList != nil {
+				e := m.preloader.cache[m.focusedList.ID]
+				if e == nil || e.state == repoCacheIdle {
+					cmd := (&m).focusList(idx)
+					return m, cmd
+				}
+			}
+			return m, nil
+		}
+		if m.focusedList != nil && len(m.displayedRepos) > 0 {
+			idx := contentRow + m.repoOffset
+			if idx >= 0 && idx < len(m.displayedRepos) {
+				(&m).setRepoCursor(idx)
+			}
+		}
+		return m, nil
+	}
 	if msg.X < g.sep1Col {
 		// List pane click.
 		m.active = paneList

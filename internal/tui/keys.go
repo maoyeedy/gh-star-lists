@@ -129,7 +129,7 @@ func (k keyMap) helpGroups() []helpGroup {
 // for the given pane and selection state.
 func (k keyMap) footerBindings(active pane, hasSelection bool) []key.Binding {
 	if active == paneRepo {
-		bindings := []key.Binding{k.Search, k.Select}
+		bindings := []key.Binding{k.Left, k.Search, k.Select}
 		if hasSelection {
 			bindings = append(bindings, k.AddRepo, k.RemoveRepo, k.MoveRepo)
 		}

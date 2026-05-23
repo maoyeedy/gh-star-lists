@@ -100,7 +100,7 @@ func TestRepoFieldStyling(t *testing.T) {
 	}
 
 	// In a real terminal (or when styles render), the star glyph should appear
-	// (since width 120 >= 30 threshold for stars).
+	// (since width 120 has enough room for metadata).
 	if !strings.Contains(rendered, "\u2605") {
 		// Not a hard failure if lipgloss strips styling -- skip.
 		t.Logf("star glyph absent (may be a NoTTY environment); rendered:\n%s", rendered)
@@ -265,7 +265,7 @@ func visualRightEdge(s string, byteIdx int, token string) int {
 	return lipgloss.Width(s[:byteIdx]+token) - 1
 }
 
-func TestRepoPaneAlwaysShowsStarsAndLang(t *testing.T) {
+func TestRepoPaneShowsStarsAndLangWhenThereIsRoom(t *testing.T) {
 	t.Parallel()
 	repo := domain.Repository{
 		ID:             "R_1",
@@ -283,7 +283,7 @@ func TestRepoPaneAlwaysShowsStarsAndLang(t *testing.T) {
 	m.active = paneRepo
 	m.focusedList = &m.lists[0]
 
-	rendered := m.renderRepoPane(60, 8)
+	rendered := m.renderRepoPane(100, 8)
 	plain := stripANSI(rendered)
 
 	if !strings.Contains(plain, repo.NameWithOwner) {
@@ -365,9 +365,9 @@ func TestRepoTruncation(t *testing.T) {
 	}
 }
 
-// TestNarrowRepoPaneP4HidesMetadata verifies progressive field hiding at narrow
-// widths using the P4 thresholds.
-func TestNarrowRepoPaneP4HidesMetadata(t *testing.T) {
+// TestNarrowRepoPaneHidesMetadataBeforeClippingNames verifies progressive field
+// hiding preserves repo-name space.
+func TestNarrowRepoPaneHidesMetadataBeforeClippingNames(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
 	m := newTestModel(svc)
@@ -376,19 +376,25 @@ func TestNarrowRepoPaneP4HidesMetadata(t *testing.T) {
 	m.active = paneRepo
 	m.focusedList = &m.lists[0]
 
-	// Very narrow: stars and language hidden (width < 30 hides stars, < 34 hides lang).
-	narrowOut := repoPane(m, 29, 15)
+	narrowOut := repoPane(m, 55, 15)
 	if strings.Contains(narrowOut, "\u2605") {
-		t.Errorf("width 29: star glyph should be absent; got:\n%s", narrowOut)
+		t.Errorf("width 55: star glyph should be absent; got:\n%s", narrowOut)
 	}
 	// Repo name must still appear.
 	if !strings.Contains(stripANSI(narrowOut), "owner/") {
-		t.Errorf("width 29: repo name should still appear; got:\n%s", narrowOut)
+		t.Errorf("width 55: repo name should still appear; got:\n%s", narrowOut)
 	}
 
-	// Medium width (>= 34 shows lang).
-	medOut := repoPane(m, 55, 15)
+	medOut := repoPane(m, 72, 15)
 	if !strings.Contains(medOut, "\u2605") {
-		t.Errorf("width 55: star glyph should appear; got:\n%s", medOut)
+		t.Errorf("width 72: star glyph should appear; got:\n%s", medOut)
+	}
+	if strings.Contains(stripANSI(medOut), "language") {
+		t.Errorf("width 72: language column should be absent; got:\n%s", medOut)
+	}
+
+	wideOut := repoPane(m, 100, 15)
+	if !strings.Contains(stripANSI(wideOut), "language") {
+		t.Errorf("width 100: language column should appear; got:\n%s", wideOut)
 	}
 }

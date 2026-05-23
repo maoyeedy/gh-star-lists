@@ -14,6 +14,48 @@ const (
 	langWidth = 20
 )
 
+const (
+	repoCursorW       = 2
+	repoMarkerW       = 4
+	repoStarWidth     = 6
+	repoMinNameWithUX = 48
+)
+
+type repoFieldLayout struct {
+	showStars  bool
+	showLang   bool
+	showBadges bool
+	nameAvail  int
+}
+
+func calcRepoFieldLayout(w int, hasSel bool) repoFieldLayout {
+	fixedW := repoCursorW
+	if hasSel {
+		fixedW += repoMarkerW
+	}
+
+	showStars := w >= 72 && w-fixedW-repoStarWidth-2 >= repoMinNameWithUX
+	if showStars {
+		fixedW += repoStarWidth + 2
+	}
+
+	showLang := w >= 100 && w-fixedW-langWidth-2 >= repoMinNameWithUX
+	nameAvail := w - fixedW
+	if showLang {
+		nameAvail -= langWidth + 2
+	}
+	if nameAvail < 1 {
+		nameAvail = 1
+	}
+
+	return repoFieldLayout{
+		showStars:  showStars,
+		showLang:   showLang,
+		showBadges: nameAvail >= repoMinNameWithUX,
+		nameAvail:  nameAvail,
+	}
+}
+
 func (m model) renderRepoPane(w, h int) string {
 	if h <= 0 {
 		return ""
@@ -104,26 +146,8 @@ func (m model) renderRepoPane(w, h int) string {
 
 	hasSel := len(m.selected) > 0
 
-	const starWidth = 6 // " " + up to 4 star digits + " " + glyph
-
 	start := m.repoOffset
-
-	const (
-		cursorW  = 2 // "> " or "  "
-		markerW  = 4 // "[x] " or "[ ] " - only when hasSel
-		minNameW = 4
-	)
-
-	baseW := cursorW
-	if hasSel {
-		baseW += markerW
-	}
-	showStars := w >= 30 && baseW+starWidth+2+minNameW <= w
-	if showStars {
-		baseW += starWidth + 2
-	}
-	showLang := w >= 34 && baseW+langWidth+2+minNameW <= w
-	showBadges := w >= 55
+	layout := calcRepoFieldLayout(w, hasSel)
 
 	out = append(out, m.renderRepoColumnHeader(w, hasSel))
 	h--
@@ -172,10 +196,10 @@ func (m model) renderRepoPane(w, h int) string {
 
 		// -- Stars field --
 		var starsStr string
-		if showStars {
+		if layout.showStars {
 			countRaw := formatStars(row.StargazerCount)
-			// Right-align count within (starWidth - 2) then append " " + glyph.
-			countFieldW := starWidth - 2 // space + glyph
+			// Right-align count within (repoStarWidth - 2) then append " " + glyph.
+			countFieldW := repoStarWidth - 2 // space + glyph
 			if countFieldW < 1 {
 				countFieldW = 1
 			}
@@ -185,7 +209,7 @@ func (m model) renderRepoPane(w, h int) string {
 
 		// -- Language field (right-aligned at end) --
 		var langStr string
-		if showLang {
+		if layout.showLang {
 			lang := row.Language
 			if lang == "" {
 				langStr = "  " + stylePaneSubtitle.Render(padLeft("-", langWidth))
@@ -203,25 +227,9 @@ func (m model) renderRepoPane(w, h int) string {
 			}
 		}
 
-		// -- Compute remaining width for name (and optional badges + age) --
-		fixedW := cursorW
-		if hasSel {
-			fixedW += markerW
-		}
-		if showStars {
-			fixedW += starWidth + 2 // field + two spaces separator
-		}
-		nameAvail := w - fixedW
-		if showLang {
-			nameAvail -= langWidth + 2 // "  " + right-aligned field
-		}
-		if nameAvail < 1 {
-			nameAvail = 1
-		}
-
 		// -- Badges --
 		var badgesRaw string
-		if showBadges {
+		if layout.showBadges {
 			if row.IsFork {
 				badgesRaw += " fork"
 			}
@@ -234,9 +242,9 @@ func (m model) renderRepoPane(w, h int) string {
 		nameRaw := row.NameWithOwner
 		// Reserve space for badges if they exist.
 		badgesW := lipgloss.Width(badgesRaw)
-		nameMaxW := nameAvail
-		if badgesW > 0 && nameAvail > badgesW+6 {
-			nameMaxW = nameAvail - badgesW
+		nameMaxW := layout.nameAvail
+		if badgesW > 0 && layout.nameAvail > badgesW+repoMinNameWithUX {
+			nameMaxW = layout.nameAvail - badgesW
 		} else {
 			// Not enough room for badges.
 			badgesRaw = ""
@@ -282,7 +290,7 @@ func (m model) renderRepoPane(w, h int) string {
 		}
 
 		// -- Pad name to fill available width so lang sits at consistent column --
-		nameFilled := padRight(nameStr+badgesStr, nameAvail)
+		nameFilled := padRight(nameStr+badgesStr, layout.nameAvail)
 
 		// -- Assemble row (lang at end, right-aligned) --
 		row := cursorStr + markerStr + starsStr + nameFilled + langStr
@@ -297,53 +305,23 @@ func (m model) renderRepoPane(w, h int) string {
 }
 
 func (m model) renderRepoColumnHeader(w int, hasSel bool) string {
-	const starWidth = 6
-	const (
-		cursorW  = 2
-		markerW  = 4
-		minNameW = 4
-	)
+	layout := calcRepoFieldLayout(w, hasSel)
 
-	baseW := cursorW
+	prefix := strings.Repeat(" ", repoCursorW)
 	if hasSel {
-		baseW += markerW
-	}
-	showStars := w >= 30 && baseW+starWidth+2+minNameW <= w
-	if showStars {
-		baseW += starWidth + 2
-	}
-	showLang := w >= 34 && baseW+langWidth+2+minNameW <= w
-
-	fixedW := cursorW
-	if hasSel {
-		fixedW += markerW
-	}
-	if showStars {
-		fixedW += starWidth + 2
-	}
-	nameAvail := w - fixedW
-	if showLang {
-		nameAvail -= langWidth + 2
-	}
-	if nameAvail < 1 {
-		nameAvail = 1
-	}
-
-	prefix := strings.Repeat(" ", cursorW)
-	if hasSel {
-		prefix += strings.Repeat(" ", markerW)
+		prefix += strings.Repeat(" ", repoMarkerW)
 	}
 
 	starsStr := ""
-	if showStars {
-		starsStr = stylePaneSubtitle.Render(padLeft("stars", starWidth)) + "  "
+	if layout.showStars {
+		starsStr = stylePaneSubtitle.Render(padLeft("stars", repoStarWidth)) + "  "
 	}
 
-	nameStr := stylePaneSubtitle.Render(truncateToWidth("name", nameAvail))
-	nameStr = padRight(nameStr, nameAvail)
+	nameStr := stylePaneSubtitle.Render(truncateToWidth("name", layout.nameAvail))
+	nameStr = padRight(nameStr, layout.nameAvail)
 
 	langStr := ""
-	if showLang {
+	if layout.showLang {
 		langStr = "  " + stylePaneSubtitle.Render(padLeft("language", langWidth))
 	}
 

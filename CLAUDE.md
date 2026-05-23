@@ -35,7 +35,7 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 | `command` | Parse, Run dispatch, exit codes | API calls, rendering, business logic |
 | `githubapi` | GraphQL, pagination, caching, retry, mutations, error normalization | CLI args, formatting, business logic |
 | `format` | JSON/TSV/human/template serialization, row constructors | API calls, CLI state |
-| `tui` | Bubbletea two-pane browser, keys, sort, rendering | API calls, CLI args, format |
+| `tui` | Bubbletea responsive list/repo browser, keys, sort, rendering | API calls, CLI args, format |
 | `humanize` | `ShortAge`, `FormatStars` | API calls, styling |
 
 ## Split-File Discipline
@@ -81,6 +81,7 @@ Before adding to a monolithic file, check existing split files. If none covers t
 - Starred timestamps: Star List `items` repos lack viewer star time. Use `githubapi.WithStarredAt`/`MergeStarredAt` from `ListStarredRepositories` when rendering `Starred:` or sorting by `SortKeyStarred`.
 - Topics: `Repository.Topics` is `[]string` (`json:"-"`). `topicsNeeded()` guards fetch. TUI fetches only for preview/topic-dependent paths.
 - TUI: `Model.View()` returns `tea.View` (`v.AltScreen = true`). `tea.WithColorProfile(colorprofile.NoTTY)` disables color. `lipgloss.Width(s)` not `len(s)`.
+- TUI layout: `calcPaneGeometry` owns pane widths and the narrow single-pane breakpoint. Keep repo rows name-first; hide stars/language before clipping names.
 - TUI virtual lists: only `Unlisted` is virtual. Mark with `StarList.IsVirtual`, guard list mutations through `canMutate(list)`, and load repos through the existing repo-cache path using the `--unlisted` app semantic. Do not add `All Starred`.
 - Search buffer: hoist `tokenCache` map + `editPrev`/`editCurr` `[]int` outside repo loop; reuse via `growIntSlice`.
 - Bulk ops: `errgroup.SetLimit(5)` + `atomic.Int64`. Check `ctx.Err()` at pagination/batch tops.

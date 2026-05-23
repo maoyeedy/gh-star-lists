@@ -21,7 +21,6 @@
 | `make lint` | `golangci-lint run --fix` |
 | `make build` | `go build -o ./gh-star-lists .` |
 | `make check` | test + vet + build |
-| `make ascii-check` | non-ASCII scanner |
 | `make smoke` | `bash scripts/smoke-local.sh` |
 
 After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make check`.
@@ -42,14 +41,6 @@ After Go edits: `go tool goimports -w <file>`. Final gate: `make lint && make ch
 ## Split-File Discipline
 
 Before adding to a monolithic file, check existing split files. If none covers the theme and the addition would exceed ~100 lines, create `<pkg>_<theme>.go`.
-
-- `domain`: `domain.go` `page_info.go` `errors.go` `rows.go`
-- `app`: `service.go` `options.go` `filter.go` `sort.go`
-- `command`: `run.go` `run_action.go` `run_filter.go` `run_sort.go` `run_output.go` `run_prompt.go` `run_tui.go` `parse.go` `types.go` `validate.go` `help.go` `search.go`
-- `githubapi`: `client.go` `graphql_queries.go` `graphql_types.go` `graphql_service.go` `graphql_helpers.go` `pagination.go` `errors.go` `retry_service.go` `retry.go` `cache.go` `membership_index.go` `starred_at.go`
-- `format`: `rows.go` `options.go` `mode.go` `human.go` `repositories.go` `star_lists.go`
-- `search`: `search.go` `tokenize.go` `edit.go` `scoring.go`
-- `tui`: `model.go` `update.go` `update_lists.go` `update_repos.go` `update_mutation.go` `update_refresh.go` `render.go` `render_repo.go` `render_list.go` `render_preview.go` `render_header.go` `render_footer.go` `render_help.go` `navigate.go` `selection.go` `preview.go` `keys.go` `input.go` `search.go` `sort.go` `cache.go` `modal.go` `modal_list.go` `modal_repo.go` `modal_bulk.go` `modal_help.go` `modal_update.go` `modal_view.go` `styles.go` `geometry.go` `viewport.go` `app.go` `messages.go`
 
 ## Code Review Checklist
 
@@ -72,7 +63,6 @@ Before adding to a monolithic file, check existing split files. If none covers t
 - [ ] Shared logic extracted to `githubapi`/`humanize`/neutral package before duplicating across `tui`/`command`?
 - [ ] Right split file? (filters -> `app/filter.go`, sort -> `app/sort.go`, domain types -> `domain/domain.go`, view models -> `domain/rows.go`)
 - [ ] Build passes? `make lint && make check`
-- [ ] Non-ASCII? `make ascii-check`
 
 ## Common Pitfalls
 

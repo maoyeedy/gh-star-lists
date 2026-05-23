@@ -150,7 +150,7 @@ func TestViewportListPanePgDn(t *testing.T) {
 	m2 := update(m, specialKey(tea.KeyPgDown))
 
 	paneH := m.height - 2
-	want := clampInt(paneH-1, 0, n-1)
+	want := clampInt(1+paneH-1, 0, n)
 	if m2.listCursor != want {
 		t.Errorf("listCursor = %d after PgDn, want %d", m2.listCursor, want)
 	}

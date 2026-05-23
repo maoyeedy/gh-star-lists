@@ -2,12 +2,59 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
+
+func (mo *modal) ensurePickFilter() {
+	if mo.confirmInput.Placeholder != "" {
+		return
+	}
+	filter := textinput.New()
+	filter.Placeholder = "Filter lists"
+	filter.CharLimit = 100
+	filter.SetWidth(32)
+	mo.confirmInput = filter
+}
+
+func (mo *modal) filteredChoices() []domain.StarList {
+	filter := strings.TrimSpace(strings.ToLower(mo.confirmInput.Value()))
+	if filter == "" {
+		return mo.choices
+	}
+	choices := make([]domain.StarList, 0, len(mo.choices))
+	for _, choice := range mo.choices {
+		if strings.Contains(strings.ToLower(choice.Name), filter) {
+			choices = append(choices, choice)
+		}
+	}
+	return choices
+}
+
+func (mo *modal) clampChoiceCursor(choiceCount int) {
+	if choiceCount <= 0 {
+		mo.choiceCursor = 0
+		return
+	}
+	if mo.choiceCursor >= choiceCount {
+		mo.choiceCursor = choiceCount - 1
+	}
+	if mo.choiceCursor < 0 {
+		mo.choiceCursor = 0
+	}
+}
+
+func repoCountLabel(count int) string {
+	if count == 1 {
+		return "1 repo"
+	}
+	return fmt.Sprintf("%d repos", count)
+}
 
 func newCreateListModal(ctx context.Context, svc githubapi.Service) (*modal, tea.Cmd) {
 	name := textinput.New()
@@ -98,8 +145,13 @@ func newDeleteListModal(
 	focusCmd := ci.Focus()
 
 	mo := &modal{
-		kind:            modalDeleteList,
-		title:           "Delete List",
+		kind:  modalDeleteList,
+		title: "Delete List",
+		body: fmt.Sprintf(
+			"Delete %q - %s will be removed from this list.",
+			list.Name,
+			repoCountLabel(list.RepoCount),
+		),
 		confirmInput:    ci,
 		confirmExpected: list.Name,
 		ctx:             ctx,
@@ -124,11 +176,14 @@ func newCopyListModal(
 		}
 	}
 	mo := &modal{
-		kind:    modalPickList,
-		title:   "Copy List: pick destination",
-		choices: filtered,
-		ctx:     ctx,
-		svc:     svc,
+		kind:            modalPickList,
+		title:           "Copy List: pick destination",
+		body:            "copy",
+		choices:         filtered,
+		confirmExpected: fromList.Name,
+		privateState:    fromList.RepoCount,
+		ctx:             ctx,
+		svc:             svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
 		if len(m.choices) == 0 {
@@ -153,11 +208,14 @@ func newMergeListModal(
 		}
 	}
 	mo := &modal{
-		kind:    modalPickList,
-		title:   "Merge Into (source deleted)",
-		choices: filtered,
-		ctx:     ctx,
-		svc:     svc,
+		kind:            modalPickList,
+		title:           "Merge Into (source deleted)",
+		body:            "merge",
+		choices:         filtered,
+		confirmExpected: fromList.Name,
+		privateState:    fromList.RepoCount,
+		ctx:             ctx,
+		svc:             svc,
 	}
 	mo.onConfirm = func(m *modal) tea.Cmd {
 		if len(m.choices) == 0 {

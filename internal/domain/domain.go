@@ -18,6 +18,7 @@ type StarList struct {
 	ID              string `json:"id"`
 	RepoCount       int    `json:"repoCount"`
 	URL             string `json:"url"`
+	IsVirtual       bool   `json:"-"`
 	NormName        string `json:"-"`
 	NormDescription string `json:"-"`
 }

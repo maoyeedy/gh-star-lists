@@ -15,8 +15,17 @@ const (
 )
 
 func (m model) renderRepoPane(w, h int) string {
+	if h <= 0 {
+		return ""
+	}
 	totalH := h
 	out := make([]string, 0, totalH)
+
+	out = append(out, paneTitle("Repos", len(m.displayedRepos), w))
+	h--
+	if h <= 0 {
+		return strings.Join(out, "\n")
+	}
 
 	// Search bar (active search in repo pane).
 	if m.repoSearchActive && m.active == paneRepo {
@@ -73,6 +82,11 @@ func (m model) renderRepoPane(w, h int) string {
 
 	// Empty state.
 	if len(m.displayedRepos) == 0 {
+		out = append(out, m.renderRepoColumnHeader(w, false))
+		h--
+		if h <= 0 {
+			return strings.Join(out, "\n")
+		}
 		label := "(no repos)"
 		if m.repoSearchQuery != "" {
 			q := m.repoSearchQuery
@@ -93,7 +107,6 @@ func (m model) renderRepoPane(w, h int) string {
 	const starWidth = 6 // " " + up to 4 star digits + " " + glyph
 
 	start := m.repoOffset
-	end := min(start+h, len(m.displayedRepos))
 
 	const (
 		cursorW  = 2 // "> " or "  "
@@ -111,6 +124,19 @@ func (m model) renderRepoPane(w, h int) string {
 	}
 	showLang := w >= 34 && baseW+langWidth+2+minNameW <= w
 	showBadges := w >= 55
+
+	out = append(out, m.renderRepoColumnHeader(w, hasSel))
+	h--
+	if h <= 0 {
+		return strings.Join(out, "\n")
+	}
+	if m.repoCursor < start {
+		start = m.repoCursor
+	} else if m.repoCursor >= start+h {
+		start = m.repoCursor - h + 1
+	}
+	start = clampInt(start, 0, max(0, len(m.displayedRepos)-h))
+	end := min(start+h, len(m.displayedRepos))
 
 	// Convert visible repos to RepoRow for rendering with pre-computed fields.
 	repoRows := make([]domain.RepoRow, end-start)
@@ -268,6 +294,60 @@ func (m model) renderRepoPane(w, h int) string {
 		out = append(out, "")
 	}
 	return strings.Join(out, "\n")
+}
+
+func (m model) renderRepoColumnHeader(w int, hasSel bool) string {
+	const starWidth = 6
+	const (
+		cursorW  = 2
+		markerW  = 4
+		minNameW = 4
+	)
+
+	baseW := cursorW
+	if hasSel {
+		baseW += markerW
+	}
+	showStars := w >= 30 && baseW+starWidth+2+minNameW <= w
+	if showStars {
+		baseW += starWidth + 2
+	}
+	showLang := w >= 34 && baseW+langWidth+2+minNameW <= w
+
+	fixedW := cursorW
+	if hasSel {
+		fixedW += markerW
+	}
+	if showStars {
+		fixedW += starWidth + 2
+	}
+	nameAvail := w - fixedW
+	if showLang {
+		nameAvail -= langWidth + 2
+	}
+	if nameAvail < 1 {
+		nameAvail = 1
+	}
+
+	prefix := strings.Repeat(" ", cursorW)
+	if hasSel {
+		prefix += strings.Repeat(" ", markerW)
+	}
+
+	starsStr := ""
+	if showStars {
+		starsStr = stylePaneSubtitle.Render(padLeft("stars", starWidth)) + "  "
+	}
+
+	nameStr := stylePaneSubtitle.Render(truncateToWidth("name", nameAvail))
+	nameStr = padRight(nameStr, nameAvail)
+
+	langStr := ""
+	if showLang {
+		langStr = "  " + stylePaneSubtitle.Render(padLeft("language", langWidth))
+	}
+
+	return padRight(prefix+starsStr+nameStr+langStr, w)
 }
 
 // repoToRow converts a domain.Repository to a domain.RepoRow for rendering.

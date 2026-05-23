@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/maoyeedy/gh-star-lists/internal/domain"
 )
 
@@ -79,5 +80,37 @@ func TestSearchCountIndicator(t *testing.T) {
 			"narrow renderListPane should NOT contain '2/5' search count; got:\n%s",
 			narrowRendered,
 		)
+	}
+}
+
+func TestPaneTitlesShowCounts(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.focusedList = &m.lists[0]
+	m.active = paneRepo
+
+	listRendered := stripANSI(m.renderListPane(20, 5))
+	if !strings.Contains(strings.Split(listRendered, "\n")[0], "Lists (4)") {
+		t.Fatalf("list pane title missing count; got:\n%s", listRendered)
+	}
+
+	repoRendered := stripANSI(m.renderRepoPane(20, 5))
+	if !strings.Contains(strings.Split(repoRendered, "\n")[0], "Repos (2)") {
+		t.Fatalf("repo pane title missing count; got:\n%s", repoRendered)
+	}
+
+	for _, width := range []int{6, 12, 20} {
+		for name, rendered := range map[string]string{
+			"list": m.renderListPane(width, 3),
+			"repo": m.renderRepoPane(width, 3),
+		} {
+			firstLine := strings.Split(rendered, "\n")[0]
+			if got := lipgloss.Width(firstLine); got > width {
+				t.Fatalf("%s title width = %d, want <= %d; line %q", name, got, width, firstLine)
+			}
+		}
 	}
 }

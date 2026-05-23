@@ -169,6 +169,86 @@ func TestEditListNoOpInRepoPane(t *testing.T) {
 	}
 }
 
+func TestPickerFilterNarrowing(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, keyPress('a'))
+
+	m = update(m, keyPress('/'))
+	for _, ch := range "alp" {
+		m = update(m, keyPress(ch))
+	}
+
+	choices := m.modal.filteredChoices()
+	if len(choices) != 1 || choices[0].Name != "Alpha" {
+		t.Fatalf("filtered choices = %+v, want only Alpha", choices)
+	}
+	view := m.modal.view()
+	if !strings.Contains(view, "Alpha") {
+		t.Errorf("view = %q, want Alpha", view)
+	}
+	if strings.Contains(view, "beta") || strings.Contains(view, "zeta") {
+		t.Errorf("view = %q, should not include unfiltered choices", view)
+	}
+}
+
+func TestPickerFilterEmptyResults(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, keyPress('a'))
+
+	m = update(m, keyPress('/'))
+	for _, ch := range "nomatch" {
+		m = update(m, keyPress(ch))
+	}
+
+	if got := len(m.modal.filteredChoices()); got != 0 {
+		t.Fatalf("filtered choice count = %d, want 0", got)
+	}
+	if !strings.Contains(m.modal.view(), "(no matching lists)") {
+		t.Errorf("view = %q, want empty-filter message", m.modal.view())
+	}
+	m = update(m, specialKey(tea.KeyEnter))
+	if m.modal == nil {
+		t.Error("enter on empty filtered picker should keep modal open")
+	}
+}
+
+func TestPickerFilterClampsCursor(t *testing.T) {
+	t.Parallel()
+	svc := threeListsSvc()
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
+	m = update(m, keyPress('a'))
+	m.modal.choiceCursor = 2
+
+	m = update(m, keyPress('/'))
+	for _, ch := range "alp" {
+		m = update(m, keyPress(ch))
+	}
+
+	if m.modal.choiceCursor != 0 {
+		t.Errorf("choiceCursor = %d, want 0 after filter clamp", m.modal.choiceCursor)
+	}
+	m = update(m, keyPress('j'))
+	if m.modal.choiceCursor != 0 {
+		t.Errorf("choiceCursor after j = %d, want 0 for one filtered choice", m.modal.choiceCursor)
+	}
+}
+
 // TestMutationListErrorDisplayed verifies that mutationDoneMsg with an error keeps the modal
 // open and stores the error in modal.submitErr (P3 behavior).
 func TestMutationListErrorDisplayed(t *testing.T) {

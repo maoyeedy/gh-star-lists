@@ -66,11 +66,11 @@ func TestSearchEscClearsFilter(t *testing.T) {
 	if m2.listSearchQuery != "" {
 		t.Errorf("listSearchQuery = %q, want empty after Esc", m2.listSearchQuery)
 	}
-	if len(m2.displayedLists) != len(svc.lists) {
+	if len(m2.displayedLists) != len(svc.lists)+1 {
 		t.Errorf(
 			"displayedLists len = %d after Esc, want %d (all)",
 			len(m2.displayedLists),
-			len(svc.lists),
+			len(svc.lists)+1,
 		)
 	}
 }

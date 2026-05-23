@@ -81,6 +81,7 @@ Before adding to a monolithic file, check existing split files. If none covers t
 - Starred timestamps: Star List `items` repos lack viewer star time. Use `githubapi.WithStarredAt`/`MergeStarredAt` from `ListStarredRepositories` when rendering `Starred:` or sorting by `SortKeyStarred`.
 - Topics: `Repository.Topics` is `[]string` (`json:"-"`). `topicsNeeded()` guards fetch. TUI fetches only for preview/topic-dependent paths.
 - TUI: `Model.View()` returns `tea.View` (`v.AltScreen = true`). `tea.WithColorProfile(colorprofile.NoTTY)` disables color. `lipgloss.Width(s)` not `len(s)`.
+- TUI virtual lists: only `Unlisted` is virtual. Mark with `StarList.IsVirtual`, guard list mutations through `canMutate(list)`, and load repos through the existing repo-cache path using the `--unlisted` app semantic. Do not add `All Starred`.
 - Search buffer: hoist `tokenCache` map + `editPrev`/`editCurr` `[]int` outside repo loop; reuse via `growIntSlice`.
 - Bulk ops: `errgroup.SetLimit(5)` + `atomic.Int64`. Check `ctx.Err()` at pagination/batch tops.
 - Concurrency in tests: protect recorded call slices with `sync.Mutex` when fake service is called from `errgroup` goroutines.

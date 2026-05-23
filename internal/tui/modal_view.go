@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/humanize"
 )
 
@@ -42,6 +43,9 @@ func (mo *modal) view() string {
 		case modalRepoDetail:
 			body = mo.viewRepoDetail()
 			hint = stylePaneSubtitle.Render("enter/o: open in browser  esc/q/p: close")
+		case modalListDetail:
+			body = mo.viewListDetail()
+			hint = stylePaneSubtitle.Render("esc/q/p: close")
 		default:
 			body = mo.body
 			if body == "" {
@@ -96,12 +100,28 @@ func (mo *modal) viewForm() string {
 }
 
 func (mo *modal) viewConfirmText(prompt string) string {
-	return stylePaneSubtitle.Render(prompt) + "\n> " + mo.confirmInput.View()
+	if mo.body == "" {
+		return stylePaneSubtitle.Render(prompt) + "\n> " + mo.confirmInput.View()
+	}
+	return mo.body + "\n\n" + stylePaneSubtitle.Render(prompt) + "\n> " + mo.confirmInput.View()
 }
 
 func (mo *modal) viewPickList() string {
+	mo.ensurePickFilter()
+	choices := mo.filteredChoices()
+	mo.clampChoiceCursor(len(choices))
+
+	lines := []string{stylePaneSubtitle.Render("Filter:") + " " + mo.confirmInput.View()}
+	if consequence := mo.pickListConsequence(choices); consequence != "" {
+		lines = append(lines, consequence)
+	}
+	lines = append(lines, "")
+
 	if len(mo.choices) == 0 {
-		return "(no lists available)"
+		return strings.Join(append(lines, "(no lists available)"), "\n")
+	}
+	if len(choices) == 0 {
+		return strings.Join(append(lines, "(no matching lists)"), "\n")
 	}
 	const maxVisible = 8
 	const prefixW = 2           // "> " or "  "
@@ -111,13 +131,12 @@ func (mo *modal) viewPickList() string {
 		start = mo.choiceCursor - maxVisible + 1
 	}
 	end := start + maxVisible
-	if end > len(mo.choices) {
-		end = len(mo.choices)
+	if end > len(choices) {
+		end = len(choices)
 	}
-	var lines []string
 	for i := start; i < end; i++ {
 		prefix := "  "
-		name := mo.choices[i].Name
+		name := choices[i].Name
 		if nameW > 0 {
 			name = truncateToWidth(name, nameW)
 		}
@@ -129,6 +148,31 @@ func (mo *modal) viewPickList() string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (mo *modal) pickListConsequence(choices []domain.StarList) string {
+	if len(choices) == 0 || mo.confirmExpected == "" {
+		return ""
+	}
+	target := choices[mo.choiceCursor]
+	switch mo.body {
+	case "copy":
+		return fmt.Sprintf(
+			"Copy into %q - %q stays, %s copied.",
+			target.Name,
+			mo.confirmExpected,
+			repoCountLabel(mo.privateState),
+		)
+	case "merge":
+		return fmt.Sprintf(
+			"Merge into %q - %q will be deleted, %s moved.",
+			target.Name,
+			mo.confirmExpected,
+			repoCountLabel(mo.privateState),
+		)
+	default:
+		return ""
+	}
 }
 
 func (mo *modal) viewHelp() string {
@@ -219,6 +263,52 @@ func (mo *modal) viewRepoDetail() string {
 		starredVal = humanize.ShortAge(r.StarredAt, now)
 	}
 	lines = append(lines, stylePaneSubtitle.Render("Starred:")+" "+starredVal)
+
+	return strings.Join(lines, "\n")
+}
+
+func (mo *modal) viewListDetail() string {
+	l := mo.list
+	now := time.Now().UTC()
+	var lines []string
+
+	name := l.Name
+	url := l.URL
+	desc := l.Description
+	if mo.width > 0 {
+		name = truncateToWidth(name, mo.width)
+		url = truncateToWidth(url, mo.width)
+		if desc != "" {
+			desc = truncateToWidth(desc, mo.width)
+		}
+	}
+
+	badge := "public"
+	if l.IsPrivate {
+		badge = "private"
+	}
+	lines = append(lines, stylePaneTitle.Render(name)+"  "+styleRepoBadge.Render(badge))
+	lines = append(lines, styleRepoURL.Render(url))
+	lines = append(lines, "")
+
+	lines = append(lines, stylePaneSubtitle.Render("Repos:")+" "+fmt.Sprintf("%d", l.RepoCount))
+	lines = append(lines, "")
+
+	lines = append(lines, stylePaneSubtitle.Render("Description"))
+	if desc != "" {
+		lines = append(lines, styleRepoName.Render(desc))
+	} else {
+		lines = append(lines, styleEmptyState.Render("(no description)"))
+	}
+	lines = append(lines, "")
+
+	lastAddedVal := l.LastAddedAt
+	if lastAddedVal == "" {
+		lastAddedVal = styleEmptyState.Render("-")
+	} else {
+		lastAddedVal = humanize.ShortAge(l.LastAddedAt, now)
+	}
+	lines = append(lines, stylePaneSubtitle.Render("Last added:")+" "+lastAddedVal)
 
 	return strings.Join(lines, "\n")
 }

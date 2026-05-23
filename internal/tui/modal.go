@@ -21,6 +21,7 @@ const (
 	modalConfirmYesNo
 	modalHelp
 	modalRepoDetail
+	modalListDetail
 )
 
 type modal struct {
@@ -64,6 +65,7 @@ type modal struct {
 
 	// repo detail modal
 	repo domain.Repository
+	list domain.StarList
 
 	// context for cancel-without-side-effect
 	ctx context.Context

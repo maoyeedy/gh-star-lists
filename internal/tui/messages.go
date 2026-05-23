@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/maoyeedy/gh-star-lists/internal/app"
 	"github.com/maoyeedy/gh-star-lists/internal/domain"
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 	"golang.org/x/sync/errgroup"
@@ -51,7 +52,19 @@ func loadReposCmd(
 		if ctx.Err() != nil {
 			return nil
 		}
-		repos, err := svc.ListRepositories(ctx, listID)
+		var (
+			repos []domain.Repository
+			err   error
+		)
+		if listID == virtualUnlistedListID {
+			repos, err = app.NewStarListService(svc).ListRepos(
+				ctx,
+				"",
+				app.ListReposOptions{Unlisted: true},
+			)
+		} else {
+			repos, err = svc.ListRepositories(ctx, listID)
+		}
 		if ctx.Err() != nil {
 			return nil
 		}

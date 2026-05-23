@@ -25,6 +25,8 @@ func (mo *modal) update(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 		return mo.updateHelp(msg)
 	case modalRepoDetail:
 		return mo.updateRepoDetail(msg)
+	case modalListDetail:
+		return mo.updateListDetail(msg)
 	default:
 		if msg.String() == "esc" {
 			return nil, nil
@@ -113,25 +115,48 @@ func (mo *modal) updateConfirmText(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 }
 
 func (mo *modal) updatePickList(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
+	mo.ensurePickFilter()
 	switch msg.String() {
 	case "esc":
+		if mo.focusedIdx == 1 {
+			mo.focusedIdx = 0
+			mo.confirmInput.Blur()
+			return mo, nil
+		}
 		return nil, nil
+	case "/":
+		if mo.focusedIdx == 1 {
+			mo.focusedIdx = 0
+			mo.confirmInput.Blur()
+			return mo, nil
+		}
+		mo.focusedIdx = 1
+		return mo, mo.confirmInput.Focus()
 	case "up", "k":
 		if mo.choiceCursor > 0 {
 			mo.choiceCursor--
 		}
 		return mo, nil
 	case "down", "j":
-		if mo.choiceCursor < len(mo.choices)-1 {
+		if mo.choiceCursor < len(mo.filteredChoices())-1 {
 			mo.choiceCursor++
 		}
 		return mo, nil
 	case "enter":
-		if len(mo.choices) == 0 {
-			return nil, nil
+		choices := mo.filteredChoices()
+		mo.clampChoiceCursor(len(choices))
+		if len(choices) == 0 {
+			return mo, nil
 		}
+		mo.choices = choices
 		cmd := mo.onConfirm(mo)
 		return nil, cmd
+	}
+	if mo.focusedIdx == 1 {
+		var cmd tea.Cmd
+		mo.confirmInput, cmd = mo.confirmInput.Update(msg)
+		mo.clampChoiceCursor(len(mo.filteredChoices()))
+		return mo, cmd
 	}
 	return mo, nil
 }
@@ -168,6 +193,14 @@ func (mo *modal) updateRepoDetail(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
 	case "enter", "o":
 		cmd := mo.onConfirm(mo)
 		return mo, cmd
+	}
+	return mo, nil
+}
+
+func (mo *modal) updateListDetail(msg tea.KeyPressMsg) (*modal, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q", "p":
+		return nil, nil
 	}
 	return mo, nil
 }

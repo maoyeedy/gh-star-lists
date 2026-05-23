@@ -14,8 +14,8 @@ func TestNavigateCursorDown(t *testing.T) {
 
 	m2 := update(m, specialKey(tea.KeyDown))
 
-	if m2.listCursor != 1 {
-		t.Errorf("listCursor = %d, want 1", m2.listCursor)
+	if m2.listCursor != 2 {
+		t.Errorf("listCursor = %d, want 2", m2.listCursor)
 	}
 }
 
@@ -25,12 +25,12 @@ func TestCursorClampedAtBottom(t *testing.T) {
 	svc := threeListsSvc()
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
-	m.listCursor = 2 // already at last item
+	m.listCursor = 3 // already at last item
 
 	m2 := update(m, specialKey(tea.KeyDown))
 
-	if m2.listCursor != 2 {
-		t.Errorf("listCursor = %d, want 2 (clamped)", m2.listCursor)
+	if m2.listCursor != 3 {
+		t.Errorf("listCursor = %d, want 3 (clamped)", m2.listCursor)
 	}
 }
 
@@ -57,12 +57,12 @@ func TestVimKeys(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 
 	m2 := update(m, keyPress('j'))
-	if m2.listCursor != 1 {
-		t.Errorf("j: listCursor = %d, want 1", m2.listCursor)
+	if m2.listCursor != 2 {
+		t.Errorf("j: listCursor = %d, want 2", m2.listCursor)
 	}
 	m3 := update(m2, keyPress('k'))
-	if m3.listCursor != 0 {
-		t.Errorf("k: listCursor = %d, want 0", m3.listCursor)
+	if m3.listCursor != 1 {
+		t.Errorf("k: listCursor = %d, want 1", m3.listCursor)
 	}
 }
 

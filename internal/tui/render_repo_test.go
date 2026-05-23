@@ -138,6 +138,9 @@ func TestRepoColumnAlignment(t *testing.T) {
 		if plain == "" {
 			continue // padding rows
 		}
+		if !strings.Contains(plain, "/") {
+			continue // pane title or column header
+		}
 		if repoIdx >= len(repos) {
 			break
 		}
@@ -187,6 +190,79 @@ func TestRepoColumnAlignment(t *testing.T) {
 	if !langSet {
 		t.Error("no content lines were checked for language alignment")
 	}
+}
+
+func TestRepoHeaderAligns(t *testing.T) {
+	t.Parallel()
+	repos := []domain.Repository{
+		{ID: "R_1", NameWithOwner: "a/short", StargazerCount: 1, Language: "Go"},
+		{ID: "R_2", NameWithOwner: "b/medium", StargazerCount: 100, Language: "TypeScript"},
+	}
+	svc := &fakeService{
+		lists: []domain.StarList{{ID: "UL_1", Name: "test", RepoCount: 2}},
+		repos: repos,
+	}
+	m := newTestModel(svc)
+	m = update(m, listsLoadedMsg{lists: svc.lists})
+	m = update(m, reposLoadedMsg{repos: repos, listID: "UL_1"})
+	m.active = paneRepo
+
+	for _, width := range []int{40, 120} {
+		rendered := repoPane(m, width, 8)
+		lines := strings.Split(stripANSI(rendered), "\n")
+		if len(lines) < 3 {
+			t.Fatalf("width %d: expected title, header, and repo row; got:\n%s", width, rendered)
+		}
+		header := lines[1]
+		row := lines[2]
+
+		if !strings.Contains(header, "name") {
+			t.Fatalf("width %d: header missing name column: %q", width, header)
+		}
+
+		starsCol := strings.Index(header, "stars")
+		if starsCol >= 0 {
+			headerStarRight := visualRightEdge(header, starsCol, "stars")
+			rowStarRight := visualRightEdge(row, strings.Index(row, starGlyph), starGlyph)
+			if rowStarRight != headerStarRight {
+				t.Fatalf(
+					"width %d: stars header right edge at %d, row star at %d; header %q row %q",
+					width,
+					headerStarRight,
+					rowStarRight,
+					header,
+					row,
+				)
+			}
+		}
+
+		langCol := strings.Index(header, "language")
+		if langCol >= 0 {
+			headerLangRight := visualRightEdge(header, langCol, "language")
+			rowLangRight := visualRightEdge(
+				row,
+				strings.LastIndex(row, repos[0].Language),
+				repos[0].Language,
+			)
+			if rowLangRight != headerLangRight {
+				t.Fatalf(
+					"width %d: language header right edge at %d, row lang right edge at %d; header %q row %q",
+					width,
+					headerLangRight,
+					rowLangRight,
+					header,
+					row,
+				)
+			}
+		}
+	}
+}
+
+func visualRightEdge(s string, byteIdx int, token string) int {
+	if byteIdx < 0 {
+		return -1
+	}
+	return lipgloss.Width(s[:byteIdx]+token) - 1
 }
 
 func TestRepoPaneAlwaysShowsStarsAndLang(t *testing.T) {

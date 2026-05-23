@@ -10,8 +10,17 @@ import (
 )
 
 func (m model) renderListPane(w, h int) string {
+	if h <= 0 {
+		return ""
+	}
 	totalH := h
 	out := make([]string, 0, totalH)
+
+	out = append(out, paneTitle("Lists", len(m.displayedLists), w))
+	h--
+	if h <= 0 {
+		return strings.Join(out, "\n")
+	}
 
 	if m.listSearchActive && m.active == paneList {
 		// Build search bar with optional N/total count on the right.
@@ -91,6 +100,12 @@ func (m model) renderListPane(w, h int) string {
 
 	const cursorWidth = 2 // "> " or "  "
 	start := m.listOffset
+	if m.listCursor < start {
+		start = m.listCursor
+	} else if m.listCursor >= start+h {
+		start = m.listCursor - h + 1
+	}
+	start = clampInt(start, 0, max(0, len(m.displayedLists)-h))
 	end := min(start+h, len(m.displayedLists))
 
 	// Convert to ListRow for rendering with pre-computed fields.
@@ -147,6 +162,11 @@ func (m model) renderListPane(w, h int) string {
 		out = append(out, "")
 	}
 	return strings.Join(out, "\n")
+}
+
+func paneTitle(label string, count, w int) string {
+	title := fmt.Sprintf("%s (%d)", label, count)
+	return padRight(stylePaneTitle.Render(truncateToWidth(title, w)), w)
 }
 
 // listToRow converts a domain.StarList to a domain.ListRow for rendering.

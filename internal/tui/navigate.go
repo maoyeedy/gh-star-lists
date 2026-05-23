@@ -97,8 +97,7 @@ func (m model) activateRepoPane() (model, tea.Cmd) {
 		return m, nil
 	}
 	var cmd tea.Cmd
-	key := repoCacheKey{m.displayedLists[m.listCursor].ID, m.showPreview}
-	e := m.preloader.cache[key]
+	e := m.preloader.cache[m.displayedLists[m.listCursor].ID]
 	if e == nil || e.state == repoCacheIdle {
 		// Not cached / idle: focusList triggers load. Its idle/default branch
 		// does NOT touch repoCursor/repoOffset.

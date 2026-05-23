@@ -42,27 +42,3 @@ func clampInt(v, lo, hi int) int {
 	}
 	return v
 }
-
-func slidePreviewOffset(current, delta, contentH, viewH int) int {
-	next := current + delta
-	maxOffset := contentH - viewH
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if next < 0 {
-		next = 0
-	}
-	if next > maxOffset {
-		next = maxOffset
-	}
-	return next
-}
-
-// countPreviewLines returns the number of content lines the preview pane would produce
-// for the given repo (before scroll offset is applied).
-func countPreviewLines(m model, w, _ int) int {
-	if m.active != paneRepo || len(m.displayedRepos) == 0 {
-		return 1
-	}
-	return len(m.previewContentLines(w))
-}

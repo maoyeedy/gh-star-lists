@@ -1577,45 +1577,6 @@ func TestRunAllStarredRepos(t *testing.T) {
 	}
 }
 
-func TestRunJQ(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		argv    []string
-		wantOut string
-	}{
-		{
-			name:    "list name field",
-			argv:    []string{"list", "--jq", ".[].name"},
-			wantOut: "Go Tools\n",
-		},
-		{
-			name:    "repos nameWithOwner field",
-			argv:    []string{"repos", "UL_1", "--jq", ".[].nameWithOwner"},
-			wantOut: "cli/cli\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			svc := fixtureService()
-			var stdout, stderr strings.Builder
-
-			code := runCommand(context.Background(), tt.argv, &stdout, &stderr, svc)
-
-			if code != command.ExitSuccess {
-				t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
-			}
-			if got := stdout.String(); got != tt.wantOut {
-				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
-			}
-		})
-	}
-}
-
 func TestRunOutputFileError(t *testing.T) {
 	t.Parallel()
 
@@ -1795,18 +1756,6 @@ func TestRunDryRun(t *testing.T) {
 			},
 		},
 		{
-			name:     "merge",
-			mkSvc:    sortableFixtureService,
-			argv:     []string{"merge", "--from", "zeta", "--to", "Alpha", "--dry-run"},
-			wantOut:  `Would merge 3 repositories from "zeta" to "Alpha".`,
-			wantOut2: `Would delete source Star List "zeta".`,
-			checkFn: func(t *testing.T, svc *fakeService) {
-				if svc.deleteCalls != 0 {
-					t.Fatalf("deleteCalls = %d, want 0", svc.deleteCalls)
-				}
-			},
-		},
-		{
 			name:    "unstar",
 			mkSvc:   fixtureService,
 			argv:    []string{"unstar", "cli/cli", "--dry-run"},
@@ -1963,11 +1912,6 @@ func TestRunNestedHelp(t *testing.T) {
 			wantText: "--from <LIST_ID_OR_NAME>",
 		},
 		{
-			name:     "full flag shows full reference",
-			argv:     []string{"--full"},
-			wantText: "--cache-ttl",
-		},
-		{
 			name:     "alias ls help shows list section",
 			argv:     []string{"ls", "--help"},
 			wantText: "gh star-lists list",
@@ -2040,11 +1984,6 @@ func TestRunNonTTYMissingListSelectorFailsWithUsageError(t *testing.T) {
 			name:    "copy without flags",
 			argv:    []string{"copy"},
 			wantErr: "copy requires --from and --to",
-		},
-		{
-			name:    "merge without flags",
-			argv:    []string{"merge"},
-			wantErr: "merge requires --from and --to",
 		},
 	}
 
@@ -2495,23 +2434,6 @@ func TestRunEditDefaultsPreloaded(t *testing.T) {
 	}
 	if capturedDescDefault != "CLI helpers" {
 		t.Fatalf("description default = %q, want 'CLI helpers'", capturedDescDefault)
-	}
-}
-
-func TestRunNoCacheDisablesCache(t *testing.T) {
-	t.Parallel()
-
-	svc := fixtureService()
-	var stdout, stderr strings.Builder
-
-	code := runCommand(context.Background(), []string{"list", "--no-cache"}, &stdout, &stderr, svc)
-
-	if code != command.ExitSuccess {
-		t.Fatalf("exit = %d, want ExitSuccess; stderr=%q", code, stderr.String())
-	}
-	// listCalls must be 1: no cache wrapping means direct service hit
-	if svc.listCalls != 1 {
-		t.Fatalf("listCalls = %d, want 1", svc.listCalls)
 	}
 }
 

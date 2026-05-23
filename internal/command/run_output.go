@@ -78,8 +78,6 @@ func commandContext(action Action, listID string) string {
 		return fmt.Sprintf("failed to move repository %q", listID)
 	case ActionCopy:
 		return fmt.Sprintf("failed to copy Star List %q", listID)
-	case ActionMerge:
-		return fmt.Sprintf("failed to merge Star List %q", listID)
 	case ActionUnstar:
 		return fmt.Sprintf("failed to unstar repository %q", listID)
 	default:

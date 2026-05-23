@@ -8,50 +8,28 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.preloader.generation {
 		return m, nil // stale: drop
 	}
-	key := repoCacheKey{msg.listID, msg.withTopics}
+	listID := msg.listID
 	// Cancelled loads have their cache entry removed, so this response is stale.
-	if e, ok := m.preloader.cache[key]; !ok || e.state != repoCacheLoading {
+	if e, ok := m.preloader.cache[listID]; !ok || e.state != repoCacheLoading {
 		return m, nil
 	}
-	delete(m.preloader.preloadCancels, msg.listID)
-	if msg.withTopics && m.preloader.topicsCancels != nil {
-		delete(m.preloader.topicsCancels, msg.listID)
-	}
+	delete(m.preloader.preloadCancels, listID)
 	if msg.err != nil {
-		m.preloader.setCacheEntry(key, &repoCacheEntry{
+		m.preloader.setCacheEntry(listID, &repoCacheEntry{
 			state: repoCacheError,
 			err:   msg.err,
 			gen:   msg.gen,
 		})
 	} else {
 		entry := &repoCacheEntry{state: repoCacheLoaded, repos: msg.repos, gen: msg.gen}
-		m.preloader.setCacheEntry(key, entry)
-		// Update displayed slice when this load is the active detail level, or
-		// when preview is waiting on topics and basic repos are the best data.
-		if m.focusedList != nil && msg.listID == m.focusedList.ID &&
-			msg.withTopics == m.showPreview {
-			if msg.withTopics {
-				m.refreshDisplayedRepos(entry.repos)
-			} else {
-				m.populateDisplayedRepos(entry.repos)
-			}
-		} else if m.focusedList != nil && msg.listID == m.focusedList.ID &&
-			m.showPreview &&
-			!msg.withTopics {
-			displayEntry := m.repoPaneCacheEntry()
-			if displayEntry == entry {
-				m.populateDisplayedRepos(entry.repos)
-			}
-		}
-		if m.focusedList != nil && msg.listID == m.focusedList.ID {
-			if m.repoCursor >= len(m.displayedRepos) && len(m.displayedRepos) > 0 {
-				m.setRepoCursor(len(m.displayedRepos) - 1)
-			}
+		m.preloader.setCacheEntry(listID, entry)
+		if m.focusedList != nil && listID == m.focusedList.ID {
+			m.populateDisplayedRepos(entry.repos)
 		}
 		// Refresh focusedList pointer only if this load is for the focused list.
-		if m.focusedList != nil && m.focusedList.ID == msg.listID {
+		if m.focusedList != nil && m.focusedList.ID == listID {
 			for i := range m.lists {
-				if m.lists[i].ID == msg.listID {
+				if m.lists[i].ID == listID {
 					m.focusedList = &m.lists[i]
 					break
 				}
@@ -71,25 +49,17 @@ func (m model) handleReposLoaded(msg reposLoadedMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	if !msg.withTopics {
-		if m.preloader.inFlight > 0 {
-			m.preloader.inFlight--
-		}
-	} else if m.preloader.topicsInFlight > 0 {
-		m.preloader.topicsInFlight--
+	if m.preloader.inFlight > 0 {
+		m.preloader.inFlight--
 	}
 
 	cmds := []tea.Cmd{
 		m.preloader.schedulePreload(m.ctx, m.svc),
 	}
-	if m.showPreview {
-		cmds = append(cmds, m.preloader.scheduleTopicsPreload(
-			m.ctx, m.svc, m.focusedList, m.displayedLists,
-		))
-	}
-	// After a successful withTopics load, asynchronously enrich with starredAt
-	// so that topics appear immediately while starredAt fills in later.
-	if msg.err == nil && msg.withTopics {
+	// Asynchronously enrich repos with StarredAt so the detail modal shows
+	// "Starred:" instead of "-". Star List items don't carry viewer star time;
+	// MergeStarredAt fills it in from ListStarredRepositories (cached per gen).
+	if msg.err == nil {
 		cmds = append(cmds, enrichStarredAtCmd(
 			m.ctx, m.svc, m.preloader, msg.listID, msg.repos, msg.gen,
 		))
@@ -104,20 +74,22 @@ func (m model) handleStarredAtEnriched(msg starredAtEnrichedMsg) (tea.Model, tea
 	if msg.err != nil {
 		return m, nil
 	}
-	key := repoCacheKey{msg.listID, true}
-	e, ok := m.preloader.cache[key]
-	if !ok || e.state != repoCacheLoaded {
-		return m, nil
-	}
-	// Update the cached entry with starredAt-enriched repos.
-	m.preloader.cache[key] = &repoCacheEntry{
-		state: repoCacheLoaded,
-		repos: msg.repos,
-		gen:   msg.gen,
-	}
-	// Refresh displayed repos if this is the focused list and preview is showing.
-	if m.focusedList != nil && msg.listID == m.focusedList.ID && m.showPreview {
-		m.refreshDisplayedRepos(msg.repos)
+	// If this enrichment targeted a specific list, update its cached repos.
+	if msg.listID != "" {
+		e, ok := m.preloader.cache[msg.listID]
+		if !ok || e.state != repoCacheLoaded {
+			return m, nil
+		}
+		// Update the cached entry with starredAt-enriched repos.
+		m.preloader.cache[msg.listID] = &repoCacheEntry{
+			state: repoCacheLoaded,
+			repos: msg.repos,
+			gen:   msg.gen,
+		}
+		// Refresh displayed repos if this is the focused list.
+		if m.focusedList != nil && msg.listID == m.focusedList.ID {
+			m.refreshDisplayedRepos(msg.repos)
+		}
 	}
 	return m, nil
 }

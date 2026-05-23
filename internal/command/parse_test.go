@@ -5,13 +5,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/command"
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 )
-
-func ptrDuration(d time.Duration) *time.Duration { return &d }
 
 func TestParse(t *testing.T) {
 	t.Parallel()
@@ -227,14 +224,6 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "merge without flags parses cleanly",
-			argv: []string{"merge"},
-			want: command.Parsed{
-				Action: command.ActionMerge,
-				Mode:   format.OutputHuman,
-			},
-		},
-		{
 			name: "json before subcommand",
 			argv: []string{"--json", "repos", "list-id"},
 			want: command.Parsed{
@@ -356,33 +345,6 @@ func TestParse(t *testing.T) {
 				ListID: "UL_1",
 				Mode:   format.OutputHuman,
 				Limit:  10,
-			},
-		},
-		{
-			name: "cache-ttl flag",
-			argv: []string{"list", "--cache-ttl", "10m"},
-			want: command.Parsed{
-				Action:   command.ActionList,
-				Mode:     format.OutputHuman,
-				CacheTTL: ptrDuration(10 * time.Minute),
-			},
-		},
-		{
-			name: "cache-ttl zero disables",
-			argv: []string{"list", "--cache-ttl", "0"},
-			want: command.Parsed{
-				Action:   command.ActionList,
-				Mode:     format.OutputHuman,
-				CacheTTL: ptrDuration(0),
-			},
-		},
-		{
-			name: "no-cache flag",
-			argv: []string{"list", "--no-cache"},
-			want: command.Parsed{
-				Action:   command.ActionList,
-				Mode:     format.OutputHuman,
-				CacheTTL: ptrDuration(0),
 			},
 		},
 		{
@@ -627,11 +589,6 @@ func TestParseUsageErrors(t *testing.T) {
 			argv:        []string{"--fzf", "--json"},
 			wantMessage: "cannot combine --plain, --json, --tsv, and --fzf",
 		},
-		{
-			name:        "no-cache and cache-ttl conflict",
-			argv:        []string{"--no-cache", "--cache-ttl", "5m"},
-			wantMessage: "cannot combine --no-cache and --cache-ttl",
-		},
 		{name: "unknown flag", argv: []string{"--xml"}, wantMessage: "unknown flag"},
 		{
 			name:        "sort missing value",
@@ -805,11 +762,6 @@ func TestParseUsageErrors(t *testing.T) {
 			wantMessage: "copy requires distinct --from and --to",
 		},
 		{
-			name:        "merge rejects identical from and to case insensitive",
-			argv:        []string{"merge", "--from", "Work", "--to", "work"},
-			wantMessage: "merge requires distinct --from and --to",
-		},
-		{
 			name:        "move rejects identical from and to",
 			argv:        []string{"move", "owner/repo", "--from", "A", "--to", "A"},
 			wantMessage: "move requires distinct --from and --to",
@@ -871,11 +823,6 @@ func TestParseUsageErrors(t *testing.T) {
 		{
 			name:        "search on copy rejected",
 			argv:        []string{"copy", "--from", "A", "--to", "B", "--search", "foo"},
-			wantMessage: "--search is only supported for repos",
-		},
-		{
-			name:        "search on merge rejected",
-			argv:        []string{"merge", "--from", "A", "--to", "B", "--search", "foo"},
 			wantMessage: "--search is only supported for repos",
 		},
 		{

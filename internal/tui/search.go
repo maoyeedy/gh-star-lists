@@ -23,7 +23,6 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.repoCursor = 0
 			m.repoOffset = 0
 		}
-		m.previewOffset = 0
 		m = m.rebuildDisplayed()
 		return m, nil
 	case key.Matches(msg, keys.Enter):
@@ -43,7 +42,6 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.repoCursor = 0
 			m.repoOffset = 0
 		}
-		m.previewOffset = 0
 		m = m.rebuildDisplayed()
 		return m, nil
 	}
@@ -63,7 +61,6 @@ func (m model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.repoCursor = 0
 			m.repoOffset = 0
 		}
-		m.previewOffset = 0
 		m = m.rebuildDisplayed()
 	}
 	return m, nil
@@ -81,7 +78,6 @@ func (m model) activateSearch() (tea.Model, tea.Cmd) {
 		m.repoCursor = 0
 		m.repoOffset = 0
 	}
-	m.previewOffset = 0
 	m = m.rebuildDisplayed()
 	return m, nil
 }

@@ -33,9 +33,6 @@ type model struct {
 	listsLoading    bool
 	mutationPending bool
 
-	// preview pane scroll offset (lines scrolled down)
-	previewOffset int
-
 	listCursor int
 	listOffset int
 	repoCursor int
@@ -52,7 +49,6 @@ type model struct {
 	modal        *modal
 	statusMsg    string
 	statusExpiry time.Time
-	showPreview  bool
 
 	listSearchActive bool
 	listSearchQuery  string
@@ -62,11 +58,6 @@ type model struct {
 	displayedRepos   []domain.Repository
 
 	selected map[string]struct{} // NameWithOwner of checked repos
-
-	// Double-click tracking for list-pane rows.
-	lastClickPane  int
-	lastClickIndex int
-	lastClickTime  time.Time
 
 	spinner spinner.Model
 }

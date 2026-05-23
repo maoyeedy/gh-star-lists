@@ -9,10 +9,10 @@ import (
 func TestLoadingCountO1(t *testing.T) {
 	t.Parallel()
 	p := newPreloader()
-	key1 := repoCacheKey{listID: "UL_1"}
-	key2 := repoCacheKey{listID: "UL_2"}
-	key3 := repoCacheKey{listID: "UL_3"}
-	key4 := repoCacheKey{listID: "UL_4"}
+	key1 := "UL_1"
+	key2 := "UL_2"
+	key3 := "UL_3"
+	key4 := "UL_4"
 
 	p.setCacheEntry(key1, &repoCacheEntry{state: repoCacheLoading})
 	p.setCacheEntry(key2, &repoCacheEntry{state: repoCacheLoading})
@@ -64,7 +64,7 @@ func TestStaleReposLoadedMsgIgnored(t *testing.T) {
 	}
 	m2 := update(m, staleMsg)
 
-	key := repoCacheKey{m.focusedList.ID, false}
+	key := m.focusedList.ID
 	entry := m2.preloader.cache[key]
 	if entry != nil && entry.state == repoCacheLoaded {
 		t.Error("stale reposLoadedMsg should not write a repoCacheLoaded entry")
@@ -81,13 +81,13 @@ func TestRepoCacheEntryWrittenOnLoad(t *testing.T) {
 	firstListID := m.lists[0].ID
 
 	m2 := update(m, reposLoadedMsg{
-		repos:      svc.repos,
-		listID:     firstListID,
-		withTopics: false,
-		gen:        0,
+		repos:  svc.repos,
+		listID: firstListID,
+
+		gen: 0,
 	})
 
-	key := repoCacheKey{firstListID, false}
+	key := firstListID
 	entry := m2.preloader.cache[key]
 	if entry == nil {
 		t.Fatal("repoCache entry should exist after reposLoadedMsg")
@@ -112,7 +112,7 @@ func TestAnyPendingUsesLoadingCount(t *testing.T) {
 	}
 
 	// Write a loading entry.
-	key := repoCacheKey{listID: "UL_1", withTopics: false}
+	key := "UL_1"
 	m.preloader.setCacheEntry(key, &repoCacheEntry{state: repoCacheLoading})
 
 	if !m.anyPending() {
@@ -144,7 +144,7 @@ func TestStaleLoadDropped(t *testing.T) {
 	}
 	m2 := update(m, staleMsg)
 
-	key := repoCacheKey{m.focusedList.ID, false}
+	key := m.focusedList.ID
 	if e := m2.preloader.cache[key]; e != nil && e.state == repoCacheLoaded {
 		t.Error("stale reposLoadedMsg (gen=999) should not create a loaded cache entry")
 	}

@@ -57,7 +57,7 @@ func TestLoadingRendersInsidePane(t *testing.T) {
 	m = update(m, listsLoadedMsg{lists: svc.lists})
 	m.focusedList = &m.lists[0]
 	// Mark the focused list's cache entry as loading to simulate repo fetch in flight.
-	m.preloader.cache[repoCacheKey{m.focusedList.ID, false}] = &repoCacheEntry{
+	m.preloader.cache[m.focusedList.ID] = &repoCacheEntry{
 		state: repoCacheLoading,
 	}
 	m.width = 120

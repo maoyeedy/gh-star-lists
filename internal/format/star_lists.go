@@ -22,7 +22,7 @@ func WriteStarListsWithOptions(w io.Writer, options Options, lists []domain.Star
 	}
 	switch options.Mode {
 	case OutputJSON:
-		return writeJSONSliceWithOptions(w, options, rows)
+		return writeJSONSlice(w, rows)
 	case OutputTSV:
 		return writeStarListsTSV(w, rows)
 	case OutputFZF:

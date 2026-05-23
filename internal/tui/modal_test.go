@@ -94,8 +94,8 @@ func TestMutationDoneClosesModalAndInvalidatesEntry(t *testing.T) {
 	m.focusedList = &m.lists[0]
 
 	// Pre-populate a cache entry to confirm it gets invalidated.
-	m.preloader.cache[repoCacheKey{"UL_1", false}] = &repoCacheEntry{state: repoCacheLoaded}
-	m.preloader.cache[repoCacheKey{"UL_1", true}] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.cache["UL_1"] = &repoCacheEntry{state: repoCacheLoaded}
+	m.preloader.cache["UL_1"] = &repoCacheEntry{state: repoCacheLoaded}
 
 	// Open a modal in submitting state.
 	m.modal = &modal{kind: modalCreateList, submitting: true}
@@ -113,11 +113,11 @@ func TestMutationDoneClosesModalAndInvalidatesEntry(t *testing.T) {
 		t.Error("mutationPending should be false after successful mutation")
 	}
 	// Both cache entries for UL_1 should be deleted (invalidated).
-	if e := m2.preloader.cache[repoCacheKey{"UL_1", false}]; e != nil &&
+	if e := m2.preloader.cache["UL_1"]; e != nil &&
 		e.state == repoCacheLoaded {
 		t.Error("repoCache[UL_1, false] should be invalidated after mutation")
 	}
-	if e := m2.preloader.cache[repoCacheKey{"UL_1", true}]; e != nil && e.state == repoCacheLoaded {
+	if e := m2.preloader.cache["UL_1"]; e != nil && e.state == repoCacheLoaded {
 		t.Error("repoCache[UL_1, true] should be invalidated after mutation")
 	}
 }

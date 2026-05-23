@@ -3,7 +3,6 @@ package command
 import (
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/maoyeedy/gh-star-lists/internal/format"
 	"github.com/maoyeedy/gh-star-lists/internal/search"
@@ -23,14 +22,11 @@ func Parse(argv []string) (Parsed, error) {
 		rawSortTerms     []string
 		sortDesc         bool
 		limit            int
-		cacheTTL         *time.Duration
-		noCacheFlag      bool
 		noColorFlag      bool
 		filters          []Filter
 		searchValue      string
 		outputPath       string
 		templateStr      string
-		jqValue          string
 		hostValue        string
 		webFlag          bool
 		unlistedFlag     bool
@@ -80,23 +76,8 @@ func Parse(argv []string) (Parsed, error) {
 			rawSortTerms = append(rawSortTerms, strings.Split(raw, ",")...)
 		case "--desc", "-d":
 			sortDesc = true
-		case "--cache-ttl":
-			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --cache-ttl")
-			}
-			i++
-			d, err := time.ParseDuration(argv[i])
-			if err != nil {
-				return Parsed{}, usage("invalid value for --cache-ttl: %v", err)
-			}
-			if d < 0 {
-				return Parsed{}, usage("--cache-ttl must not be negative")
-			}
-			cacheTTL = &d
 		case "--mouse":
 			mouseFlag = true
-		case "--no-cache":
-			noCacheFlag = true
 		case "--no-color":
 			noColorFlag = true
 		case "--host":
@@ -209,15 +190,6 @@ func Parse(argv []string) (Parsed, error) {
 			if templateStr == "" {
 				return Parsed{}, usage("empty value for --template")
 			}
-		case "--jq":
-			if i+1 >= len(argv) {
-				return Parsed{}, usage("missing value for --jq")
-			}
-			i++
-			jqValue = argv[i]
-			if jqValue == "" {
-				return Parsed{}, usage("empty value for --jq")
-			}
 		case "--output":
 			if i+1 >= len(argv) {
 				return Parsed{}, usage("missing value for --output")
@@ -242,21 +214,7 @@ func Parse(argv []string) (Parsed, error) {
 	if templateStr != "" {
 		mode = format.OutputTemplate
 	}
-	if jqValue != "" {
-		if tsvFlag || plainFlag || fzfFlag || templateStr != "" {
-			return Parsed{}, usage(
-				"--jq cannot be combined with --plain, --tsv, --fzf, or --template",
-			)
-		}
-		mode = format.OutputJSON
-	}
-	if noCacheFlag && cacheTTL != nil {
-		return Parsed{}, usage("cannot combine --no-cache and --cache-ttl")
-	}
-	if noCacheFlag {
-		zero := time.Duration(0)
-		cacheTTL = &zero
-	}
+
 	sortKeys, sortTerms, err = parseSortTerms(rawSortTerms, sortDesc)
 	if err != nil {
 		return Parsed{}, err
@@ -310,7 +268,7 @@ func Parse(argv []string) (Parsed, error) {
 				)
 			}
 			if webFlag &&
-				(jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "" || jqValue != "") {
+				(jsonFlag || tsvFlag || plainFlag || fzfFlag || templateStr != "" || outputPath != "") {
 				return Parsed{}, usage("--web cannot be combined with output flags")
 			}
 			if err := validateFilters(ActionRepos, filters); err != nil {
@@ -334,10 +292,8 @@ func Parse(argv []string) (Parsed, error) {
 				NoColor:    noColorFlag,
 				Filters:    filters,
 				Search:     searchValue,
-				CacheTTL:   cacheTTL,
 				OutputPath: outputPath,
 				Template:   templateStr,
-				JQ:         jqValue,
 				Host:       hostValue,
 				Web:        webFlag,
 				Unlisted:   unlistedFlag,
@@ -355,7 +311,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -388,7 +343,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -418,7 +372,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -444,7 +397,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -470,7 +422,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -501,7 +452,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -518,13 +468,13 @@ func Parse(argv []string) (Parsed, error) {
 				DryRun:     dryRunFlag,
 				Host:       hostValue,
 			}, nil
-		case "copy", "merge":
+		case "copy":
 			if len(positionals) != 1 {
-				return Parsed{}, usage("%s does not accept positional arguments", cmd)
+				return Parsed{}, usage("copy does not accept positional arguments")
 			}
 			if fromValue != "" && toValue != "" &&
 				strings.EqualFold(strings.TrimSpace(fromValue), strings.TrimSpace(toValue)) {
-				return Parsed{}, usage("%s requires distinct --from and --to", cmd)
+				return Parsed{}, usage("copy requires distinct --from and --to")
 			}
 			if err := validateWriteOutputFlags(
 				jsonFlag,
@@ -533,19 +483,14 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
 			if err := validateWriteSearchFlag(searchValue); err != nil {
 				return Parsed{}, err
 			}
-			action := ActionCopy
-			if cmd == "merge" {
-				action = ActionMerge
-			}
 			return Parsed{
-				Action:       action,
+				Action:       ActionCopy,
 				FromListID:   fromValue,
 				ToListID:     toValue,
 				Mode:         mode,
@@ -565,7 +510,6 @@ func Parse(argv []string) (Parsed, error) {
 				fzfFlag,
 				templateStr,
 				outputPath,
-				jqValue,
 			); err != nil {
 				return Parsed{}, err
 			}
@@ -595,9 +539,6 @@ func Parse(argv []string) (Parsed, error) {
 			if templateStr != "" {
 				return Parsed{}, usage("--template is not supported for tui")
 			}
-			if jqValue != "" {
-				return Parsed{}, usage("--jq is not supported for tui")
-			}
 			if outputPath != "" {
 				return Parsed{}, usage("--output is not supported for tui")
 			}
@@ -626,11 +567,10 @@ func Parse(argv []string) (Parsed, error) {
 				return Parsed{}, usage("--desc is not supported for tui")
 			}
 			return Parsed{
-				Action:   ActionTUI,
-				Host:     hostValue,
-				NoColor:  noColorFlag,
-				Mouse:    mouseFlag,
-				CacheTTL: cacheTTL,
+				Action:  ActionTUI,
+				Host:    hostValue,
+				NoColor: noColorFlag,
+				Mouse:   mouseFlag,
 			}, nil
 		default:
 			return Parsed{}, &UnknownCommandError{Command: positionals[0]}
@@ -667,10 +607,8 @@ func Parse(argv []string) (Parsed, error) {
 		Limit:      limit,
 		NoColor:    noColorFlag,
 		Filters:    filters,
-		CacheTTL:   cacheTTL,
 		OutputPath: outputPath,
 		Template:   templateStr,
-		JQ:         jqValue,
 		Host:       hostValue,
 		Yes:        yesFlag,
 	}, nil

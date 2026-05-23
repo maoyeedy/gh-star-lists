@@ -26,7 +26,7 @@ func WriteRepositoriesWithOptions(
 	}
 	switch options.Mode {
 	case OutputJSON:
-		return writeJSONSliceWithOptions(w, options, rows)
+		return writeJSONSlice(w, rows)
 	case OutputTSV:
 		return writeRepositoriesTSV(w, rows)
 	case OutputFZF:

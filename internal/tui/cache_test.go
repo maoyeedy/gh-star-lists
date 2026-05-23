@@ -75,7 +75,7 @@ func TestFocusedLoadPriority(t *testing.T) {
 
 	// Reset: 3 preload slots full, no cancels, empty cache.
 	// This isolates enqueueFront from schedulePreload consumption.
-	m.preloader.cache = make(map[repoCacheKey]*repoCacheEntry)
+	m.preloader.cache = make(map[string]*repoCacheEntry)
 	m.preloader.queue = []string{"UL_5", "UL_3"}
 	m.preloader.inFlight = 3
 	m.preloader.preloadCancels = nil
@@ -93,87 +93,33 @@ func TestFocusedLoadPriority(t *testing.T) {
 	}
 }
 
-func TestTopicsPreloadOnlyWhenPreviewEnabled(t *testing.T) {
+func TestPreviewKeyOpensRepoDetailModal(t *testing.T) {
 	t.Parallel()
 	svc := threeListsSvc()
 	m := newTestModel(svc)
 	m = update(m, listsLoadedMsg{lists: svc.lists})
-	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_1"})
-	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_2"})
-	m = update(m, reposLoadedMsg{repos: svc.repos, listID: "UL_3"})
+	m = update(m, reposLoadedMsg{repos: svc.repos, listID: svc.lists[0].ID})
+	m.active = paneRepo
+	m.focusedList = &m.lists[0]
 
-	// All basic repos loaded, queue empty, inFlight 0, showPreview false:
-	// scheduleTopicsPreload should not be invoked by the update handler.
-	if m.preloader.topicsInFlight != 0 {
-		t.Errorf("topicsInFlight = %d, want 0 when showPreview=false", m.preloader.topicsInFlight)
-	}
-	if len(m.preloader.topicsCancels) != 0 {
-		t.Errorf(
-			"topicsCancels len = %d, want 0 when showPreview=false",
-			len(m.preloader.topicsCancels),
-		)
-	}
-
-	// Toggle preview on via 'p'. Topics load is scheduled for the focused list.
 	m2 := update(m, keyPress('p'))
-	if !m2.showPreview {
-		t.Fatal("showPreview should be true after 'p'")
-	}
 
-	// Focused list should have a withTopics=true loading entry.
-	topicsKey := repoCacheKey{m2.focusedList.ID, true}
-	entry := m2.preloader.cache[topicsKey]
-	if entry == nil {
-		t.Error("cache[focusedList, true] should exist after preview toggle")
-	} else if entry.state != repoCacheLoading {
-		t.Errorf("entry.state = %d, want repoCacheLoading", entry.state)
+	if m2.modal == nil {
+		t.Fatal("modal should be non-nil after 'p' in repo pane")
 	}
-
-	// Toggle preview off - should cancel topics preloads via cancelTopicsPreloads().
-	m3 := update(m2, keyPress('p'))
-	if m3.showPreview {
-		t.Fatal("showPreview should be false after second 'p'")
-	}
-	if m3.preloader.topicsInFlight != 0 {
-		t.Errorf("topicsInFlight = %d, want 0 after preview disabled", m3.preloader.topicsInFlight)
-	}
-	if len(m3.preloader.topicsCancels) != 0 {
-		t.Errorf(
-			"topicsCancels = %v, want empty after preview disabled",
-			m3.preloader.topicsCancels,
-		)
+	if m2.modal.kind != modalRepoDetail {
+		t.Errorf("modal kind = %d, want modalRepoDetail", m2.modal.kind)
 	}
 }
 
-func TestTopicsPreloadPerListReadiness(t *testing.T) {
+func TestPreviewKeyNoopInListPane(t *testing.T) {
 	t.Parallel()
-	svc := fiveListsSvc()
+	svc := &fakeService{}
 	m := newTestModel(svc)
-	m = update(m, listsLoadedMsg{lists: svc.lists})
-	m.showPreview = true
+	m.active = paneList
 
-	loadedListID := m.focusedList.ID
-	m = update(m, reposLoadedMsg{
-		repos:  svc.repos,
-		listID: loadedListID,
-		gen:    m.preloader.generation,
-	})
-
-	topicsKey := repoCacheKey{listID: loadedListID, withTopics: true}
-	topicsEntry := m.preloader.cache[topicsKey]
-	if topicsEntry == nil {
-		t.Fatalf("topics cache entry for %s should be scheduled", loadedListID)
-	}
-	if topicsEntry.state != repoCacheLoading {
-		t.Fatalf("topics cache state = %d, want repoCacheLoading", topicsEntry.state)
-	}
-	if m.preloader.topicsInFlight != 1 {
-		t.Fatalf("topicsInFlight = %d, want 1", m.preloader.topicsInFlight)
-	}
-	if m.preloader.inFlight == 0 {
-		t.Fatal("basic repo preloads should still have work in flight")
-	}
-	if len(m.preloader.queue) == 0 {
-		t.Fatal("basic repo preload queue should still contain pending lists")
+	m2 := update(m, keyPress('p'))
+	if m2.modal != nil {
+		t.Error("modal should be nil after 'p' in list pane")
 	}
 }

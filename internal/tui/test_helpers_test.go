@@ -229,8 +229,6 @@ func stripANSI(s string) string {
 
 // TestRepoColumnAlignment verifies that the star glyph appears at a consistent
 
-func previewPane(m model, w, h int) string { return m.renderPreviewPane(w, h) }
-
 // TestPreviewDetailBlock verifies that the styled preview pane renders all
 
 func fiveListsSvc() *fakeService {

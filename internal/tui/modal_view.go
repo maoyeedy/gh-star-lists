@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
+	"time"
+
+	"github.com/maoyeedy/gh-star-lists/internal/humanize"
 )
 
 func (mo *modal) view() string {
@@ -35,6 +39,9 @@ func (mo *modal) view() string {
 		case modalHelp:
 			body = mo.viewHelp()
 			hint = stylePaneSubtitle.Render("j/k: scroll  esc: close")
+		case modalRepoDetail:
+			body = mo.viewRepoDetail()
+			hint = stylePaneSubtitle.Render("enter/o: open in browser  esc/q/p: close")
 		default:
 			body = mo.body
 			if body == "" {
@@ -97,6 +104,8 @@ func (mo *modal) viewPickList() string {
 		return "(no lists available)"
 	}
 	const maxVisible = 8
+	const prefixW = 2           // "> " or "  "
+	nameW := mo.width - prefixW // 0 when unconstrained; truncation skipped below
 	start := 0
 	if mo.choiceCursor >= maxVisible {
 		start = mo.choiceCursor - maxVisible + 1
@@ -108,18 +117,26 @@ func (mo *modal) viewPickList() string {
 	var lines []string
 	for i := start; i < end; i++ {
 		prefix := "  "
+		name := mo.choices[i].Name
+		if nameW > 0 {
+			name = truncateToWidth(name, nameW)
+		}
 		if i == mo.choiceCursor {
 			prefix = "> "
-			lines = append(lines, prefix+styleCursorActive.Render(mo.choices[i].Name))
+			lines = append(lines, prefix+styleCursorActive.Render(name))
 		} else {
-			lines = append(lines, prefix+mo.choices[i].Name)
+			lines = append(lines, prefix+name)
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (mo *modal) viewHelp() string {
-	lines := renderHelpLines(60)
+	helpW := mo.width
+	if helpW <= 0 {
+		helpW = 60
+	}
+	lines := renderHelpLines(helpW)
 	if mo.scrollOffset >= len(lines) {
 		mo.scrollOffset = max(0, len(lines)-1)
 	}
@@ -135,4 +152,73 @@ func (mo *modal) viewHelp() string {
 func (mo *modal) viewConfirmYesNo() string {
 	return stylePaneSubtitle.Render("Remove repo from current list?") + "\n\n" +
 		"[y] Yes  [n/esc] No"
+}
+
+func (mo *modal) viewRepoDetail() string {
+	r := mo.repo
+	now := time.Now().UTC()
+	var lines []string
+
+	nwo := r.NameWithOwner
+	url := r.URL
+	desc := r.Description
+	if mo.width > 0 {
+		nwo = truncateToWidth(nwo, mo.width)
+		url = truncateToWidth(url, mo.width)
+		if desc != "" {
+			desc = truncateToWidth(desc, mo.width)
+		}
+	}
+
+	lines = append(lines, stylePaneTitle.Render(nwo))
+	lines = append(lines, styleRepoURL.Render(url))
+	lines = append(lines, "")
+
+	starsStr := styleRepoStars.Render(
+		fmt.Sprintf("%s %s", formatStars(r.StargazerCount), starGlyph),
+	)
+	langStr := ""
+	if r.Language != "" {
+		langStr = "  " + styleRepoLanguage.Render(r.Language)
+	} else {
+		langStr = "  " + styleEmptyState.Render("-")
+	}
+	var badge string
+	switch {
+	case r.IsArchived:
+		badge = "  " + styleRepoBadge.Render("archived")
+	case r.IsFork:
+		badge = "  " + styleRepoBadge.Render("fork")
+	}
+	lines = append(lines, starsStr+langStr+badge)
+	lines = append(lines, "")
+
+	lines = append(lines, stylePaneSubtitle.Render("Description"))
+	if desc != "" {
+		lines = append(lines, styleRepoName.Render(desc))
+	} else {
+		lines = append(lines, styleEmptyState.Render("(no description)"))
+	}
+	lines = append(lines, "")
+
+	licenseVal := r.License
+	if licenseVal == "" {
+		licenseVal = styleEmptyState.Render("-")
+	}
+	lines = append(lines, stylePaneSubtitle.Render("License:")+" "+licenseVal)
+
+	lines = append(
+		lines,
+		stylePaneSubtitle.Render("Pushed:")+" "+humanize.ShortAge(r.PushedAt, now),
+	)
+
+	starredVal := r.StarredAt
+	if starredVal == "" {
+		starredVal = styleEmptyState.Render("-")
+	} else {
+		starredVal = humanize.ShortAge(r.StarredAt, now)
+	}
+	lines = append(lines, stylePaneSubtitle.Render("Starred:")+" "+starredVal)
+
+	return strings.Join(lines, "\n")
 }

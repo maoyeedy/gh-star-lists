@@ -8,11 +8,6 @@ import (
 	"github.com/maoyeedy/gh-star-lists/internal/githubapi"
 )
 
-type repoCacheKey struct {
-	listID     string
-	withTopics bool
-}
-
 type repoCacheState int
 
 const (
@@ -21,8 +16,6 @@ const (
 	repoCacheLoaded
 	repoCacheError
 )
-
-const maxTopicsInFlight = 2
 
 type repoCacheEntry struct {
 	state repoCacheState
@@ -33,14 +26,12 @@ type repoCacheEntry struct {
 
 // preloader manages the async repo cache and preload queue.
 type preloader struct {
-	cache          map[repoCacheKey]*repoCacheEntry
+	cache          map[string]*repoCacheEntry
 	generation     uint64
 	loadingCount   int
 	queue          []string
 	inFlight       int
 	preloadCancels map[string]context.CancelFunc
-	topicsInFlight int
-	topicsCancels  map[string]context.CancelFunc
 	// starredRepos caches the full starred-repo list so getStarredAt
 	// fetches at most once per generation.
 	starredRepos []domain.Repository
@@ -48,7 +39,7 @@ type preloader struct {
 
 func newPreloader() *preloader {
 	return &preloader{
-		cache: make(map[repoCacheKey]*repoCacheEntry),
+		cache: make(map[string]*repoCacheEntry),
 	}
 }
 
@@ -58,8 +49,7 @@ func (p *preloader) schedulePreload(ctx context.Context, svc githubapi.Service) 
 	for p.inFlight < maxInFlight && len(p.queue) > 0 {
 		listID := p.queue[0]
 		p.queue = p.queue[1:]
-		key := repoCacheKey{listID, false}
-		if e := p.cache[key]; e != nil && e.state != repoCacheIdle {
+		if e := p.cache[listID]; e != nil && e.state != repoCacheIdle {
 			continue
 		}
 		loadCtx, cancel := context.WithCancel(ctx)
@@ -67,10 +57,10 @@ func (p *preloader) schedulePreload(ctx context.Context, svc githubapi.Service) 
 			p.preloadCancels = make(map[string]context.CancelFunc)
 		}
 		p.preloadCancels[listID] = cancel
-		p.setCacheEntry(key, &repoCacheEntry{state: repoCacheLoading, gen: p.generation})
+		p.setCacheEntry(listID, &repoCacheEntry{state: repoCacheLoading, gen: p.generation})
 		p.inFlight++
 		capturedID := listID
-		cmds = append(cmds, loadReposCmd(loadCtx, svc, capturedID, false, p.generation))
+		cmds = append(cmds, loadReposCmd(loadCtx, svc, capturedID, p.generation))
 	}
 	if len(cmds) == 0 {
 		return nil
@@ -91,12 +81,11 @@ func (p *preloader) enqueueFront(listID string) {
 }
 
 // clear resets the cache, bumps generation, drains the queue, and cancels any
-// in-flight preload and topics requests.
+// in-flight preload requests.
 func (p *preloader) clear() {
 	p.generation++
 	p.starredRepos = nil
-	p.cancelTopicsPreloads()
-	p.cache = make(map[repoCacheKey]*repoCacheEntry)
+	p.cache = make(map[string]*repoCacheEntry)
 	p.loadingCount = 0
 	for _, cancel := range p.preloadCancels {
 		cancel()
@@ -106,8 +95,8 @@ func (p *preloader) clear() {
 	p.inFlight = 0
 }
 
-func (p *preloader) setCacheEntry(key repoCacheKey, entry *repoCacheEntry) {
-	if existing := p.cache[key]; existing != nil && existing.state == repoCacheLoading {
+func (p *preloader) setCacheEntry(listID string, entry *repoCacheEntry) {
+	if existing := p.cache[listID]; existing != nil && existing.state == repoCacheLoading {
 		if p.loadingCount > 0 {
 			p.loadingCount--
 		}
@@ -116,29 +105,19 @@ func (p *preloader) setCacheEntry(key repoCacheKey, entry *repoCacheEntry) {
 		p.loadingCount++
 	}
 	if entry == nil {
-		delete(p.cache, key)
+		delete(p.cache, listID)
 		return
 	}
-	p.cache[key] = entry
+	p.cache[listID] = entry
 }
 
-func (p *preloader) deleteCacheEntry(key repoCacheKey) {
-	p.setCacheEntry(key, nil)
+func (p *preloader) deleteCacheEntry(listID string) {
+	p.setCacheEntry(listID, nil)
 }
 
 // anyPendingInCache reports whether any repo cache entry is loading.
 func (p *preloader) anyPendingInCache() bool {
 	return p.loadingCount > 0
-}
-
-// cancelTopicsPreloads cancels all in-flight topics preloads and cleans up.
-func (p *preloader) cancelTopicsPreloads() {
-	for id, cancel := range p.topicsCancels {
-		cancel()
-		p.deleteCacheEntry(repoCacheKey{id, true})
-	}
-	p.topicsCancels = nil
-	p.topicsInFlight = 0
 }
 
 // getStarredAt enriches repos with StarredAt timestamps, using a generation-keyed
@@ -156,76 +135,12 @@ func (p *preloader) getStarredAt(
 	return githubapi.MergeStarredAt(repos, p.starredRepos), nil
 }
 
-// scheduleTopicsPreload starts withTopics=true loads for lists whose basic repos
-// are already cached. The focused list is prioritized. Max 2 concurrent topics loads.
-func (p *preloader) scheduleTopicsPreload(ctx context.Context, svc githubapi.Service,
-	focusedList *domain.StarList, displayedLists []domain.StarList,
-) tea.Cmd {
-	if p.topicsInFlight >= maxTopicsInFlight {
-		return nil
-	}
-
-	// Build candidates: focused list first, then all displayed lists.
-	candidates := make([]string, 0, len(displayedLists))
-	if focusedList != nil {
-		candidates = append(candidates, focusedList.ID)
-	}
-	for _, l := range displayedLists {
-		if focusedList == nil || l.ID != focusedList.ID {
-			candidates = append(candidates, l.ID)
-		}
-	}
-
-	var cmds []tea.Cmd
-	for _, listID := range candidates {
-		if p.topicsInFlight >= maxTopicsInFlight {
-			// Free a slot for the focused list by cancelling a non-focused load.
-			if focusedList != nil && listID == focusedList.ID {
-				for id, cancel := range p.topicsCancels {
-					if id != focusedList.ID {
-						cancel()
-						delete(p.topicsCancels, id)
-						p.deleteCacheEntry(repoCacheKey{id, true})
-						p.topicsInFlight--
-						break
-					}
-				}
-			}
-			if p.topicsInFlight >= maxTopicsInFlight {
-				break
-			}
-		}
-		// Only schedule topics when basic repos are cached.
-		basicKey := repoCacheKey{listID, false}
-		if e := p.cache[basicKey]; e == nil || e.state != repoCacheLoaded {
-			continue
-		}
-		topicsKey := repoCacheKey{listID, true}
-		if e := p.cache[topicsKey]; e != nil && e.state != repoCacheIdle {
-			continue
-		}
-		loadCtx, cancel := context.WithCancel(ctx)
-		if p.topicsCancels == nil {
-			p.topicsCancels = make(map[string]context.CancelFunc)
-		}
-		p.topicsCancels[listID] = cancel
-		p.setCacheEntry(topicsKey, &repoCacheEntry{state: repoCacheLoading, gen: p.generation})
-		p.topicsInFlight++
-		cmds = append(cmds, loadReposCmd(loadCtx, svc, listID, true, p.generation))
-	}
-	if len(cmds) == 0 {
-		return nil
-	}
-	return tea.Batch(cmds...)
-}
-
 // focusList sets the list cursor to idx, resolves focusedList, and updates the
 // repo pane immediately from the cache. Returns a cmd if a load must be started.
 func (m *model) focusList(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(m.displayedLists) {
 		return nil
 	}
-	m.previewOffset = 0
 	m.listCursor = idx
 	list := m.displayedLists[idx]
 	// Find the pointer in m.lists to keep focusedList pointing at the canonical slice.
@@ -235,20 +150,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 			break
 		}
 	}
-	key := repoCacheKey{list.ID, m.showPreview}
-	e := m.preloader.cache[key]
-	if m.showPreview {
-		if e == nil || e.state == repoCacheIdle || e.state == repoCacheLoading {
-			if basic := m.preloader.cache[repoCacheKey{list.ID, false}]; basic != nil &&
-				basic.state == repoCacheLoaded {
-				m.populateDisplayedRepos(basic.repos)
-				if e == nil || e.state == repoCacheIdle {
-					return m.startRepoLoad(list.ID, true)
-				}
-				return nil
-			}
-		}
-	}
+	e := m.preloader.cache[list.ID]
 	switch {
 	case e != nil && e.state == repoCacheLoaded:
 		m.populateDisplayedRepos(e.repos)
@@ -259,9 +161,6 @@ func (m *model) focusList(idx int) tea.Cmd {
 	case e != nil && e.state == repoCacheError:
 		m.displayedRepos = nil
 		return nil
-	case m.showPreview:
-		m.displayedRepos = nil
-		return m.startRepoLoad(list.ID, true)
 	default: // repoCacheIdle or absent: promote and start
 		// Cancel in-flight loads for non-focused lists to free concurrency slots.
 		for id, cancel := range m.preloader.preloadCancels {
@@ -271,7 +170,7 @@ func (m *model) focusList(idx int) tea.Cmd {
 				if m.preloader.inFlight > 0 {
 					m.preloader.inFlight--
 				}
-				m.preloader.deleteCacheEntry(repoCacheKey{id, false})
+				m.preloader.deleteCacheEntry(id)
 			}
 		}
 		m.preloader.enqueueFront(list.ID)
@@ -292,7 +191,6 @@ func (m *model) populateDisplayedReposWithCursor(repos []domain.Repository, pres
 	var previousRepoID string
 	previousCursor := m.repoCursor
 	previousOffset := m.repoOffset
-	previousPreviewOffset := m.previewOffset
 	if preserveCursor && m.repoCursor >= 0 && m.repoCursor < len(m.displayedRepos) {
 		previousRepoID = repoIdentity(m.displayedRepos[m.repoCursor])
 	}
@@ -322,7 +220,6 @@ func (m *model) populateDisplayedReposWithCursor(repos []domain.Repository, pres
 	m.repoOffset = clampInt(previousOffset, 0, max(0, len(m.displayedRepos)-m.repoPaneH()))
 	slidden := m.slideRepoOffset()
 	*m = slidden
-	m.previewOffset = previousPreviewOffset
 }
 
 func repoIdentity(repo domain.Repository) string {
@@ -336,50 +233,10 @@ func (m model) repoPaneCacheEntry() *repoCacheEntry {
 	if m.focusedList == nil {
 		return nil
 	}
-	if m.showPreview {
-		detailed := m.preloader.cache[repoCacheKey{m.focusedList.ID, true}]
-		if detailed != nil && detailed.state == repoCacheLoaded {
-			return detailed
-		}
-		basic := m.preloader.cache[repoCacheKey{m.focusedList.ID, false}]
-		if basic != nil && basic.state == repoCacheLoaded {
-			return basic
-		}
-		if detailed != nil {
-			return detailed
-		}
-		return basic
-	}
-	return m.preloader.cache[repoCacheKey{m.focusedList.ID, false}]
-}
-
-func (m *model) startRepoLoad(listID string, withTopics bool) tea.Cmd {
-	loadCtx, cancel := context.WithCancel(m.ctx)
-	key := repoCacheKey{listID, withTopics}
-	if withTopics {
-		if m.preloader.topicsCancels == nil {
-			m.preloader.topicsCancels = make(map[string]context.CancelFunc)
-		}
-		m.preloader.topicsCancels[listID] = cancel
-		m.preloader.topicsInFlight++
-	} else {
-		if m.preloader.preloadCancels == nil {
-			m.preloader.preloadCancels = make(map[string]context.CancelFunc)
-		}
-		m.preloader.preloadCancels[listID] = cancel
-		m.preloader.inFlight++
-	}
-	m.preloader.setCacheEntry(key, &repoCacheEntry{
-		state: repoCacheLoading,
-		gen:   m.preloader.generation,
-	})
-	return loadReposCmd(loadCtx, m.svc, listID, withTopics, m.preloader.generation)
+	return m.preloader.cache[m.focusedList.ID]
 }
 
 func (m *model) setRepoCursor(idx int) {
-	if m.repoCursor != idx {
-		m.previewOffset = 0
-	}
 	m.repoCursor = idx
 }
 

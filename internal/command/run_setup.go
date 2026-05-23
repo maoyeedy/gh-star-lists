@@ -18,10 +18,8 @@ type runInvocation struct {
 	stderr            io.Writer
 	parsed            Parsed
 	service           githubapi.Service
-	originalService   githubapi.Service
 	outputOptions     format.Options
 	diagnosticOptions format.Options
-	cacheTTL          time.Duration
 }
 
 func prepareRunInvocation(
@@ -39,23 +37,15 @@ func prepareRunInvocation(
 
 	outputOptions := outputOptionsForMode(parsed.Mode)
 	outputOptions.Template = parsed.Template
-	outputOptions.JQ = parsed.JQ
 	if parsed.NoColor {
 		outputOptions.Color = false
 	}
 	diagnosticOptions.Color = outputOptions.Color
 
-	cacheTTL := 5 * time.Minute
-	if parsed.CacheTTL != nil {
-		cacheTTL = *parsed.CacheTTL
-	}
-	originalService := service
-	if cacheTTL > 0 {
-		service = githubapi.NewCacheServiceWithOptions(
-			service,
-			githubapi.CacheOptions{TTL: cacheTTL},
-		)
-	}
+	service = githubapi.NewCacheServiceWithOptions(
+		service,
+		githubapi.CacheOptions{TTL: 5 * time.Minute},
+	)
 
 	if parsed.Action == ActionRepos {
 		if err := ensureReposListSelector(ctx, service, &parsed); err != nil {
@@ -80,10 +70,8 @@ func prepareRunInvocation(
 		stderr:            stderr,
 		parsed:            parsed,
 		service:           service,
-		originalService:   originalService,
 		outputOptions:     outputOptions,
 		diagnosticOptions: diagnosticOptions,
-		cacheTTL:          cacheTTL,
 	}, closeOutput, ExitSuccess
 }
 

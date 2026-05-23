@@ -29,7 +29,3 @@ gh star-lists add cli/cli --to "Tools"            # add a repo to a list
 - Other: in-memory cache, fuzzy search, retry with backoff
 - CI: golangci-lint, pre-commit, `gh-extension-precompile` for releases
 - Packages: `command` (parse/dispatch) → `githubapi` (sole API boundary) → `format`/`tui` (output)
-
-```sh
-make check   # test + vet + build
-```
